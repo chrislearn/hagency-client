@@ -11,3 +11,40 @@ test('superseded product and retired scenarios remain visible while mixed SDK se
 for(const [name,files] of Object.entries({missing:{'old.spec.md':'superseded-by: missing.spec.md\n'+header},self:{'old.spec.md':'superseded-by: old.spec.md\n'+header},traversal:{'old.spec.md':'superseded-by: ../owner.spec.md\n'+header},chain:{'old.spec.md':'superseded-by: other.spec.md\n'+header,'other.spec.md':'superseded-by: owner.spec.md\n'+header,'owner.spec.md':header}}))test(`superseded spec ${name} is refused`,()=>withTree(files,directory=>assert.throws(()=>checkSpecBindings([],{directory}),/superseded-by|Superseded-by/)));
 
 test('a superseded product cannot redirect to an empty replacement',()=>withTree({'old.spec.md':'superseded-by: owner.spec.md\n'+header,'owner.spec.md':header},directory=>assert.throws(()=>checkSpecBindings([],{directory}),/Empty superseded-by replacement/)));
+
+test('platform-scoped bindings defer only their own selector and remain required on each declared platform', () => withTree({
+  'mixed.spec.md': header + 'Scenario: Unix fixture\n  Test-Platforms: [linux, macos]\n  Test: unix_fixture\nScenario: Portable refusal\n  Test: portable_refusal\n',
+}, directory => {
+  const windows = checkSpecBindings([{ name: 'portable_refusal' }], { directory, platform: 'win32' });
+  assert.deepEqual(windows.missing, []);
+  assert.equal(windows.count, 1);
+  assert.equal(windows.platformDeferred[0].selector, 'unix_fixture');
+  assert.deepEqual(checkSpecBindings([], { directory, platform: 'win32' }).missing.map(x => x.selector), ['portable_refusal']);
+  for (const platform of ['linux', 'darwin']) {
+    const absent = checkSpecBindings([{ name: 'portable_refusal' }], { directory, platform });
+    assert.deepEqual(absent.missing.map(x => x.selector), ['unix_fixture']);
+    assert.equal(absent.platformDeferred.length, 0);
+    assert.deepEqual(checkSpecBindings([{ name: 'unix_fixture' }, { name: 'portable_refusal' }], { directory, platform }).missing, []);
+  }
+}));
+
+test('a scoped Filter does not leak its platform to the next scenario', () => withTree({
+  'mixed.spec.md': header + 'Scenario: Windows\n  Test-Platforms: [windows]\n  Filter: windows_fixture\nScenario: Shared\n  Test: shared_fixture\n',
+}, directory => {
+  const linux = checkSpecBindings([], { directory, platform: 'linux' });
+  assert.deepEqual(linux.missing.map(x => x.selector), ['shared_fixture']);
+  assert.deepEqual(linux.platformDeferred.map(x => x.selector), ['windows_fixture']);
+  assert.deepEqual(checkSpecBindings([], { directory, platform: 'win32' }).missing.map(x => x.selector), ['windows_fixture', 'shared_fixture']);
+}));
+
+for (const declaration of ['[unix]', '[]', '[linux, linux]', '[linux,]', '[Linux]', 'linux', '[linux] trailing']) {
+  test(`invalid test platform ${declaration} is refused`, () => withTree({
+    'bad.spec.md': header + `Test-Platforms: ${declaration}\nTest: original\n`,
+  }, directory => assert.throws(() => checkSpecBindings([{ name: 'original' }], { directory, platform: 'win32' }), /Invalid Test-Platforms/)));
+}
+
+for (const following of ['', 'Scenario: Other\nTest: original', 'Retired-Test: original', 'Test-Platforms: [windows]\nTest: original']) {
+  test(`orphan or duplicate test platform ${JSON.stringify(following)} is refused`, () => withTree({
+    'bad.spec.md': header + `Test-Platforms: [linux]\n${following}\n`,
+  }, directory => assert.throws(() => checkSpecBindings([], { directory, platform: 'win32' }), /Invalid Test-Platforms/)));
+}

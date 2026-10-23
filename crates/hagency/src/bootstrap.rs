@@ -131,6 +131,7 @@ mod custody_tests {
             write: Some(RuntimeWriteObservation {
                 accepted_bytes: usize::MAX,
                 total_bytes: usize::MAX,
+                submission_pending: true,
             }),
         };
         // Longest labels and maximum-width counts bound the whole existing

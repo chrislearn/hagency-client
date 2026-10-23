@@ -203,7 +203,13 @@ async fn native_worktree_two_threads_distinct_worktrees() {
         .unwrap();
     let mut op_a = Operation::start(domain.clone(), cap_a, host(env()), limits()).unwrap();
     let report_a = op_a.wait().await.unwrap();
-    assert_eq!(report_a.protocol, Protocol::Completed);
+    assert_eq!(
+        report_a.protocol,
+        Protocol::Completed,
+        "{:?} {:?}",
+        report_a.failure,
+        report_a.runtime_observation()
+    );
 
     // Thread B: distinct worktree, same agent.
     domain
@@ -256,12 +262,17 @@ async fn native_worktree_two_threads_distinct_worktrees() {
         "thread B must not run in the shared workspace"
     );
     let worktrees_root = worktrees.canonicalize().unwrap();
+    let actual_a = Path::new(&cwd_a).canonicalize().unwrap();
+    let actual_b = Path::new(&cwd_b).canonicalize().unwrap();
+    assert_ne!(actual_a, actual_b, "distinct physical worktrees required");
+    assert_ne!(actual_a, work);
+    assert_ne!(actual_b, work);
     assert!(
-        Path::new(&cwd_a).starts_with(&worktrees_root),
+        actual_a.starts_with(&worktrees_root),
         "thread A cwd {cwd_a} must live under the worktrees root"
     );
     assert!(
-        Path::new(&cwd_b).starts_with(&worktrees_root),
+        actual_b.starts_with(&worktrees_root),
         "thread B cwd {cwd_b} must live under the worktrees root"
     );
 

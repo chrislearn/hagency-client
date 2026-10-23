@@ -91,11 +91,11 @@ async fn native_configured_fleet_recurring_driver() {
                 if first_pid.is_none() && f.work().join("owned-mcp.warm-thread").exists() {
                     first_pid = Some(f.receipt("warm-thread")["pid"].clone());
                 }
-                #[cfg(any(target_os = "linux", target_os = "macos"))]
+                #[cfg(any(target_os = "linux", target_os = "macos", windows))]
                 if f.count("SELECT COUNT(*) FROM runner_dispatches WHERE state='completed'") == 2 {
                     break;
                 }
-                #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+                #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
                 if f.count("SELECT COUNT(*) FROM runner_dispatches WHERE state='outcome_unknown'")
                     == 1
                 {
@@ -109,7 +109,7 @@ async fn native_configured_fleet_recurring_driver() {
         runner.await.unwrap();
         assert_eq!(first_pid.unwrap(), original["pid"]);
         assert!(f.collector.take_next_provisioned_agent().unwrap().is_none());
-        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        #[cfg(any(target_os = "linux", target_os = "macos", windows))]
         {
             assert_eq!(f.receipt("readback")["task"]["id"], "service_task_2");
             assert_eq!(
@@ -121,7 +121,7 @@ async fn native_configured_fleet_recurring_driver() {
             );
             assert_eq!(f.count("SELECT COUNT(*) FROM resource_leases"), 0);
         }
-        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
         {
             assert_eq!(f.receipt("readback")["task"]["id"], "service_task_1");
             assert_eq!(
@@ -158,13 +158,13 @@ async fn native_configured_fleet_recurring_driver() {
             tokio::pin!(closing);
             loop {
                 tokio::select! {result=&mut closing=>{
-                    #[cfg(any(target_os="linux",target_os="macos"))] assert_eq!(result,Ok(()));
-                    #[cfg(not(any(target_os="linux",target_os="macos")))] assert_eq!(result,Err(hagency::bootstrap::Failure::OutcomeUnknown));
+                    #[cfg(any(target_os="linux",target_os="macos",windows))] assert_eq!(result,Ok(()));
+                    #[cfg(not(any(target_os="linux",target_os="macos",windows)))] assert_eq!(result,Err(hagency::bootstrap::Failure::OutcomeUnknown));
                     break;
                 },request=f.fake.next()=>f.peer.respond(request,&f.base).await}
             }
         }
-        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
         {
             assert_eq!(
                 fleet.close().await,
@@ -184,6 +184,7 @@ async fn native_configured_fleet_recurring_driver() {
 }
 use serde_json::json;
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 async fn queue_service_task(f: &Fixture, n: u32) {
     let task = format!("service_task_{n}");
     f.base
@@ -213,6 +214,7 @@ async fn queue_service_task(f: &Fixture, n: u32) {
 }
 /// Run the fleet until `done(completed dispatches, this agent's fleet row)`,
 /// then stop and close it cleanly. Returns the last fleet snapshot.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 async fn run_fleet_until(
     f: &mut Fixture,
     label: &str,
@@ -301,6 +303,7 @@ async fn run_fleet_until(
     }
     last
 }
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 async fn fleet_snapshot(client: &reqwest::Client, url: &str) -> serde_json::Value {
     let response = client
         .get(url)
@@ -311,6 +314,7 @@ async fn fleet_snapshot(client: &reqwest::Client, url: &str) -> serde_json::Valu
     let value: serde_json::Value = serde_json::from_str(&response.text().await.unwrap()).unwrap();
     value["factory_service"].clone()
 }
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn agent_row(snapshot: &serde_json::Value, engagement: &str) -> serde_json::Value {
     snapshot["agents"]
         .as_array()
@@ -788,7 +792,7 @@ async fn native_provisioning_factory_sequential_dispatch() {
                 .count(),
             1
         );
-        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
         {
             assert_eq!(
                 report.failure,
@@ -797,10 +801,14 @@ async fn native_provisioning_factory_sequential_dispatch() {
             assert!(agent.dispatch(other, execution_limits()).await.is_err());
             assert_eq!(f.count("SELECT COUNT(*) FROM resource_leases"), 1);
         }
-        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        #[cfg(any(target_os = "linux", target_os = "macos", windows))]
         {
             assert_eq!(report.failure, None);
             assert_eq!(report.settlement, hagency_execution::Settlement::Completed);
+            let hagency_runtime::owned::Cleanup::Observed(cleanup) = &report.cleanup else {
+                panic!("original cleanup observation required");
+            };
+            assert!(cleanup.scope.leader_exited && cleanup.scope.whole_tree_stopped);
             assert!(!report.retains_process_custody());
             assert_eq!(f.count("SELECT COUNT(*) FROM resource_leases"), 0);
             assert!(
@@ -860,7 +868,7 @@ async fn native_provisioning_factory_sequential_dispatch() {
             drop(second);
             drop(binding);
         }
-        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
         {
             report.retry_stop();
             drop(report);

@@ -142,14 +142,32 @@ impl Widget for UpdateSettings {
             .button(cx, ids!(download))
             .set_visible(cx, state.enabled && state.phase == Phase::Available);
         for id in [id!(check), id!(download), id!(install), id!(later)] {
-            self.view.button(cx, &[id]).set_enabled(cx, !state.preview && !state.restart_required);
+            self.view.button(cx, &[id]).set_enabled(
+                cx,
+                !state.preview && !state.restart_required && (id != id!(check) || state.can_check),
+            );
         }
         self.view
             .button(cx, ids!(install))
             .set_visible(cx, state.enabled && state.phase == Phase::Ready);
-        self.view
-            .button(cx, ids!(later))
-            .set_visible(cx, state.enabled && state.phase == Phase::Waiting);
+        self.view.button(cx, ids!(later)).set_text(
+            cx,
+            crate::i18n::tr(if super::sparkle_active() {
+                "Cancel Update"
+            } else {
+                "Install Later"
+            }),
+        );
+        self.view.button(cx, ids!(later)).set_visible(
+            cx,
+            state.enabled
+                && (state.phase == Phase::Waiting
+                    || (super::sparkle_active()
+                        && matches!(
+                            state.phase,
+                            Phase::Checking | Phase::Downloading | Phase::Verifying | Phase::Ready
+                        ))),
+        );
         self.view.draw_walk(cx, scope, walk)
     }
 }

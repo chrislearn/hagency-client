@@ -1471,8 +1471,16 @@ async fn native_provisioning_inline_home() {
                 && content.contains(&admitted_id(&f))
                 && content.contains("native DomainStore")
         );
+        let document = workdir.join("docs").join(file);
         assert_eq!(
-            std::fs::read(workdir.join("docs").join(file)).unwrap(),
+            std::fs::read(&document).unwrap_or_else(|error| {
+                panic!(
+                    "read {document:?}: {error}; docs entries: {:?}",
+                    std::fs::read_dir(workdir.join("docs")).map(|entries| entries
+                        .map(|e| e.map(|e| e.file_name()))
+                        .collect::<Vec<_>>())
+                )
+            }),
             content.as_bytes()
         );
         assert!(path.join("supervisor").join(file).exists());
@@ -1560,12 +1568,33 @@ async fn native_provisioning_inline_home_projects() {
             }
         );
         assert_account_only(&f, &c);
-        std::fs::rename(&home.source, home.root.path().join("held-original-source")).unwrap();
-        hagency_store::private::directory(&home.source).unwrap();
-        assert!(
-            actual.workdir_path().is_err(),
-            "a replacement source cannot inherit original home configuration"
-        );
+        #[cfg(unix)]
+        {
+            std::fs::rename(&home.source, home.root.path().join("held-original-source")).unwrap();
+            hagency_store::private::directory(&home.source).unwrap();
+            assert!(
+                actual.workdir_path().is_err(),
+                "a replacement source cannot inherit original home configuration"
+            );
+        }
+        #[cfg(windows)]
+        {
+            let error =
+                std::fs::rename(&home.source, home.root.path().join("held-original-source"))
+                    .unwrap_err();
+            assert_eq!(
+                error.raw_os_error(),
+                Some(32),
+                "retained source denies replacement"
+            );
+            assert_eq!(
+                actual
+                    .workdir_path()
+                    .unwrap()
+                    .join("projects/project_provision"),
+                project
+            );
+        }
         finish(f, fake, c).await;
     }
 }
@@ -1596,11 +1625,33 @@ async fn native_provisioning_inline_home_without_a_configured_project() {
 }
 #[tokio::test]
 async fn native_provisioning_inline_home_refusals() {
+    #[cfg(windows)]
+    {
+        let home = HomeFixture::new();
+        let held = home.plan(
+            hagency_store::agent_home::ProjectMode::Copy,
+            "project_provision",
+        );
+        let error =
+            std::fs::rename(&home.source, home.root.path().join("held-original")).unwrap_err();
+        assert_eq!(
+            error.raw_os_error(),
+            Some(32),
+            "retained source denies replacement before provisioning"
+        );
+        assert_eq!(
+            std::fs::read(home.source.join("nested/文件.md")).unwrap(),
+            b"original project bytes"
+        );
+        assert_eq!(std::fs::read_dir(&home.homes).unwrap().count(), 0);
+        drop(held);
+    }
     for variant in [
         "partial_home",
         "partial_custody",
         // A project without a configured source is no longer refused: its home
         // is created without a managed project, as TS does (live 2026-10-01).
+        #[cfg(unix)]
         "replaced_source",
         "external_link",
         "large_file",

@@ -53,7 +53,7 @@ caller-supplied namespace descriptor, compare against `/proc/1`, or treat
 `NS_GET_PARENT` returning EPERM as an initial-namespace proof.
 
 The supported kernel release families are explicitly restricted to 6.8, 6.12,
-6.14 and 6.17. Other releases return Unsupported; changed namespace identities do too.
+6.14, 6.17 and 7.0. Other releases return Unsupported; changed namespace identities do too.
 These are source-inspected implementation constants, **not a portable Linux
 ABI**: user `0xEFFFFFFD`, cgroup `0xEFFFFFFB`, nsfs `0x6e736673`, and namespace
 types `CLONE_NEWUSER`/`CLONE_NEWCGROUP`. Initial constants agree in
@@ -102,6 +102,23 @@ This source check permits testing the observed vendor kernel; it does not replac
 the seven actual hosted qualification cases or widen any filesystem, namespace,
 privilege, lease or complete-crash-containment condition. Unknown families
 (including 6.16 and 6.18) remain refused. No local privileged test is enabled.
+
+#### Linux 7.0 source qualification
+
+The hosted runner `7.0.0-1017-azure` was refused before the guardian-death
+fixture on 2026-10-22 (PR #6, job119639392089). Admit only the 7.0 family after
+reviewing upstream v7.0 commit `028ef9c96e96197026887c0f092424679298aae8`:
+
+- [Reserved inode constants](https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/include/uapi/linux/nsfs.h#L47) remain unchanged. The new namespace IDs do not replace nsfs inode identity: [NS_COMMON_INIT](https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/include/linux/ns_common.h#L29) sets both fields, and [type mappings](https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/include/linux/ns/ns_common_types.h#L143) preserve initial user/cgroup inodes and clone types. [Dynamic allocation](https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/kernel/nscommon.c#L74) still uses [proc_alloc_inum's reserved-range exclusion](https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/proc/generic.c#L193).
+- [nsfs](https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/nsfs.c#L113) retains inode identity and opens related namespaces with CLOEXEC. The new ioctl policy gates namespace enumeration; NS_GET_USERNS and NS_GET_NSTYPE remain available. [ns_get_owner](https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/kernel/user_namespace.c#L1377) still requires the caller in the owner's ancestry.
+- [Proc namespace links](https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/proc/namespaces.c#L42) resolve the actual task and retain the ptrace check. The [namespace directory](https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/proc/base.c#L3663) remains traversable without directory-read access; O_PATH admission is unchanged.
+- [cgroup migration](https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/kernel/cgroup/cgroup.c#L5314) checks the common ancestor with the opener's credentials. Initial ownership and namespace-relative roots remain; [recursive kill](https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/kernel/cgroup/cgroup.c#L4180) retains the cgroup mutex and kill sequence, with [fork-time kill handling](https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/kernel/cgroup/cgroup.c#L7024). The [versioned contract](https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/Documentation/admin-guide/cgroup-v2.rst#L1051) retains recursive population and fork/migration-safe kill semantics.
+
+This permits the existing seven-mode hosted qualification to run on 7.0; source
+review and parser tests alone do not qualify the Azure vendor kernel. Unknown
+families, including 6.18 and 7.1, remain refused. Namespace, filesystem, privilege,
+custody and complete-crash-containment refusals are unchanged. No privileged
+qualification runs on the local Mac.
 
 The calling host must already have equal nonzero real/effective/saved/fs UIDs,
 zero effective/permitted/inheritable/bounding/ambient capabilities, NNP=1 and

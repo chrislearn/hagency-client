@@ -1332,14 +1332,10 @@ pub(super) mod tests {
         }
     }
 
-    pub(crate) async fn workspace_operation(
+    async fn prepare_workspace_operation(
         f: &test_common::Fixture,
         name: &str,
-    ) -> (
-        RunnerCapability,
-        Operation,
-        hagency_execution::WorkspaceRegistration,
-    ) {
+    ) -> (RunnerCapability, Host, Limits) {
         let prepared = named_fixture(f, "https://127.0.0.1:1/", name).await;
         std::fs::write(
             f.root.path().join(format!("work_{name}/same.txt")),
@@ -1360,14 +1356,13 @@ pub(super) mod tests {
             .await
             .unwrap()
             .unwrap();
-        let mut operation = Operation::start_requiring_workspace(
-            f.store.clone(),
-            cap.clone(),
-            prepared.host,
-            prepared.limits,
-        )
-        .unwrap();
-        let registration = tokio::time::timeout(Duration::from_secs(3), async {
+        (cap, prepared.host, prepared.limits)
+    }
+
+    async fn workspace_registration(
+        operation: &mut Operation,
+    ) -> hagency_execution::WorkspaceRegistration {
+        tokio::time::timeout(Duration::from_secs(3), async {
             loop {
                 if let Some(value) = operation.take_workspace_registration() {
                     break value;
@@ -1377,7 +1372,22 @@ pub(super) mod tests {
             }
         })
         .await
-        .unwrap();
+        .unwrap()
+    }
+
+    pub(crate) async fn workspace_operation(
+        f: &test_common::Fixture,
+        name: &str,
+    ) -> (
+        RunnerCapability,
+        Operation,
+        hagency_execution::WorkspaceRegistration,
+    ) {
+        let (cap, host, limits) = prepare_workspace_operation(f, name).await;
+        let mut operation =
+            Operation::start_requiring_workspace(f.store.clone(), cap.clone(), host, limits)
+                .unwrap();
+        let registration = workspace_registration(&mut operation).await;
         (cap, operation, registration)
     }
 
@@ -1467,11 +1477,31 @@ pub(super) mod tests {
     async fn native_bootstrap_fleet_workspace_capacity() {
         let f = test_common::Fixture::new();
         let access = WorkspaceAccess::new();
-        let mut held = Vec::new();
+        // Prepare all real claims/roots before any original 5 s registration
+        // budget starts. Sequential fixture setup previously spent the first
+        // operation's lifetime constructing the other sixteen tasks.
+        let mut prepared = Vec::new();
         for index in 0..17 {
-            let (cap, operation, registration) =
-                workspace_operation(&f, &format!("capacity_{index}")).await;
+            prepared.push(prepare_workspace_operation(&f, &format!("capacity_{index}")).await);
+        }
+        let operations: Vec<_> = prepared
+            .into_iter()
+            .map(|(cap, host, limits)| {
+                let operation = Operation::start_requiring_workspace(
+                    f.store.clone(),
+                    cap.clone(),
+                    host,
+                    limits,
+                )
+                .unwrap();
+                (cap, operation)
+            })
+            .collect();
+        let mut held = Vec::new();
+        for (index, (cap, mut operation)) in operations.into_iter().enumerate() {
+            let registration = workspace_registration(&mut operation).await;
             let (binding, ack) = registration.into_parts();
+            binding.validate_current(&cap).await.unwrap();
             let result = access.register(cap.clone(), binding).await;
             if index < 16 {
                 assert!(result.is_ok());
@@ -1480,7 +1510,11 @@ pub(super) mod tests {
             }
             held.push((cap, operation, ack));
         }
-        for (cap, _, _) in held.iter().take(16) {
+        for (cap, operation, _) in held.iter().take(16) {
+            assert!(
+                !operation.is_finished(),
+                "registered operation must still own its original workspace"
+            );
             access.check(cap).await.unwrap();
         }
         access.retire();

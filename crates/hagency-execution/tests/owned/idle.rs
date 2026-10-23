@@ -151,13 +151,24 @@ async fn native_owned_turn_quiet_limits() {
                 !operation.is_finished(),
                 "the budget elapsing killed nothing"
             );
-            // The child is still running past the budget: its pulse grows.
-            let bytes = fs::metadata(&marker).map_or(0, |m| m.len());
-            tokio::time::sleep(Duration::from_millis(150)).await;
-            assert!(
-                fs::metadata(&marker).map_or(0, |m| m.len()) > bytes,
-                "the quiet turn's child outlives the budget until a human stops it"
-            );
+            // Observe actual child progress after the budget signal, within
+            // the existing response budget. A fixed 150 ms sampling gap
+            // assumed the child was scheduled during that particular slice.
+            let bytes = fs::metadata(&marker).unwrap().len();
+            tokio::time::timeout(Duration::from_millis(limits().response_ms), async {
+                loop {
+                    assert!(
+                        !operation.is_finished(),
+                        "the quiet turn ended before the human's stop"
+                    );
+                    if fs::metadata(&marker).unwrap().len() > bytes {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            })
+            .await
+            .expect("the quiet turn's child must make real progress past the budget");
             // The human's stop.
             operation.cancel();
         }

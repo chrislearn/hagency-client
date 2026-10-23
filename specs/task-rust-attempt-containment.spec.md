@@ -117,6 +117,7 @@ Scenario: The operator's resolution clears the fence
   Then the fence carries cleared_at, and a resolution of another dispatch clears nothing
 
 Scenario: Re-attach honours an open fence
+  Test-Platforms: [linux, macos]
   Test: native_reattach_honours_the_fence
   Production caller: hagency::bootstrap::fleet::Service::reattach_known_agents
   Given an agent the product fenced on an unproven stop before a restart

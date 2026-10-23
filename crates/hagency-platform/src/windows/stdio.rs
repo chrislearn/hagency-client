@@ -220,6 +220,13 @@ pub struct Pipe {
     confirming: Option<Vec<u8>>,
 }
 impl Pipe {
+    /// An original write was submitted but has not returned its completion.
+    /// This is not a write receipt or a count of accepted bytes. A caller must
+    /// retain that original buffer until completion or drop the entire pipe.
+    pub fn write_submission_pending(&self) -> bool {
+        self.confirming.is_some()
+    }
+
     pub(crate) fn new(handle: OwnedHandle, writes: bool) -> io::Result<Self> {
         let _reactor = reactor()?.enter();
         // SAFETY: Only pair() produces these owned FILE_FLAG_OVERLAPPED server

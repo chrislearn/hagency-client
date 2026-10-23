@@ -1,33 +1,32 @@
-//! Opt-in macOS experiment: real Sparkle inside the real Makepad application.
-//! Deliberately restricted to the harness bundle; real owner cleanup is required.
+//! Main-thread Sparkle integration for validated product and isolated test bundles.
+mod config;
+use config::{BuildTrust, Config};
 use super::{Phase, Snapshot, UpdateAction, UpdateState};
 use makepad_widgets::*;
-use serde::Deserialize;
 use std::{
     ffi::{CStr, c_char, c_void},
     marker::PhantomData,
-    path::PathBuf,
     rc::Rc,
     sync::OnceLock,
 };
 
 unsafe extern "C" {
-    fn ha_sparkle_prototype_config() -> *mut c_char;
-    fn ha_sparkle_create() -> *mut c_void;
+    fn ha_sparkle_config() -> *mut c_char;
+    fn ha_sparkle_create(legacy_auto_check: i32, wake: extern "C" fn()) -> *mut c_void;
+    fn ha_sparkle_migration_needed() -> bool;
+    fn ha_sparkle_set_auto_check(handle: *mut c_void, value: bool) -> bool;
+    fn ha_sparkle_can_check(handle: *mut c_void) -> bool;
     fn ha_sparkle_next_event(handle: *mut c_void) -> *mut c_char;
     fn ha_sparkle_action(handle: *mut c_void, action: u32, cycle: u64) -> bool;
     fn ha_sparkle_free_string(value: *mut c_char);
     fn ha_sparkle_destroy(handle: *mut c_void);
 }
 
-#[derive(Debug, Deserialize)]
-struct Config {
-    root: PathBuf,
-    bundle: PathBuf,
-    version: String,
-    feed: String,
-}
 static CONFIG: OnceLock<Config> = OnceLock::new();
+static CONFIG_ERROR: OnceLock<&'static str> = OnceLock::new();
+extern "C" fn wake_ui() {
+    SignalToUI::set_ui_signal();
+}
 // Kept until process exit, including App destruction before native termination.
 static EXIT_FENCE: std::sync::Mutex<Option<hagency::update_guard::InstallGuard>> =
     std::sync::Mutex::new(None);
@@ -46,6 +45,11 @@ fn owned_string(ptr: *mut c_char) -> Option<String> {
 
 fn validate(config: &Config) -> anyhow::Result<()> {
     anyhow::ensure!(
+        config.automatic_updates_allowed == Some(false)
+            && config.automatically_update == Some(false),
+        "Prototype must not enable unattended installation"
+    );
+    anyhow::ensure!(
         cfg!(debug_assertions),
         "Sparkle prototype requires a debug build"
     );
@@ -61,14 +65,7 @@ fn validate(config: &Config) -> anyhow::Result<()> {
         config.bundle == config.root.join("installed/Hagency Sparkle Prototype.app"),
         "Refusing a bundle outside the harness installation"
     );
-    anyhow::ensure!(
-        std::env::current_exe()?.canonicalize()?
-            == config
-                .bundle
-                .join("Contents/MacOS/hagency")
-                .canonicalize()?,
-        "Unexpected prototype executable"
-    );
+    config.validate_executable(&std::env::current_exe()?)?;
     let url: url::Url = config.feed.parse()?;
     anyhow::ensure!(
         url.scheme() == "http"
@@ -85,11 +82,33 @@ fn validate(config: &Config) -> anyhow::Result<()> {
 ///
 /// # Safety
 /// Call once on the main thread, before creating any threads (environment mutation).
-pub unsafe fn configure_prototype() -> anyhow::Result<bool> {
-    let Some(raw) = owned_string(unsafe { ha_sparkle_prototype_config() }) else {
+pub unsafe fn configure() -> anyhow::Result<bool> {
+    let Some(raw) = owned_string(unsafe { ha_sparkle_config() }) else {
         return Ok(false);
     };
     let config: Config = serde_json::from_str(&raw)?;
+    if !config.prototype() {
+        let trust = BuildTrust {
+            packaged_release: cfg!(packaging_build)
+                && !cfg!(debug_assertions)
+                && cfg!(feature = "standalone")
+                && !cfg!(test),
+            public_key: option_env!("HAGENCY_SPARKLE_PUBLIC_KEY").unwrap_or_default(),
+            team_id: option_env!("HAGENCY_SPARKLE_TEAM_ID").unwrap_or_default(),
+            arch: std::env::consts::ARCH,
+            version: env!("CARGO_PKG_VERSION"),
+        };
+        if let Err(error) = config
+            .validate_product(&trust)
+            .and_then(|()| config.validate_executable(&std::env::current_exe()?))
+        {
+            eprintln!("Sparkle product configuration refused: {error:#}");
+            let _ = CONFIG_ERROR.set("Update signing is not configured for this build.");
+            return Ok(false);
+        }
+        anyhow::ensure!(CONFIG.set(config).is_ok(), "Sparkle configured twice");
+        return Ok(true);
+    }
     validate(&config)?;
     let data = config.root.join("data");
     std::fs::create_dir_all(&data)?;
@@ -103,6 +122,14 @@ pub unsafe fn configure_prototype() -> anyhow::Result<bool> {
         serde_json::json!({"version": CONFIG.get().unwrap().version, "executable": std::env::current_exe()?, "data": data}),
     );
     Ok(true)
+}
+
+pub fn prototype() -> bool {
+    CONFIG.get().is_some_and(Config::prototype)
+}
+
+pub(super) fn configuration_error() -> Option<&'static str> {
+    CONFIG_ERROR.get().copied()
 }
 
 pub fn active() -> bool {
@@ -119,7 +146,7 @@ pub(crate) fn configure_resources(vm: &mut ScriptVm) {
 }
 
 fn record(kind: &str, detail: serde_json::Value) {
-    if let Some(config) = CONFIG.get() {
+    if let Some(config) = CONFIG.get().filter(|config| config.prototype()) {
         use std::io::Write;
         let event = serde_json::json!({"kind": kind, "pid": std::process::id(), "version": config.version, "detail": detail});
         if let Ok(mut file) = std::fs::OpenOptions::new()
@@ -147,16 +174,31 @@ pub(super) struct Runtime {
     pub(super) needs_preparation: bool,
     allow_exit: bool,
     terminal_error: bool,
+    cancel_requested: bool,
     held_test_task: Option<hagency::update_guard::TaskGuard>,
 }
 
 impl Runtime {
     pub(super) fn start() -> anyhow::Result<Self> {
-        anyhow::ensure!(active(), "Not an isolated prototype");
+        anyhow::ensure!(active(), "No validated Sparkle configuration");
+        let legacy_auto_check = if unsafe { ha_sparkle_migration_needed() } {
+            i32::from(
+                hagency_updater::Preferences::load(&crate::app_data_dir().join("updates/macos"))?
+                    .auto_check,
+            )
+        } else {
+            -1
+        };
         // SAFETY: Integration starts/polls/actions/drops this non-Send owner on the UI thread.
-        let native = unsafe { ha_sparkle_create() };
-        anyhow::ensure!(!native.is_null(), "Could not create Sparkle prototype");
-        record("bridge_started", serde_json::json!({"main_thread": true}));
+        let native = unsafe { ha_sparkle_create(legacy_auto_check, wake_ui) };
+        anyhow::ensure!(
+            !native.is_null(),
+            "Could not initialize Sparkle preferences or updater"
+        );
+        record(
+            "bridge_started",
+            serde_json::json!({"main_thread": true, "idle_poll": prototype() && !CONFIG.get().unwrap().signal_only}),
+        );
         Ok(Self {
             native,
             _main_thread: PhantomData,
@@ -165,9 +207,12 @@ impl Runtime {
                 auto_check: false,
                 auto_download: false,
                 phase: Phase::Idle,
-                notes:
+                notes: if prototype() {
                     "Isolated Sparkle prototype. No production account or application is updated."
-                        .into(),
+                        .into()
+                } else {
+                    String::new()
+                },
                 ..Default::default()
             },
             cycle: 0,
@@ -180,6 +225,7 @@ impl Runtime {
             needs_preparation: false,
             allow_exit: false,
             terminal_error: false,
+            cancel_requested: false,
             held_test_task: None,
         })
     }
@@ -187,6 +233,16 @@ impl Runtime {
     fn command(&mut self, action: u32) -> bool {
         // SAFETY: handle and copied blocks are owned by this main-thread Runtime.
         unsafe { ha_sparkle_action(self.native, action, self.cycle) }
+    }
+
+    pub(super) fn needs_poll(&self) -> bool {
+        (prototype() && !CONFIG.get().unwrap().signal_only)
+            || self.pending.is_some()
+            || self.needs_preparation
+            || self
+                .preparation
+                .as_ref()
+                .is_some_and(|preparation| preparation.result().is_none())
     }
 
     pub(super) fn action(&mut self, action: UpdateAction) {
@@ -213,6 +269,7 @@ impl Runtime {
                 }
                 self.requested = true;
                 self.dismissed = false;
+                self.cancel_requested = false;
                 self.state.phase = Phase::Waiting;
                 record(
                     "user_authorized_update",
@@ -224,6 +281,31 @@ impl Runtime {
                 self.pending.take();
                 self.state.phase = Phase::Available;
                 record("waiting_canceled", serde_json::json!({}));
+            }
+            UpdateAction::AutoCheck(value) => {
+                if !unsafe { ha_sparkle_set_auto_check(self.native, value) } {
+                    self.fail("Could not save update preferences. Please try again.");
+                }
+            }
+            UpdateAction::Later
+                if matches!(
+                    self.state.phase,
+                    Phase::Checking
+                        | Phase::Available
+                        | Phase::Downloading
+                        | Phase::Verifying
+                        | Phase::Ready
+                ) =>
+            {
+                self.cancel_requested = true;
+                self.requested = false;
+                self.needs_preparation = false;
+                if self.preparation.is_some() {
+                    self.fail("The update was canceled after shutdown started. Restart Hagency before updating.");
+                } else {
+                    self.state.phase = Phase::Canceling;
+                    let _ = self.command(4); // During extraction, wait for Ready then Skip.
+                }
             }
             _ => {}
         }
@@ -244,7 +326,9 @@ impl Runtime {
         // Explicit harness commands exercise the same actions as the Makepad buttons.
         // The production identity cannot initialize CONFIG or this runtime.
         let command_path = CONFIG.get().unwrap().root.join("action.json");
-        if let Ok(bytes) = std::fs::read(&command_path) {
+        if prototype()
+            && let Ok(bytes) = std::fs::read(&command_path)
+        {
             let _ = std::fs::remove_file(&command_path);
             if let Ok(command) = serde_json::from_slice::<serde_json::Value>(&bytes)
                 && command["pid"].as_u64() == Some(u64::from(std::process::id()))
@@ -254,7 +338,11 @@ impl Runtime {
                     Some("check") => cx.action(UpdateAction::Check),
                     Some("update") => cx.action(UpdateAction::Download),
                     Some("later") => cx.action(UpdateAction::Later),
-                    Some("request_quit") => { let _ = self.command(6); }
+                    Some("auto_check_on") => cx.action(UpdateAction::AutoCheck(true)),
+                    Some("auto_check_off") => cx.action(UpdateAction::AutoCheck(false)),
+                    Some("request_quit") => {
+                        let _ = self.command(6);
+                    }
                     Some("hold_task") => {
                         self.held_test_task = hagency::update_guard::PROCESS.enter_task();
                         record("test_task_held", serde_json::json!({}));
@@ -270,14 +358,36 @@ impl Runtime {
         while let Some(raw) = owned_string(unsafe { ha_sparkle_next_event(self.native) }) {
             let event: serde_json::Value = serde_json::from_str(&raw).expect("bridge event JSON");
             record("sparkle", event.clone());
-            self.cycle = event["cycle"].as_u64().unwrap_or(self.cycle);
+            let cycle = event["cycle"].as_u64().unwrap_or(self.cycle);
+            if cycle > self.cycle
+                && self.preparation.is_none()
+                && self.guard.is_none()
+                && self.pending.is_none()
+            {
+                self.terminal_error = false;
+                self.cancel_requested = false;
+            }
+            self.cycle = cycle;
             match event["kind"].as_str().unwrap_or("") {
-                "checking" => self.state.phase = Phase::Checking,
+                "checking" => {
+                    self.state.phase = Phase::Checking;
+                    self.state.progress = 0;
+                    self.state.version.clear();
+                    self.state.notes.clear();
+                }
                 "available" => {
+                    self.state.notes = event["notes"].as_str().unwrap_or_default().into();
                     self.state.phase = Phase::Available;
                     self.state.version = event["version"].as_str().unwrap_or_default().into();
                 }
+                "preferences" => {
+                    self.state.auto_check = event["auto_check"].as_bool().unwrap_or(false)
+                }
+                "notes" => self.state.notes = event["text"].as_str().unwrap_or_default().into(),
                 "current" => self.state.phase = Phase::Current,
+                "cycle_finished" if self.state.phase == Phase::Checking => {
+                    self.state.phase = Phase::Idle
+                }
                 "downloading" => self.state.phase = Phase::Downloading,
                 "progress" => {
                     let expected = event["expected"].as_u64().unwrap_or(0);
@@ -289,26 +399,38 @@ impl Runtime {
                         .unwrap_or(0)
                         .min(100);
                 }
-                "extracting" => self.state.phase = Phase::Verifying,
+                "extracting" if !self.cancel_requested => self.state.phase = Phase::Verifying,
                 "ready" => {
-                    if self.terminal_error {
+                    if self.terminal_error
+                        || self.cancel_requested
+                        || self.guard.is_none()
+                        || !self.requested
+                    {
                         let _ = self.command(4);
                     } else {
                         self.state.phase = Phase::Ready;
                         self.needs_preparation = true;
                     }
                 }
+                "error" if self.cancel_requested => {}
                 "error" => self
                     .fail("Could not download or verify the update. Check for updates to retry."),
                 "dismissed" if !self.allow_exit => {
                     self.dismissed = true;
+                    if self.cancel_requested {
+                        record(
+                            "installation_canceled",
+                            serde_json::json!({"cycle": self.cycle}),
+                        );
+                        self.cancel_requested = false;
+                    }
                     if self.preparation.is_none() {
                         self.guard.take();
                         self.pending.take();
                         record("admission_released", serde_json::json!({}));
                     }
                     self.requested = false;
-                    if !self.terminal_error {
+                    if !self.terminal_error && self.state.phase != Phase::Current {
                         self.state.phase = Phase::Idle;
                     }
                 }
@@ -336,7 +458,10 @@ impl Runtime {
                     self.needs_preparation = true
                 }
                 Some(Err(error)) if !self.terminal_error => {
-                    record("preparation_failed", serde_json::json!({"stage": error.to_string()}));
+                    record(
+                        "preparation_failed",
+                        serde_json::json!({"stage": error.to_string()}),
+                    );
                     hagency::update_guard::PROCESS.block_install();
                     self.fail("Shutdown could not be confirmed. Installation was postponed.");
                 }
@@ -350,17 +475,27 @@ impl Runtime {
                 _ => {}
             }
         }
-        cx.global::<UpdateState>().0 = self.state.clone();
+        self.state.can_check =
+            self.preparation.is_none() && unsafe { ha_sparkle_can_check(self.native) };
+        if cx.global::<UpdateState>().0 != self.state {
+            cx.global::<UpdateState>().0 = self.state.clone();
+            cx.redraw_all();
+        }
     }
 
     pub(super) fn blocks_quit(&self) -> bool {
-        let blocked = if self.allow_exit { false }
-        else if let Some(preparation) = &self.preparation {
+        let blocked = if self.allow_exit {
+            false
+        } else if let Some(preparation) = &self.preparation {
             // Only a positive receipt AND dismissal permit ordinary quit. Keep
             // admission fenced after retirement, including a UI deadline.
             !(self.terminal_error && self.dismissed && preparation.result() == Some(Ok(())))
-        } else { self.pending.is_some() || self.guard.is_some() };
-        if blocked { record("quit_blocked", serde_json::json!({"cycle": self.cycle})); }
+        } else {
+            self.pending.is_some() || self.guard.is_some()
+        };
+        if blocked {
+            record("quit_blocked", serde_json::json!({"cycle": self.cycle}));
+        }
         blocked
     }
 

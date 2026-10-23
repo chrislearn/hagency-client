@@ -77,6 +77,9 @@ fn main() -> io::Result<()> {
     }
     let marker = Path::new(&args[1]);
     match args[0].to_str() {
+        Some("current-directory") => {
+            fs::write(marker, serde_json::to_vec(&std::env::current_dir()?)?)
+        }
         Some("leaf") => {
             fs::write(marker.with_extension("entered"), b"entered")?;
             pulse(marker)

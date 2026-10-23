@@ -101,6 +101,11 @@ async fn native_owned_mcp_approval_once() {
 async fn native_owned_approval_resume() {
     for choice in [ApprovalChoice::Once, ApprovalChoice::Deny] {
         let f = Fixture::configured(true);
+        fs::write(
+            f.work.join("owned-dispatch.approval-diagnostics"),
+            b"enabled",
+        )
+        .unwrap();
         let (mut op, mut notices) = operation(&f, "owned-approval", policy());
         let request = match tokio::time::timeout(Duration::from_secs(6), notices.recv()).await {
             Ok(Some(value)) => value,
@@ -141,9 +146,14 @@ async fn native_owned_approval_resume() {
         assert_eq!(
             report.protocol,
             Protocol::Completed,
-            "{:?} {:?}; {}",
+            "choice={choice:?} failure={:?} runtime={:?}; responses={} accepted={} continued={} state={} probe_error={:?}; {}",
             report.failure,
             report.runtime_observation(),
+            responses(&f).len(),
+            f.count("SELECT COUNT(*) FROM approval_responses WHERE write_accepted=1"),
+            f.work.join("owned-dispatch.approval-continued").is_file(),
+            f.state(),
+            fs::read_to_string(f.work.join("owned-dispatch.approval-probe-error")).ok(),
             cancellation_trace(&f)
         );
         marker(&f, "approval-continued").await;
@@ -160,6 +170,11 @@ async fn native_owned_approval_resume() {
         unconfirmed(&f);
     }
     let f = Fixture::configured(true);
+    fs::write(
+        f.work.join("owned-dispatch.approval-diagnostics"),
+        b"enabled",
+    )
+    .unwrap();
     let (mut op, mut notices) = operation(&f, "owned-approval-reuse", policy());
     let request = notice(&f, &mut op, &mut notices).await;
     choose(&f, &request.request_id, ApprovalChoice::Always).await;
@@ -167,8 +182,14 @@ async fn native_owned_approval_resume() {
     assert_eq!(
         report.protocol,
         Protocol::Completed,
-        "{:?}; {}",
+        "reuse failure={:?} runtime={:?}; responses={} accepted={} continued={} state={} probe_error={:?}; {}",
         report.failure,
+        report.runtime_observation(),
+        responses(&f).len(),
+        f.count("SELECT COUNT(*) FROM approval_responses WHERE write_accepted=1"),
+        f.work.join("owned-dispatch.approval-continued").is_file(),
+        f.state(),
+        fs::read_to_string(f.work.join("owned-dispatch.approval-probe-error")).ok(),
         cancellation_trace(&f)
     );
     assert!(
@@ -195,7 +216,24 @@ async fn native_owned_approval_barriers() {
     assert!((1..=2).contains(&before));
     assert_eq!(f.state(), "parked");
     choose(&f, &third.request_id, ApprovalChoice::Once).await;
-    let report = op.wait().await.unwrap();
+    let report = {
+        let wait = op.wait();
+        tokio::pin!(wait);
+        let mut released = 0;
+        loop {
+            tokio::select! {
+                result = &mut wait => break result.unwrap(),
+                _ = tokio::time::sleep(Duration::from_millis(5)) => {
+                    let accepted = f.count("SELECT COUNT(*) FROM approval_responses WHERE write_accepted=1");
+                    assert!(accepted <= 3, "extra accepted response");
+                    while released < accepted {
+                        released += 1;
+                        fs::write(f.work.join(format!("owned-dispatch.approval-accepted-{released}")), b"actual store receipt").unwrap();
+                    }
+                }
+            }
+        }
+    };
     assert_eq!(
         report.protocol,
         Protocol::Completed,

@@ -30,6 +30,7 @@ routing, approval multiplexing, real two-agent qualification or sustained soak.
 - Preserve original reply reconciliation, claim leases, stable transaction IDs,
   current route/task-epoch checks, begin-send and original SDK delivery rules.
 - No global-queue fallback when the exact completed dispatch has no reply.
+- Capacity fixtures prepare all real claims and roots before starting simultaneous operations; unrelated setup must not consume the first registration's original lifetime. Preserve the existing operation, response and registration-wait budgets and validate every original binding.
 - Real offline store/workspace tests, no live external services, no fake Started
   or cleanup proof, no larger deadlines, dependency, formatter, deployment/reset,
   commit or PR. Full objective remains active beyond these prerequisites.

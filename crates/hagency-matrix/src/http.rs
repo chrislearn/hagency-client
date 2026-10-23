@@ -94,6 +94,43 @@ impl From<Failed> for Error {
         }
     }
 }
+/// Only a failure known to precede any connection may start another dial.
+/// Keep the policy independent of OS refusal latency so its absolute clock
+/// and attempt count can be exercised without a live socket or request.
+async fn connect_attempts<F, A>(
+    cancel: &CancellationToken,
+    deadline: Instant,
+    mut dial: F,
+) -> Result<Response, Failed>
+where
+    F: FnMut() -> A,
+    A: Future<Output = Result<Response, Failed>>,
+{
+    for attempt in 0..CONNECT_DIALS {
+        // A backoff can wake after its original bound. A ready connector
+        // failure must not make that late wake start another dial.
+        if cancel.is_cancelled() {
+            return Err(Error::Cancelled.into());
+        }
+        if Instant::now() >= deadline {
+            return Err(Error::Timeout.into());
+        }
+        match dial().await {
+            Err(Failed::Connect) => {}
+            outcome => return outcome,
+        }
+        let next = CONNECT_RETRY
+            .checked_mul(1 << attempt)
+            .filter(|_| attempt + 1 < CONNECT_DIALS)
+            .and_then(|delay| Instant::now().checked_add(delay))
+            .filter(|next| *next < deadline);
+        let Some(next) = next else {
+            return Err(Failed::Connect);
+        };
+        wait(cancel, deadline, tokio::time::sleep_until(next)).await?;
+    }
+    unreachable!("finite dial loop always returns its last outcome")
+}
 /// reqwest also calls a TLS failure "connect", but an endpoint that fails
 /// verification is refused, never redialled. tokio-rustls reports those as an
 /// InvalidData io::Error, wrapped again by the connector; io::Error::source()
@@ -689,32 +726,17 @@ impl Http {
         cancel: &CancellationToken,
         deadline: Instant,
     ) -> Result<Response, Failed> {
-        for attempt in 0..CONNECT_DIALS {
-            match self
-                .perform_once(
-                    method.clone(),
-                    segments,
-                    query,
-                    body.clone(),
-                    cancel,
-                    deadline,
-                )
-                .await
-            {
-                Err(Failed::Connect) => {}
-                outcome => return outcome,
-            }
-            let next = CONNECT_RETRY
-                .checked_mul(1 << attempt)
-                .filter(|_| attempt + 1 < CONNECT_DIALS)
-                .and_then(|delay| Instant::now().checked_add(delay))
-                .filter(|next| *next < deadline);
-            let Some(next) = next else {
-                return Err(Failed::Connect);
-            };
-            wait(cancel, deadline, tokio::time::sleep_until(next)).await?;
-        }
-        unreachable!("finite dial loop always returns its last outcome")
+        connect_attempts(cancel, deadline, || {
+            self.perform_once(
+                method.clone(),
+                segments,
+                query,
+                body.clone(),
+                cancel,
+                deadline,
+            )
+        })
+        .await
     }
     /// TS beforeRequest: before the first try, wait out a shared cooldown
     /// already active from any other request source. A cooldown that cannot

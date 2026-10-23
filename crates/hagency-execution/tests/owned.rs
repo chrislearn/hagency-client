@@ -472,7 +472,7 @@ async fn native_owned_runtime_failure_observation() {
     use hagency_runtime::codex::{session, transport};
     // A startup RPC now waits out the 60 s acknowledgement budget, bounded by
     // the operation ceiling (`ACKNOWLEDGEMENT_MS`; TS `acknowledgementTimeoutMs`,
-    // runner.ts:431/807/828). This fixture's operation budget is 25 s, so a child
+    // runner.ts:431/807/828). This fixture's operation budget is 2 s, so a child
     // that never answers `initialize` is ended by the operation deadline
     // (`Failure::Deadline`, the transport recording `Cancelled` /
     // `CancelledOperation`) rather than by a per-request transport timeout — the
@@ -494,13 +494,32 @@ async fn native_owned_runtime_failure_observation() {
         ),
     ] {
         let f = Fixture::new();
-        let mut operation = f.operation(mode);
+        // Exercise the operation clock before a separate 2 s writer reply
+        // wait can become the failure under observation. Keep startup's 60 s
+        // acknowledgement bound and the ordinary 1500 ms response limit;
+        // the actual child and Initialize observation remain mandatory.
+        let observation_limits = Limits {
+            operation_ms: 2000,
+            ..limits()
+        };
+        let mut operation = Operation::start(
+            f.domain.clone(),
+            f.cap.clone(),
+            f.host_budget(mode, observation_limits.operation_ms),
+            observation_limits,
+        )
+        .unwrap();
         let mut report = operation.wait().await.unwrap();
         assert!(
             f.marker().is_file(),
             "the original child must actually enter"
         );
-        assert_eq!(report.failure.as_ref(), Some(&failure));
+        assert_eq!(
+            report.failure.as_ref(),
+            Some(&failure),
+            "mode={mode}; runtime={:?}",
+            report.runtime_observation()
+        );
         assert_eq!(report.protocol, Protocol::Unknown);
         let original = report.runtime_observation().unwrap().clone();
         assert_eq!(original.stage, RuntimeStage::Initialize);

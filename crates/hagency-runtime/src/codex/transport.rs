@@ -1,6 +1,8 @@
 //! Host-owned stream driver. Closing streams is not evidence of child cleanup.
 mod buffers;
 mod control;
+#[cfg(test)]
+mod submission_tests;
 pub(super) use control::{Controlled, PreparedFrame};
 
 use super::{
@@ -124,6 +126,14 @@ pub struct UnconfirmedWrite {
     pub request_id: Option<RequestId>,
     pub accepted_bytes: usize,
     pub total_bytes: usize,
+    /// Bytes may have reached the peer before the adapter returned a receipt.
+    /// Never infer zero transmission from an offset of zero in this state.
+    pub submission_pending: bool,
+}
+impl UnconfirmedWrite {
+    pub fn is_definitely_untransmitted(&self) -> bool {
+        self.accepted_bytes == 0 && !self.submission_pending
+    }
 }
 
 /// Every transport termination needs host reconciliation with the current
@@ -180,9 +190,21 @@ pub struct Driver<R, W, E> {
     writing: Option<Writing>,
     termination: Option<Termination>,
     pending_before_call: (usize, usize),
+    submission_pending: fn(&W) -> bool,
 }
 
 impl<R, W, E> Driver<R, W, E> {
+    #[cfg(any(windows, test))]
+    pub(super) fn observe_write_submission(&mut self, observer: fn(&W) -> bool) {
+        // The trusted adapter exposes only pending custody, never a positive
+        // write receipt. Ordinary cancellation-safe writers need no observer.
+        self.submission_pending = observer;
+    }
+    fn write_submission_pending(&self) -> bool {
+        self.streams
+            .as_ref()
+            .is_some_and(|streams| (self.submission_pending)(&streams.stdin))
+    }
     pub(super) fn pending_server_requests(&self) -> usize {
         self.connection.pending_server_count()
     }
@@ -278,6 +300,7 @@ impl<R, W, E> Driver<R, W, E> {
             writing: None,
             termination: None,
             pending_before_call: (0, 0),
+            submission_pending: |_| false,
         })
     }
 
@@ -369,6 +392,7 @@ impl<R, W, E> Driver<R, W, E> {
                 request_id: writing.id.clone(),
                 accepted_bytes: writing.offset,
                 total_bytes: writing.bytes.len(),
+                submission_pending: self.write_submission_pending(),
             }),
             pending_requests: pending.0,
             pending_server_requests: pending.1,

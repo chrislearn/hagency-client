@@ -94,6 +94,7 @@ Scenario: A failure is persisted uncollapsed beside the existing word
   And the operator status shows the same two labels beside owned_failure, and no verdict differs from today
 
 Scenario: Lost authority never discards the reason
+  Test-Platforms: [linux, macos]
   Test: native_local_codex_host
   Given an attempt whose local provider directory is replaced while it runs
   When the failure is reported

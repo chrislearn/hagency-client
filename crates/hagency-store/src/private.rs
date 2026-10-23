@@ -163,6 +163,46 @@ pub fn seal_created_file_handle(file: &File) -> Result<(), Error> {
     Ok(())
 }
 
+/// Create one empty directory relative to retained private custody. Only the
+/// successful nonrecursive creation may establish its owner; existing entries
+/// are never opened for sealing. No child bytes are written before validation.
+pub(crate) fn create_directory_relative(
+    parent: &cap_std::fs::Dir,
+    path: &Path,
+) -> Result<(), Error> {
+    check_handle(&parent.try_clone()?.into_std_file())?;
+    let builder = cap_std::fs::DirBuilder::new();
+    #[cfg(unix)]
+    let builder = {
+        use cap_std::fs::DirBuilderExt;
+        let mut builder = builder;
+        builder.mode(0o700);
+        builder
+    };
+    // cap-std has no Windows DirBuilder owner option. Its inherited DACL is
+    // already private, but TokenOwner can differ from TokenUser. Seal only the
+    // new empty directory, through its retained relative handle.
+    parent.create_dir_with(path, &builder)?;
+    #[cfg(windows)]
+    {
+        use cap_fs_ext::{FollowSymlinks, OpenOptionsFollowExt, OpenOptionsMaybeDirExt};
+        use cap_std::fs::OpenOptionsExt;
+        use windows_sys::Win32::{
+            Foundation::GENERIC_READ,
+            Storage::FileSystem::{WRITE_DAC, WRITE_OWNER},
+        };
+        let mut options = cap_std::fs::OpenOptions::new();
+        options
+            .read(true)
+            .maybe_dir(true)
+            .follow(FollowSymlinks::No)
+            .access_mode(GENERIC_READ | WRITE_DAC | WRITE_OWNER);
+        let created = parent.open_with(path, &options)?.into_std();
+        windows::seal_created_directory_handle(&created)?;
+    }
+    check_handle(&parent.open_dir(path)?.into_std_file())
+}
+
 pub fn open(path: &Path, create: bool) -> Result<File, Error> {
     let mut options = OpenOptions::new();
     options.read(true).write(true);

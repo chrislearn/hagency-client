@@ -1073,7 +1073,7 @@ async fn native_owned_approval_receipt_before_resolution() {
     let work = work.canonicalize().unwrap();
     let (domain, cap) = fixture(root.path(), "receipt-before-resolution");
     let gate = Arc::new(crate::approval::Gate::default());
-    let mut configured = host(&work, Fault::ReceiptGate, "owned-approval");
+    let mut configured = host(&work, Fault::ReceiptGate, "owned-approval-receipt-order");
     configured.approval_gate = Some(gate.clone());
     let mut op = Operation::start(
         domain.clone(),
@@ -1110,6 +1110,22 @@ async fn native_owned_approval_receipt_before_resolution() {
             tokio::time::Instant::now() < end,
             "probe never recorded the written frame; probe markers present: {}",
             markers_present(&work)
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    std::fs::write(
+        work.join("owned-dispatch.receipt-resolution-release"),
+        b"release",
+    )
+    .unwrap();
+    let end = tokio::time::Instant::now() + harness_wait();
+    while !work
+        .join("owned-dispatch.receipt-resolution-emitted")
+        .exists()
+    {
+        assert!(
+            tokio::time::Instant::now() < end,
+            "probe did not resolve inside the actual receipt gate"
         );
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
@@ -1561,15 +1577,18 @@ async fn native_owned_approval_turn_end_midwrite_uncertain() {
         .unwrap()
         .unwrap();
     choose(&domain, notice.request_id).await;
-    // The probe exits on its own schedule (silent 1.2 s, turn end, exit
-    // unread); wait for its handshake marker before claiming the report.
+    // The probe announces its exit path before emitting the terminal note:
+    // once the host reads the note it may immediately kill the probe. This
+    // handshake alone is not the verdict; the report below must still prove
+    // actual transmitted, unresolved custody and SettlementUnknown.
     let midwrite = work.join("owned-dispatch.approval-midwrite-exit");
     let end = tokio::time::Instant::now() + harness_wait();
     while !midwrite.exists() {
         assert!(
             tokio::time::Instant::now() < end,
-            "probe never reached its midwrite exit; probe markers present: {}",
-            markers_present(&work)
+            "probe never reached its midwrite exit; probe markers present: {}; trace: {}",
+            markers_present(&work),
+            crate::approval::diagnostics::dispatch_trace(&cap.dispatch_id)
         );
         tokio::time::sleep(Duration::from_millis(5)).await;
     }

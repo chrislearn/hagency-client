@@ -364,6 +364,7 @@ pub enum RuntimeStage {
 pub struct RuntimeWriteObservation {
     pub accepted_bytes: usize,
     pub total_bytes: usize,
+    pub submission_pending: bool,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeObservation {
@@ -401,6 +402,7 @@ impl RuntimeObservation {
                 .map(|w| RuntimeWriteObservation {
                     accepted_bytes: w.accepted_bytes,
                     total_bytes: w.total_bytes,
+                    submission_pending: w.submission_pending,
                 }),
         }
     }

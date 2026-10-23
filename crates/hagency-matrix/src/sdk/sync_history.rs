@@ -61,6 +61,94 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn native_matrix_sync_history_batch_reachable_acknowledgements() {
+        let (_root, init, mut sdk) = sdk().await;
+        let mut batch = HistoryBatch::new(&sdk);
+        let mut root = None;
+        let mut receipts = Vec::new();
+        for index in 0..100 {
+            let token = format!("batched_{index}");
+            let digest = digest(&response(index)).unwrap();
+            root = Some(
+                batch
+                    .insert(
+                        root.as_deref(),
+                        Record::Sync {
+                            token: token.clone(),
+                            digest: digest.clone(),
+                            receipt: None,
+                        },
+                    )
+                    .await
+                    .unwrap(),
+            );
+            receipts.push((token, digest));
+        }
+        let root = root.unwrap();
+        let staged: Vec<_> = batch.nodes.keys().cloned().collect();
+        let started = std::time::Instant::now();
+        batch.persist(&root).await.unwrap();
+        let elapsed = started.elapsed();
+        drop(batch);
+        let mut stored = 0;
+        for hash in &staged {
+            if sdk
+                .client
+                .state_store()
+                .get_custom_value(&storage_key(hash).unwrap())
+                .await
+                .unwrap()
+                .is_some()
+            {
+                stored += 1;
+            }
+        }
+        // A binary trie with 100 distinct keys has 100 leaves and 99 branches.
+        // Verify real encrypted KV state, not an in-memory write counter.
+        assert_eq!(stored, 199);
+        assert!(
+            staged.len() > stored,
+            "intermediate versions must not be written"
+        );
+        eprintln!(
+            "history batch: {} staged, {stored} stored, real write ACKs in {elapsed:?}",
+            staged.len()
+        );
+        sdk.journal.sync_history = Some(root.clone());
+        sdk.persist().await.unwrap();
+
+        // A conflicting/corrupt candidate still refuses publication. Earlier
+        // valid history must survive this failure and a real SDK restart.
+        let value = Record::Sync {
+            token: "unpublished".into(),
+            digest: digest(&response(100)).unwrap(),
+            receipt: None,
+        };
+        let mut failed = HistoryBatch::new(&sdk);
+        let next = failed.insert(Some(&root), value).await.unwrap();
+        sdk.client
+            .state_store()
+            .set_custom_value(&storage_key(&next).unwrap(), b"corrupt orphan".to_vec())
+            .await
+            .unwrap();
+        assert_eq!(failed.persist(&next).await, Err(Error::Storage));
+        drop(failed);
+        assert_eq!(sdk.journal.sync_history.as_deref(), Some(root.as_str()));
+        sdk.close().await.unwrap();
+        drop(sdk);
+        let sdk = Sdk::open(&init, false).await.unwrap();
+        for (token, digest) in receipts {
+            assert!(sdk.archived_sync(&token, &digest).await.unwrap());
+        }
+        assert!(
+            !sdk.archived_sync("unpublished", &digest(&response(100)).unwrap())
+                .await
+                .unwrap()
+        );
+        sdk.close().await.unwrap();
+    }
+
+    #[tokio::test]
     async fn native_matrix_sync_history_rollover() {
         let (_root, init, mut sdk) = sdk().await;
         let identity = sdk.identity.clone();
@@ -318,6 +406,207 @@ impl Node {
         Ok(())
     }
 }
+// This overlay exists for one operation only. It never caches stored proofs
+// across calls. Intermediate branch versions are not persisted: only nodes
+// reachable from the final root may be published, after every real write ACK.
+struct HistoryBatch<'a> {
+    sdk: &'a Sdk,
+    nodes: std::collections::BTreeMap<String, Node>,
+}
+impl<'a> HistoryBatch<'a> {
+    fn new(sdk: &'a Sdk) -> Self {
+        Self {
+            sdk,
+            nodes: Default::default(),
+        }
+    }
+    async fn node(&self, hash: &str) -> Result<Node, Error> {
+        match self.nodes.get(hash) {
+            Some(node) => Ok(node.clone()),
+            None => self.sdk.history_node(hash).await,
+        }
+    }
+    fn stage(&mut self, node: Node) -> Result<String, Error> {
+        node.validate(&self.sdk.identity)?;
+        let hash = digest(&node)?;
+        // At most 100 terminal sources and one sync record; each insertion
+        // creates a leaf, a branch and at most 256 ancestor versions.
+        const LIMIT: usize = (crate::event_batch::MAX_TIMELINE + 1) * 258;
+        if !self.nodes.contains_key(&hash) && self.nodes.len() >= LIMIT {
+            return Err(Error::Capacity);
+        }
+        self.nodes.entry(hash.clone()).or_insert(node);
+        Ok(hash)
+    }
+    async fn persist(&self, root: &str) -> Result<(), Error> {
+        let mut stack = vec![(root.to_owned(), false)];
+        let mut seen = std::collections::BTreeSet::new();
+        while let Some((hash, expanded)) = stack.pop() {
+            let Some(node) = self.nodes.get(&hash) else {
+                continue; // Already-stored subtree, checked on requested paths.
+            };
+            if expanded {
+                if self.sdk.history_write(node.clone()).await? != hash {
+                    return Err(Error::Storage);
+                }
+                continue;
+            }
+            if !seen.insert(hash.clone()) {
+                continue;
+            }
+            stack.push((hash, true));
+            if let Node::Branch { left, right, .. } = node {
+                stack.push((right.clone(), false));
+                stack.push((left.clone(), false));
+            }
+        }
+        Ok(())
+    }
+    async fn lookup(&self, root: Option<&str>, key: &str) -> Result<Option<Record>, Error> {
+        let Some(root) = root else {
+            return Ok(None);
+        };
+        let mut current = root.to_owned();
+        let mut path = Vec::new();
+        loop {
+            match self.node(&current).await? {
+                Node::Leaf {
+                    key: leaf, value, ..
+                } => {
+                    for (bit, right) in &path {
+                        if direction(&leaf, *bit)? != *right {
+                            return Err(Error::Storage);
+                        }
+                    }
+                    return Ok((leaf == key).then_some(*value));
+                }
+                Node::Branch {
+                    bit, left, right, ..
+                } => {
+                    if path.last().is_some_and(|(previous, _)| *previous >= bit)
+                        || path.len() >= 256
+                    {
+                        return Err(Error::Storage);
+                    }
+                    let goes_right = direction(key, bit)?;
+                    path.push((bit, goes_right));
+                    current = if goes_right { right } else { left };
+                }
+            }
+        }
+    }
+    async fn insert(&mut self, root: Option<&str>, value: Record) -> Result<String, Error> {
+        value.validate()?;
+        let key = value.key()?;
+        if let Some(existing) = self.lookup(root, &key).await? {
+            // The earliest terminal source is immutable, including after trust
+            // or presentation changes. Exact sync receipts cannot be rewritten.
+            if matches!(
+                (&existing, &value),
+                (Record::Source { .. }, Record::Source { .. })
+            ) || digest(&existing)? == digest(&value)?
+            {
+                return Ok(root.ok_or(Error::Storage)?.to_owned());
+            }
+            return Err(Error::Conflict);
+        }
+        let leaf = self.stage(Node::Leaf {
+            identity: self.sdk.identity.clone(),
+            key: key.clone(),
+            value: Box::new(value),
+        })?;
+        let Some(root) = root else {
+            return Ok(leaf);
+        };
+        // Find the differing bit, then insert above the first deeper branch.
+        let mut current = root.to_owned();
+        let mut previous = None;
+        let other = loop {
+            match self.node(&current).await? {
+                Node::Leaf { key, .. } => break key,
+                Node::Branch {
+                    bit, left, right, ..
+                } => {
+                    if previous.is_some_and(|value| value >= bit) {
+                        return Err(Error::Storage);
+                    }
+                    previous = Some(bit);
+                    current = if direction(&key, bit)? { right } else { left };
+                }
+            }
+        };
+        let mut differing = None;
+        for bit in 0..256 {
+            if direction(&key, bit)? != direction(&other, bit)? {
+                differing = Some(bit);
+                break;
+            }
+        }
+        let bit = differing.ok_or(Error::Storage)?;
+        current = root.to_owned();
+        let mut ancestors = Vec::new();
+        let mut previous = None;
+        loop {
+            let node = self.node(&current).await?;
+            match &node {
+                Node::Branch {
+                    bit: existing,
+                    left,
+                    right,
+                    ..
+                } if *existing < bit => {
+                    if previous.is_some_and(|value| value >= *existing) || ancestors.len() >= 256 {
+                        return Err(Error::Storage);
+                    }
+                    previous = Some(*existing);
+                    let goes_right = direction(&key, *existing)?;
+                    current = if goes_right {
+                        right.clone()
+                    } else {
+                        left.clone()
+                    };
+                    ancestors.push((node, goes_right));
+                }
+                _ => break,
+            }
+        }
+        let (left, right) = if direction(&key, bit)? {
+            (current, leaf)
+        } else {
+            (leaf, current)
+        };
+        let mut updated = self.stage(Node::Branch {
+            identity: self.sdk.identity.clone(),
+            bit,
+            left,
+            right,
+        })?;
+        for (node, goes_right) in ancestors.into_iter().rev() {
+            let Node::Branch {
+                identity,
+                bit,
+                mut left,
+                mut right,
+            } = node
+            else {
+                return Err(Error::Storage);
+            };
+            if goes_right {
+                right = updated;
+            } else {
+                left = updated;
+            }
+            updated = self.stage(Node::Branch {
+                identity,
+                bit,
+                left,
+                right,
+            })?;
+        }
+        Ok(updated)
+    }
+}
+
 impl Sdk {
     pub(super) async fn settled_outgoing_receipt(
         &self,
@@ -448,153 +737,13 @@ impl Sdk {
         Ok(hash)
     }
     async fn history_lookup(&self, root: Option<&str>, key: &str) -> Result<Option<Record>, Error> {
-        let Some(root) = root else {
-            return Ok(None);
-        };
-        let mut current = root.to_owned();
-        let mut path = Vec::new();
-        loop {
-            match self.history_node(&current).await? {
-                Node::Leaf {
-                    key: leaf, value, ..
-                } => {
-                    for (bit, right) in &path {
-                        if direction(&leaf, *bit)? != *right {
-                            return Err(Error::Storage);
-                        }
-                    }
-                    return Ok((leaf == key).then_some(*value));
-                }
-                Node::Branch {
-                    bit, left, right, ..
-                } => {
-                    if path.last().is_some_and(|(previous, _)| *previous >= bit)
-                        || path.len() >= 256
-                    {
-                        return Err(Error::Storage);
-                    }
-                    let goes_right = direction(key, bit)?;
-                    path.push((bit, goes_right));
-                    current = if goes_right { right } else { left };
-                }
-            }
-        }
+        HistoryBatch::new(self).lookup(root, key).await
     }
     async fn history_insert(&self, root: Option<&str>, value: Record) -> Result<String, Error> {
-        value.validate()?;
-        let key = value.key()?;
-        if let Some(existing) = self.history_lookup(root, &key).await? {
-            // The earliest terminal source is immutable, including after trust
-            // or presentation changes. Exact sync receipts cannot be rewritten.
-            if matches!(
-                (&existing, &value),
-                (Record::Source { .. }, Record::Source { .. })
-            ) || digest(&existing)? == digest(&value)?
-            {
-                return Ok(root.ok_or(Error::Storage)?.to_owned());
-            }
-            return Err(Error::Conflict);
-        }
-        let leaf = self
-            .history_write(Node::Leaf {
-                identity: self.identity.clone(),
-                key: key.clone(),
-                value: Box::new(value),
-            })
-            .await?;
-        let Some(root) = root else {
-            return Ok(leaf);
-        };
-        // Find the differing bit, then insert above the first deeper branch.
-        let mut current = root.to_owned();
-        let mut previous = None;
-        let other = loop {
-            match self.history_node(&current).await? {
-                Node::Leaf { key, .. } => break key,
-                Node::Branch {
-                    bit, left, right, ..
-                } => {
-                    if previous.is_some_and(|value| value >= bit) {
-                        return Err(Error::Storage);
-                    }
-                    previous = Some(bit);
-                    current = if direction(&key, bit)? { right } else { left };
-                }
-            }
-        };
-        let mut differing = None;
-        for bit in 0..256 {
-            if direction(&key, bit)? != direction(&other, bit)? {
-                differing = Some(bit);
-                break;
-            }
-        }
-        let bit = differing.ok_or(Error::Storage)?;
-        current = root.to_owned();
-        let mut ancestors = Vec::new();
-        let mut previous = None;
-        loop {
-            let node = self.history_node(&current).await?;
-            match &node {
-                Node::Branch {
-                    bit: existing,
-                    left,
-                    right,
-                    ..
-                } if *existing < bit => {
-                    if previous.is_some_and(|value| value >= *existing) || ancestors.len() >= 256 {
-                        return Err(Error::Storage);
-                    }
-                    previous = Some(*existing);
-                    let goes_right = direction(&key, *existing)?;
-                    current = if goes_right {
-                        right.clone()
-                    } else {
-                        left.clone()
-                    };
-                    ancestors.push((node, goes_right));
-                }
-                _ => break,
-            }
-        }
-        let (left, right) = if direction(&key, bit)? {
-            (current, leaf)
-        } else {
-            (leaf, current)
-        };
-        let mut updated = self
-            .history_write(Node::Branch {
-                identity: self.identity.clone(),
-                bit,
-                left,
-                right,
-            })
-            .await?;
-        for (node, goes_right) in ancestors.into_iter().rev() {
-            let Node::Branch {
-                identity,
-                bit,
-                mut left,
-                mut right,
-            } = node
-            else {
-                return Err(Error::Storage);
-            };
-            if goes_right {
-                right = updated;
-            } else {
-                left = updated;
-            }
-            updated = self
-                .history_write(Node::Branch {
-                    identity,
-                    bit,
-                    left,
-                    right,
-                })
-                .await?;
-        }
-        Ok(updated)
+        let mut batch = HistoryBatch::new(self);
+        let root = batch.insert(root, value).await?;
+        batch.persist(&root).await?;
+        Ok(root)
     }
     pub(super) async fn archived_sync(&self, token: &str, response: &str) -> Result<bool, Error> {
         match self
@@ -651,6 +800,7 @@ impl Sdk {
             .position(|receipt| receipt.token == token && receipt.digest == response);
         let receipt = index.map(|index| self.journal.intake_receipts[index].clone());
         let mut root = self.journal.sync_history.clone();
+        let mut batch = HistoryBatch::new(self);
         if let Some(receipt) = &receipt {
             for disposition in receipt
                 .dispositions
@@ -659,31 +809,33 @@ impl Sdk {
                 .filter(|value| value.terminal())
             {
                 root = Some(
-                    self.history_insert(
-                        root.as_deref(),
-                        Record::Source {
-                            disposition: disposition.clone(),
-                        },
-                    )
-                    .await?,
+                    batch
+                        .insert(
+                            root.as_deref(),
+                            Record::Source {
+                                disposition: disposition.clone(),
+                            },
+                        )
+                        .await?,
                 );
             }
         }
         root = Some(
-            self.history_insert(
-                root.as_deref(),
-                Record::Sync {
-                    token,
-                    digest: response,
-                    receipt,
-                },
-            )
-            .await?,
+            batch
+                .insert(
+                    root.as_deref(),
+                    Record::Sync {
+                        token,
+                        digest: response,
+                        receipt,
+                    },
+                )
+                .await?,
         );
-        let previous = self
-            .journal
-            .sync_history
-            .replace(root.ok_or(Error::Storage)?);
+        let root = root.ok_or(Error::Storage)?;
+        batch.persist(&root).await?;
+        drop(batch);
+        let previous = self.journal.sync_history.replace(root);
         let old = self.journal.receipts.remove(0);
         let old_intake = index.map(|index| (index, self.journal.intake_receipts.remove(index)));
         if self.persist().await.is_err() {

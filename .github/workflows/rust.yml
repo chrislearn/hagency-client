@@ -66,10 +66,10 @@ jobs:
     # coding agent runs on Windows). The lane keeps running for its diagnostics,
     # but its verdict no longer blocks the run; Ubuntu and macOS are the gate.
     continue-on-error: ${{ matrix.os == 'windows-2025' }}
-    # Hosted Windows at c96f76c: clippy 2 min, spec-binding inventory 7 min,
-    # full tests 17 min (720 passed), then the release build ran past the old
-    # 40-minute limit. Budget the whole job; no test deadline changes.
-    timeout-minutes: 60
+    # At 082edde2 Windows spent ~14 min in build/inventory and ~42 min in
+    # the original full suite, before release compilation. Budget the whole
+    # Windows job; SDK/test deadlines and fatal test verdicts stay unchanged.
+    timeout-minutes: ${{ matrix.os == 'windows-2025' && 90 || 60 }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.98.0
@@ -138,7 +138,9 @@ jobs:
         # try_wait state when tools/list fails. Diagnostic only, never a retry.
         run: cargo test --locked -p hagency --test mcp_coordination --no-fail-fast -- --test-threads=8 --nocapture
       - name: Qualify Linux cgroup recovery on a disposable hosted VM
-        if: runner.os == 'Linux'
+        # Independently qualify the host even if an unrelated engine test fails.
+        # The original failed step remains fatal, as with Windows media custody.
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
         shell: bash
         run: |
           python3 -B tools/native/test-qualify-linux-cgroup.py

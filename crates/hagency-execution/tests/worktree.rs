@@ -39,6 +39,14 @@ fn git(repo: &Path, args: &[&str]) -> String {
     String::from_utf8_lossy(&out.stdout).trim().to_string()
 }
 
+fn bootstrap(mode: &str) -> Vec<String> {
+    vec![
+        env!("CARGO_BIN_EXE_hagency-execution-probe").into(),
+        "worktree-bootstrap".into(),
+        mode.into(),
+    ]
+}
+
 /// A throwaway git repo with one committed file. Returns (root, repo, worktrees).
 fn repo(label: &str) -> (tempfile::TempDir, PathBuf, PathBuf) {
     let root = tempfile::tempdir().unwrap();
@@ -77,6 +85,11 @@ fn two_concurrent_threads_get_distinct_worktrees() {
         .ensure(spec(&repo, &worktrees, "agent", "$thread-b"))
         .unwrap();
     assert_ne!(a.path, b.path);
+    for path in [&a.path, &b.path] {
+        let directory =
+            cap_std::fs::Dir::open_ambient_dir(path, cap_std::ambient_authority()).unwrap();
+        hagency_store::private::check_handle(&directory.into_std_file()).unwrap();
+    }
     assert_ne!(a.branch, b.branch);
     let again = manager
         .ensure(spec(&repo, &worktrees, "agent", "$thread-a"))
@@ -92,20 +105,12 @@ fn failed_bootstrap_stays_fail_closed_until_success() {
     let (_root, repo, worktrees) = repo("bootstrap");
     let manager = WorktreeManager::new();
     let mut failing = spec(&repo, &worktrees, "agent", "$bootstrap");
-    failing.bootstrap = Some(vec![
-        std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into()),
-        "-c".into(),
-        "exit 17".into(),
-    ]);
+    failing.bootstrap = Some(bootstrap("fail"));
     assert!(manager.ensure(failing.clone()).is_err());
     assert!(manager.ensure(failing.clone()).is_err());
 
     let mut ok = failing;
-    ok.bootstrap = Some(vec![
-        std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into()),
-        "-c".into(),
-        "exit 0".into(),
-    ]);
+    ok.bootstrap = Some(bootstrap("success"));
     assert!(!manager.ensure(ok.clone()).unwrap().created);
     assert!(!manager.ensure(ok).unwrap().created);
 }
@@ -118,19 +123,11 @@ fn changed_bootstrap_cannot_bypass_dirty_quarantine() {
     let (_root, repo, worktrees) = repo("dirty-bootstrap");
     let manager = WorktreeManager::new();
     let mut dirty = spec(&repo, &worktrees, "agent", "$dirty-bootstrap");
-    dirty.bootstrap = Some(vec![
-        std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into()),
-        "-c".into(),
-        "echo partial > partial; exit 17".into(),
-    ]);
+    dirty.bootstrap = Some(bootstrap("dirty-fail"));
     assert!(manager.ensure(dirty).is_err());
 
     let mut clean = spec(&repo, &worktrees, "agent", "$dirty-bootstrap");
-    clean.bootstrap = Some(vec![
-        std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into()),
-        "-c".into(),
-        "exit 0".into(),
-    ]);
+    clean.bootstrap = Some(bootstrap("success"));
     let err = manager.ensure(clean).unwrap_err().0;
     assert!(
         err.contains("dirty workspace; operator repair is required"),
@@ -148,12 +145,7 @@ fn bootstrap_does_not_inherit_backend_credentials() {
     // credential-like var and prove it is NOT in INHERITED_BOOTSTRAP_ENV_KEYS
     // and never reaches the bootstrap.
     let mut spec = spec(&repo, &worktrees, "agent", "$bootstrap-env");
-    spec.bootstrap = Some(vec![
-        std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into()),
-        "-c".into(),
-        // Probe writes `leaked`/`clean` into a file the worktree can read back.
-        "[ -z \"${API_TOKEN:-}\" ] && printf clean > bootstrap-env || printf leaked > bootstrap-env".into(),
-    ]);
+    spec.bootstrap = Some(bootstrap("environment"));
     let info = manager.ensure(spec).unwrap();
     assert_eq!(
         fs::read_to_string(info.path.join("bootstrap-env")).unwrap(),
@@ -169,11 +161,7 @@ fn recreated_worktree_reruns_bootstrap() {
     let (_root, repo, worktrees) = repo("recreate");
     let manager = WorktreeManager::new();
     let mut spec = spec(&repo, &worktrees, "agent", "$recreate");
-    spec.bootstrap = Some(vec![
-        std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into()),
-        "-c".into(),
-        "printf ready > bootstrap-output".into(),
-    ]);
+    spec.bootstrap = Some(bootstrap("output"));
     let first = manager.ensure(spec.clone()).unwrap();
     assert!(first.path.join("bootstrap-output").exists());
     manager.remove(spec.clone(), true).unwrap();
@@ -228,11 +216,7 @@ async fn async_preparation_does_not_block_the_event_loop() {
     let (_root, repo, worktrees) = repo("async");
     let manager = WorktreeManager::new();
     let mut spec = spec(&repo, &worktrees, "agent", "$async");
-    spec.bootstrap = Some(vec![
-        std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into()),
-        "-c".into(),
-        "sleep 1".into(),
-    ]);
+    spec.bootstrap = Some(bootstrap("sleep"));
     let preparation = manager.ensure_async(spec);
     let start = Instant::now();
     // A timer must fire while the bootstrap still sleeps: the preparation is on

@@ -22,6 +22,7 @@ env:
   CARGO_INCREMENTAL: 0
   RUST_BACKTRACE: 1
   HAGENCY_UPDATER_PUBLIC_KEY: ${{ vars.HAGENCY_UPDATER_PUBLIC_KEY }}
+  HAGENCY_SPARKLE_PUBLIC_KEY: ${{ vars.HAGENCY_SPARKLE_PUBLIC_KEY }}
 
 jobs:
   package:
@@ -103,14 +104,32 @@ jobs:
           data = plistlib.loads(p.read_bytes())
           data.update(CFBundleIdentifier='org.hagency.desktop', CFBundleName='Hagency',
                       CFBundleDisplayName='Hagency', CFBundleShortVersionString=version,
-                      CFBundleVersion=os.environ['GITHUB_RUN_NUMBER'])
+                      CFBundleVersion=version.split('-', 1)[0])
           p.write_bytes(plistlib.dumps(data))
+          with open(os.environ['GITHUB_ENV'], 'a') as env:
+              print('STABLE_RELEASE=' + ('false' if '-' in version else 'true'), file=env)
           PY
           python3 - <<'PY'
           import json, os, pathlib, subprocess
           metadata = json.loads(subprocess.check_output(['cargo', 'metadata', '--no-deps', '--locked', '--format-version', '1']))
           assert pathlib.Path(metadata['target_directory']).resolve() == pathlib.Path(os.environ['CARGO_TARGET_DIR']).resolve()
           PY
+      - name: Require signed macOS automatic updates for stable publication
+        if: runner.os == 'macOS' && env.STABLE_RELEASE == 'true' && (startsWith(github.ref, 'refs/tags/') || inputs.publish || vars.HAGENCY_SPARKLE_PUBLIC_KEY != '')
+        env:
+          SIGNED_RELEASE: ${{ vars.MACOS_SIGNED_RELEASE }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.HAGENCY_SPARKLE_PRIVATE_KEY }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          test "$SIGNED_RELEASE" = true || { echo 'Stable publication requires MACOS_SIGNED_RELEASE=true'; exit 1; }
+          for key in HAGENCY_SPARKLE_PUBLIC_KEY SPARKLE_PRIVATE_KEY APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            test -n "${!key}" || { echo "Missing required signing configuration: $key"; exit 1; }
+          done
       - name: Linux dependencies
         if: runner.os == 'Linux'
         run: |
@@ -120,7 +139,14 @@ jobs:
             libxkbcommon-dev libdrm-dev libegl1 libva2 libva-drm2 libfuse2 patchelf
       - name: macOS dependencies
         if: runner.os == 'macOS'
-        run: brew install cmake
+        run: |
+          brew install cmake openssl@3
+          echo "HAGENCY_OPENSSL=$(brew --prefix openssl@3)/bin/openssl" >> "$GITHUB_ENV"
+      - name: Fetch the verified pinned Sparkle SDK
+        if: runner.os == 'macOS' && env.STABLE_RELEASE == 'true' && vars.MACOS_SIGNED_RELEASE == 'true' && vars.HAGENCY_SPARKLE_PUBLIC_KEY != ''
+        run: |
+          python3 tools/sparkle-prototype.py sdk --destination "$RUNNER_TEMP/sparkle-sdk"
+          echo "HAGENCY_SPARKLE_SDK=$RUNNER_TEMP/sparkle-sdk" >> "$GITHUB_ENV"
       - name: Windows installer tools
         if: runner.os == 'Windows'
         run: choco install nsis --no-progress -y
@@ -149,7 +175,9 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: bash packaging/build-macos-dmg.sh
+        run: |
+          if [[ "$STABLE_RELEASE" == true && -n "$HAGENCY_SPARKLE_PUBLIC_KEY" ]]; then export HAGENCY_MACOS_SPARKLE=1; fi
+          bash packaging/build-macos-dmg.sh
       - name: Package installers
         if: runner.os != 'macOS' || vars.MACOS_SIGNED_RELEASE != 'true'
         env:
@@ -173,6 +201,15 @@ jobs:
         run: |
           version=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')
           if [[ "$version" != *-* ]]; then python3 tools/sign-windows-update.py; fi
+      - name: Inspect and Sparkle-sign final notarized macOS DMG
+        if: runner.os == 'macOS' && env.STABLE_RELEASE == 'true' && vars.MACOS_SIGNED_RELEASE == 'true' && vars.HAGENCY_SPARKLE_PUBLIC_KEY != ''
+        env:
+          ARCH: ${{ matrix.arch }}
+          HAGENCY_SPARKLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          HAGENCY_SPARKLE_PRIVATE_KEY: ${{ secrets.HAGENCY_SPARKLE_PRIVATE_KEY }}
+        run: |
+          version=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')
+          python3 tools/macos-update.py sign --version "$version" --arch "$ARCH"
       - uses: actions/upload-artifact@v7
         with:
           name: installers-${{ matrix.platform }}-${{ matrix.arch }}
@@ -207,6 +244,7 @@ jobs:
           MACOS_SIGNED: ${{ vars.MACOS_SIGNED_RELEASE }}
           SOURCE_SHA: ${{ github.sha }}
           REPOSITORY: ${{ github.repository }}
+          HAGENCY_SPARKLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
           cd release-assets
@@ -218,6 +256,7 @@ jobs:
             test -s windows-update.json
             test -s windows-update.json.sig
             test -s hagency-windows-amd64.exe.sig
+            python3 ../crates/hagency-app/tools/macos-update.py verify --root . --version "$version"
           fi
           {
             # shellcheck disable=SC2016
@@ -239,6 +278,7 @@ jobs:
           TAG: ${{ steps.tag.outputs.tag }}
           IS_TAG: ${{ startsWith(github.ref, 'refs/tags/') }}
           SOURCE_SHA: ${{ github.sha }}
+          HAGENCY_SPARKLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
           if [[ "$IS_TAG" != true ]]; then
@@ -258,8 +298,32 @@ jobs:
             if [[ "$TAG" == *-* ]]; then args+=(--prerelease); fi
             gh release create "$TAG" release-assets/* "${args[@]}"
           fi
+          # Read back the uploaded draft before changing its visibility/latest.
+          verify_dir=$(mktemp -d)
+          gh release download "$TAG" --dir "$verify_dir"
+          python3 - "$verify_dir" <<'PY'
+          import hashlib, pathlib, sys
+          expected = pathlib.Path('release-assets')
+          actual = pathlib.Path(sys.argv[1])
+          assert {p.name for p in actual.iterdir()} == {p.name for p in expected.iterdir()}, 'Draft assets differ'
+          def digest(path):
+              value = hashlib.sha256()
+              with path.open('rb') as source:
+                  for chunk in iter(lambda: source.read(1024 * 1024), b''): value.update(chunk)
+              return value.digest()
+          for source in expected.iterdir():
+              assert digest(source) == digest(actual / source.name), 'Draft upload digest mismatch: ' + source.name
+          PY
+          rm -rf "$verify_dir"
           if [[ "$TAG" == *-* ]]; then
             gh release edit "$TAG" --draft=false
           else
             gh release edit "$TAG" --draft=false --latest
+            version="${TAG#v}"
+            for attempt in 1 2 3; do
+              if python3 crates/hagency-app/tools/macos-update.py verify-remote --root release-assets --version "$version"; then exit 0; fi
+              sleep 10
+            done
+            echo 'Public latest feed/DMG qualification failed' >&2
+            exit 1
           fi

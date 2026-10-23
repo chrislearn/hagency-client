@@ -42,6 +42,14 @@ set_str() {
     echo "  ok  set  $name"
 }
 
+# Non-secret release configuration. Keep private keys in the secret helpers.
+set_var() {
+    local name="$1" value="${2:-}"
+    if [[ -z "$value" ]]; then echo "  -  skip variable $name (blank)"; return; fi
+    gh variable set "$name" -R "$REPO" --body "$value"
+    echo "  ok  set variable $name"
+}
+
 # Secret from a file's exact contents (preserves newlines, e.g. the .p8 key).
 set_file() {
     local name="$1" file="${2:-}"
@@ -76,6 +84,12 @@ set_str      APPLE_CERTIFICATE_PASSWORD "${APPLE_CERTIFICATE_PASSWORD:-}"
 set_str      APPLE_ID                   "${APPLE_ID:-}"
 set_str      APPLE_PASSWORD             "${APPLE_PASSWORD:-}"
 set_str      APPLE_TEAM_ID              "${APPLE_TEAM_ID:-}"
+set_var      APPLE_SIGNING_IDENTITY     "${APPLE_SIGNING_IDENTITY:-}"
+set_var      MACOS_SIGNED_RELEASE       "${MACOS_SIGNED_RELEASE:-}"
+
+echo "-- Independent Sparkle signing --"
+set_file HAGENCY_SPARKLE_PRIVATE_KEY "${HAGENCY_SPARKLE_PRIVATE_KEY_FILE:-}"
+set_var HAGENCY_SPARKLE_PUBLIC_KEY  "${HAGENCY_SPARKLE_PUBLIC_KEY:-}"
 
 echo "-- iOS (optional) --"
 set_file     APP_STORE_CONNECT_API_KEY_CONTENT "${APP_STORE_CONNECT_API_KEY_FILE:-}"

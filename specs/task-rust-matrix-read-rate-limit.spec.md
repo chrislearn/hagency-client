@@ -27,6 +27,8 @@ new dial repeats nothing. GETs reuse connections so far fewer dials are needed.
   original absolute request deadline, with cancellable waits and existing response/body
   bounds. A connect-phase
   wait starts at100ms and doubles; one that cannot fit the deadline is not started.
+  Recheck cancellation and the original deadline before every dial, including
+  after a delayed wake. An elapsed backoff never grants a fresh attempt interval.
   Never retry any other failed or unknown transport, including a lost response.
 - JSON GETs may reuse keep-alive connections of their own client, idle at most10s.
   Every POST/PUT/upload/download dials a fresh connection and closes it, so a stale
@@ -79,10 +81,13 @@ Scenario: A GET whose connection never existed is redialled and sent once
 
 Scenario: Connect-phase redials share the budget and never grant a fresh deadline
   Test: native_matrix_get_connect_retry_bounds
-  Given a port that never accepts, a deadline too short for the next wait, or cancellation
-  When a GET runs
+  Level: unit
+  Test Double: counted pre-connection failures under the controlled Tokio clock; other scenarios retain actual TCP and TLS peers
+  Given known connect-phase refusals, an original deadline too short for the next wait, or cancellation
+  When the same retry policy used by JSON requests runs
   Then four dials and three growing waits end in the original Transport failure
   And a wait that cannot fit is not started and a wait in progress is cancellable
+  And a late wake or expired request cannot start another dial, cancellation keeps its precedence, and an unknown transport outcome is never repeated
 
 Scenario: A write whose dial is refused is redialled and sent exactly once
   Test: native_matrix_write_connect_failure_is_redialled_and_sent_once

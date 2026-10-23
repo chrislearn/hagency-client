@@ -41,6 +41,7 @@ top-level target. Do not suppress permission/sync errors or widen copy limits.
 ## Scenarios
 
 Scenario: Sync uses the original private directory even after namespace replacement
+  Test-Platforms: [linux, macos]
   Test: native_private_retained_directory_sync
   Given a retained private directory and a different replacement at its old name
   When synchronization runs using that retained object

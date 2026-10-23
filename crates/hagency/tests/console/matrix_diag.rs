@@ -33,14 +33,6 @@ fn mock_homeserver(responses: Vec<String>) -> std::net::SocketAddr {
     addr
 }
 
-/// A port with no listener (connect refusal), for the connect-failure arm.
-fn closed_port() -> std::net::SocketAddr {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let addr = listener.local_addr().unwrap();
-    drop(listener);
-    addr
-}
-
 /// TS `probeHomeserver` (lib/matrix-candidates.js:115): a 200 with a
 /// `versions` array is the ONLY thing counted reachable, and the answer
 /// carries the last three versions.
@@ -93,16 +85,17 @@ async fn native_matrix_probe_401() {
     f.close().await;
 }
 
-/// TS probe: a connection failure is a reachable:false with the connect
-/// reason (the route still answers 200 — the probe verdict is the payload).
+/// A TLS connection failure reports reachable:false with the connect reason.
+/// A plain HTTP listener answers the real TLS handshake immediately. A closed
+/// port instead depends on OS SYN retries and can hit the timeout arm on Windows.
 #[tokio::test]
 async fn native_matrix_probe_connect_failure() {
     let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
     let service = f.service();
     let cookie = session(&service).await;
-    let addr = closed_port();
+    let addr = mock_homeserver(vec![http_response("200 OK", "{}")]);
     let mut response = post("/console/api/matrix/probe", &cookie)
-        .json(&json!({ "url": format!("http://{addr}") }))
+        .json(&json!({ "url": format!("https://{addr}") }))
         .send(&service)
         .await;
     assert_eq!(response.status_code, Some(StatusCode::OK));

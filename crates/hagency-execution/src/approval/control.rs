@@ -23,7 +23,8 @@ use tokio::time::Instant;
 /// `Error::HostClosed` (the host's own action) are never "peer gone" and
 /// stay on the non-`PeerUnavailable` arms regardless of offset. The
 /// `zero_accepted` input must be **observed** — a snapshot that reports
-/// `accepted_bytes == 0` — never defaulted from an absent snapshot
+/// `accepted_bytes == 0` and no outstanding native submission — never
+/// defaulted from an absent snapshot
 /// (absence means no writer was installed or the transport was already torn
 /// down: "we do not know", not "we know nothing left").
 fn send_failure(
@@ -49,7 +50,7 @@ fn send_failure(
 /// H3 totality: every observer of a dead transport routes through the same
 /// classifier, with the same evidence rule. The `zero_accepted` fact is
 /// read from the runner's termination snapshot here — an OBSERVED
-/// `accepted_bytes == 0` (the frame never left), never a default from an
+/// `accepted_bytes == 0` without a pending submission, never a default from an
 /// absent snapshot. The `armed` fact (Q3) comes from the coordinator's
 /// entry state — a frame is armed when an entry holds its prepared frame or
 /// is in flight — NEVER from the absence of a write observation: a
@@ -79,7 +80,7 @@ pub(super) fn send_failure_with_termination(
     let zero_accepted = runner
         .transport_termination()
         .and_then(|termination| termination.unconfirmed_write.as_ref())
-        .is_some_and(|write| write.accepted_bytes == 0);
+        .is_some_and(|write| write.is_definitely_untransmitted());
     send_failure(error, zero_accepted, armed)
 }
 

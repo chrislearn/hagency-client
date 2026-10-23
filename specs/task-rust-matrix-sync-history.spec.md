@@ -58,6 +58,13 @@ Scenario: Historical terminal sources cannot gain authority
   When a source repeats with changed trust, targets or immutable content
   Then the earliest terminal decision still refuses admission
 
+Scenario: One rollover publishes only its final reachable immutable nodes
+  Test: native_matrix_sync_history_batch_reachable_acknowledgements
+  Given a bounded batch of authenticated history records and a corrupt candidate node
+  When the batch persists through the original encrypted SDK store and reopens
+  Then all final reachable nodes have actual write acknowledgements before root publication
+  And unpublished intermediate versions are absent while an invalid candidate leaves prior history authoritative
+
 Scenario: Corruption and storage loss never silently remove replay coverage
   Test: native_matrix_sync_history_corruption
   Given an archived proof path or interrupted archive-root commit

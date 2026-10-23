@@ -53,6 +53,10 @@ async fn native_console_resource_authority() {
             .status_code,
         Some(StatusCode::BAD_REQUEST)
     );
+    // Prepare password/KDF work before holding the writer's bounded SQL call.
+    // Logout below still proves independent session authority while that
+    // actual publication is pending and its own session is busy.
+    let unrelated = session(&service).await;
     let lock = rusqlite::Connection::open(f.root.path().join("state/domain.sqlite3")).unwrap();
     lock.execute_batch("BEGIN IMMEDIATE").unwrap();
     let mut operation = Box::pin(command(&path, &manager).json(&body).send(&service));
@@ -69,7 +73,6 @@ async fn native_console_resource_authority() {
         "console_busy"
     );
     // Unrelated session authority still succeeds without waiting on SQLite.
-    let unrelated = session(&service).await;
     assert_eq!(
         logout(&unrelated).send(&service).await.status_code,
         Some(StatusCode::OK)

@@ -56,7 +56,7 @@ impl OwnedSession {
                     }
                 }
             })?;
-        let session = (|| {
+        let session: io::Result<Session> = (|| {
             // These consume checked FIFO descriptors and make only the host
             // endpoint nonblocking. Work keeps ordinary blocking stdio. No
             // spawn_blocking wrappers or uncancellable pipe-reader tasks exist.
@@ -71,9 +71,14 @@ impl OwnedSession {
             };
             #[cfg(windows)]
             let (stdin, stdout, stderr) = pipes.into_async_parts()?;
-            Session::new(stdout, stdin, stderr, settings, limits, response_timeout_ms).map_err(
-                |_| io::Error::new(io::ErrorKind::InvalidInput, "invalid runner session limits"),
-            )
+            let session =
+                Session::new(stdout, stdin, stderr, settings, limits, response_timeout_ms)
+                    .map_err(|_| {
+                        io::Error::new(io::ErrorKind::InvalidInput, "invalid runner session limits")
+                    })?;
+            #[cfg(windows)]
+            let session = session.with_write_submission_observer(Sender::write_submission_pending);
+            Ok(session)
         })();
         match session {
             Ok(session) => {

@@ -104,6 +104,20 @@ pub(super) fn timeout_read(duration: Duration) -> io::Result<String> {
         .map_err(|_| io::ErrorKind::TimedOut.into())
 }
 pub(super) fn run(mode: &str, reader: &mut impl BufRead, marker: &Path) -> io::Result<bool> {
+    let result = run_inner(mode, reader, marker);
+    if let Err(error) = &result
+        && marker.with_extension("approval-diagnostics").is_file()
+        && let Err(diagnostic) = fs::write(
+            marker.with_extension("approval-probe-error"),
+            format!("kind={:?} os={:?}", error.kind(), error.raw_os_error()),
+        )
+    {
+        eprintln!("approval diagnostic write failed: {:?}", diagnostic.kind());
+    }
+    result
+}
+
+fn run_inner(mode: &str, reader: &mut impl BufRead, marker: &Path) -> io::Result<bool> {
     if mode == "owned-approval-mcp" {
         return mcp(reader, marker, false);
     }
@@ -228,11 +242,15 @@ pub(super) fn run(mode: &str, reader: &mut impl BufRead, marker: &Path) -> io::R
         // write is accepted and recorded before the turn end arrives: the
         // clean control arm, asserted as such by the scenario.
         std::thread::sleep(Duration::from_millis(1200));
+        // The terminal note authorizes the host to stop this process. Publish
+        // the fixture handshake first: cleanup can otherwise kill us between
+        // the stdout flush and the marker write. The test still requires the
+        // actual report to prove transmission uncertainty after the note.
+        announce(marker, "approval-midwrite-exit")?;
         note(
             "turn/completed",
             json!({ "threadId": "owned-thread", "turn": { "id": "owned-turn", "status": "completed", "items": [] } }),
         )?;
-        announce(marker, "approval-midwrite-exit")?;
         return Ok(false);
     }
     if mode == "owned-approval-gate-resolve" {
@@ -326,7 +344,19 @@ pub(super) fn run(mode: &str, reader: &mut impl BufRead, marker: &Path) -> io::R
         if mode == "owned-approval-barriers" && index == 0 {
             callback("approval-3")?;
         }
+        if mode == "owned-approval-barriers" {
+            // A peer can consume overlapped pipe bytes before the host sees
+            // their write completion. This positive barrier fixture resolves
+            // only after the test observes the original accepted store row.
+            await_release(marker, &format!("approval-accepted-{}", index + 1))?;
+        }
+        if mode == "owned-approval-receipt-order" {
+            await_release(marker, "receipt-resolution-release")?;
+        }
         resolved(id)?;
+        if mode == "owned-approval-receipt-order" {
+            announce(marker, "receipt-resolution-emitted")?;
+        }
         if mode == "owned-approval-reuse" && index == 0 {
             callback("approval-2")?;
         }

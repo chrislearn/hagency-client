@@ -60,12 +60,14 @@ Scenario: Positive liveness is observed through the actual retained owner
   Then positives come from that same live owner, stopped cannot be positive, and unrelated execution survives
 
 Scenario: Guardian liveness replies cannot be replayed as fresh proof
+  Test-Platforms: [linux, macos]
   Test: native_guardian_observation_protocol
   Given an actual private guardian channel and retained live Scope
   When sequential observations are followed by a repeated nonce
   Then each positive is exactly correlated and replay causes original protocol-failure cleanup
 
 Scenario: Unknown guardian observation cannot rearm and late proof cannot block cleanup
+  Test-Platforms: [linux, macos]
   Test: native_guardian_observation_unknown
   Level: integration
   Test Double: private Unix socket with a live retained disposable child and scripted missing/late/wrong reply, not physical factory proof

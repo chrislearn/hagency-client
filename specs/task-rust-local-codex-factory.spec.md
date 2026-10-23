@@ -46,6 +46,7 @@ Scenario: Configured local Codex fleet preserves two original agents
   And no managed account or login observation is fabricated
 
 Scenario: Warm local provider custody refuses replacement and mismatched scope
+  Test-Platforms: [linux, macos]
   Test: native_warm_local_codex_custody
   Given the original provider directory handles and a pending provision scope
   When directories change during initialization or idle, or the seat mismatches
@@ -53,6 +54,7 @@ Scenario: Warm local provider custody refuses replacement and mismatched scope
   And original owned cleanup and sticky provision attempt remain in force
 
 Scenario: Active approval duration never extends warm initialization
+  Test-Platforms: [linux, macos]
   Test: native_warm_local_codex_budgets
   Given an owner wait longer than the initialization budget
   When warm initialization succeeds and an active dispatch is admitted

@@ -447,6 +447,18 @@ async fn native_managed_home_reopens_after_a_restart() {
         .await
         .unwrap();
     let work = created.workdir_path().unwrap();
+    for entry in ["CLAUDE.md", "AGENTS.md"] {
+        let link = work.join("docs").join(entry);
+        assert_eq!(
+            std::fs::read_link(&link).unwrap(),
+            std::path::Path::new("..").join(entry)
+        );
+        assert_eq!(
+            std::fs::read(link).unwrap(),
+            std::fs::read(work.join(entry)).unwrap()
+        );
+    }
+
     scope.claim_warm().unwrap();
     domain.complete_original_provision(scope).await.unwrap();
     // A restart: every in-memory owner is gone.

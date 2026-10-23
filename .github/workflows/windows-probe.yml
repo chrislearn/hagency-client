@@ -40,6 +40,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: windows-probe
+          cache-on-failure: true
       - name: Build the selected test targets once
         shell: pwsh
         run: |

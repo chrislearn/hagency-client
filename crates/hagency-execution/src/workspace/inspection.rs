@@ -194,11 +194,25 @@ mod tests {
             drop(socket);
             std::fs::remove_file(path.join("unsupported.socket")).unwrap();
         }
-        std::fs::rename(&path, temp.path().join("original")).unwrap();
-        hagency_store::private::directory(&path).unwrap();
-        assert!(
-            root.inspect_stopped().is_err(),
-            "replacement path is not the retained root"
-        );
+        #[cfg(unix)]
+        {
+            std::fs::rename(&path, temp.path().join("original")).unwrap();
+            hagency_store::private::directory(&path).unwrap();
+            assert!(
+                root.inspect_stopped().is_err(),
+                "replacement path is not the retained root"
+            );
+        }
+        #[cfg(windows)]
+        {
+            let before = root.inspect_stopped().unwrap();
+            let error = std::fs::rename(&path, temp.path().join("original")).unwrap_err();
+            assert_eq!(
+                error.raw_os_error(),
+                Some(32),
+                "retained directory denies deletion"
+            );
+            assert_eq!(root.inspect_stopped().unwrap(), before);
+        }
     }
 }

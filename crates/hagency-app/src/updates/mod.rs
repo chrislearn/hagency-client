@@ -1,7 +1,20 @@
 //! Native update notifications and the Windows installation lifecycle.
 use makepad_widgets::*;
 
-fn prototype_active() -> bool {
+#[cfg(any(
+    target_os = "macos",
+    all(target_os = "linux", not(target_env = "ohos"))
+))]
+fn sparkle_configuration_failed() -> bool {
+    #[cfg(all(target_os = "macos", feature = "macos-sparkle"))]
+    {
+        sparkle::configuration_error().is_some()
+    }
+    #[cfg(not(all(target_os = "macos", feature = "macos-sparkle")))]
+    false
+}
+
+fn sparkle_active() -> bool {
     #[cfg(all(target_os = "macos", feature = "macos-sparkle"))]
     {
         sparkle::active()
@@ -49,6 +62,7 @@ pub enum Phase {
     Verifying,
     Waiting,
     Preparing,
+    Canceling,
     Failed,
 }
 
@@ -65,6 +79,7 @@ pub struct Snapshot {
     pub version: String,
     pub notes: String,
     pub progress: u64,
+    pub can_check: bool,
     pub error: &'static str,
 }
 impl Default for Snapshot {
@@ -79,6 +94,7 @@ impl Default for Snapshot {
             version: String::new(),
             notes: String::new(),
             progress: 0,
+            can_check: true,
             error: "Updates are available in official desktop installers.",
         }
     }
@@ -93,7 +109,7 @@ impl Snapshot {
             Phase::Idle => "Check for a new version of Hagency.",
             Phase::Current => "Hagency is up to date.",
             Phase::Checking => "Checking for updates…",
-            Phase::Available if cfg!(target_os = "macos") && !prototype_active() => {
+            Phase::Available if cfg!(target_os = "macos") && !sparkle_active() => {
                 "A new version is available. Download the DMG and replace Hagency when you are ready."
             }
             Phase::Available if cfg!(target_os = "linux") => {
@@ -107,6 +123,7 @@ impl Snapshot {
                 "Waiting for Agent tasks to finish. Installation will start when Hagency is idle."
             }
             Phase::Preparing => "Saving your work and preparing to restart…",
+            Phase::Canceling => "Canceling update…",
         }
     }
 }
@@ -161,9 +178,27 @@ impl Integration {
             self.initialized = true;
             #[cfg(all(target_os = "macos", feature = "macos-sparkle"))]
             if sparkle::active() && !cfg!(test) && cfg!(feature = "standalone") {
-                self.sparkle =
-                    Some(sparkle::Runtime::start().expect("start isolated Sparkle prototype"));
-                self.timer = cx.start_interval(0.25);
+                match sparkle::Runtime::start() {
+                    Ok(runtime) => {
+                        self.sparkle = Some(runtime);
+                        if self
+                            .sparkle
+                            .as_ref()
+                            .is_some_and(|runtime| runtime.needs_poll())
+                        {
+                            self.timer = cx.start_interval(0.25);
+                        }
+                    }
+                    Err(error) => {
+                        error!("Sparkle initialization failed: {error:#}");
+                        cx.global::<UpdateState>().0.error =
+                            "Could not initialize updates. Please restart Hagency to try again.";
+                    }
+                }
+            }
+            #[cfg(all(target_os = "macos", feature = "macos-sparkle"))]
+            if let Some(error) = sparkle::configuration_error() {
+                cx.global::<UpdateState>().0.error = error;
             }
             #[cfg(debug_assertions)]
             if std::env::var("HAGENCY_PREVIEW_UPDATE").as_deref() == Ok("1")
@@ -197,7 +232,11 @@ impl Integration {
                 target_os = "macos",
                 all(target_os = "linux", not(target_env = "ohos"))
             ))]
-            if !cfg!(test) && cfg!(feature = "standalone") && !self.sparkle_prototype_active() {
+            if !cfg!(test)
+                && cfg!(feature = "standalone")
+                && !sparkle_active()
+                && !sparkle_configuration_failed()
+            {
                 match desktop::Worker::start() {
                     Ok(worker) => {
                         self.desktop_worker = Some(worker);
@@ -223,6 +262,12 @@ impl Integration {
                 || matches!(event, Event::Signal | Event::Actions(_))
             {
                 runtime.poll(cx);
+            }
+            if runtime.needs_poll() && self.timer.is_empty() {
+                self.timer = cx.start_interval(0.25);
+            } else if !runtime.needs_poll() && !self.timer.is_empty() {
+                cx.stop_timer(self.timer);
+                self.timer = Timer::empty();
             }
         }
         #[cfg(any(
@@ -322,7 +367,12 @@ impl Integration {
     }
 
     pub fn sparkle_prototype_active(&self) -> bool {
-        prototype_active()
+        #[cfg(all(target_os = "macos", feature = "macos-sparkle"))]
+        {
+            sparkle::prototype()
+        }
+        #[cfg(not(all(target_os = "macos", feature = "macos-sparkle")))]
+        false
     }
 
     #[cfg(all(target_os = "macos", feature = "macos-sparkle"))]
@@ -407,7 +457,7 @@ pub fn commit_after_shutdown() {
 }
 
 fn download_label() -> &'static str {
-    if prototype_active() {
+    if sparkle_active() {
         "Restart and Install"
     } else if cfg!(target_os = "linux") {
         "Open Download Page"

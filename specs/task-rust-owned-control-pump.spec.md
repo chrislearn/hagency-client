@@ -22,6 +22,7 @@ ordered typed observations without cancelling a read or fabricating activity.
 - Preserve stop-on-drop for every started public session and owned process operation and retain original uncertain write evidence.
 - Keep full typed response write and flush distinct from router authority and native permission application.
 - Keep each retained callback and prepared response bounded and forbid duplicate or foreign response use.
+- An overlapped write submission starts original frame custody even when its completion has not advanced the accepted-byte offset. Keep the exact frame through that completion; report pending submission separately from a positive write receipt and from proven zero transmission.
 
 ### Must Not
 - Do not change the current execution host's thirty-second operation or two-second response policies.
@@ -82,6 +83,24 @@ Scenario: Dropped cooperative operation stops the original owned process
   Given a real guardian-owned offline child and retained session
   When a started cooperative operation is cancelled
   Then the original process owner stops with its existing exact cleanup report
+
+Scenario: A peer resolution cannot abandon an unacknowledged submitted frame
+  Test: native_codex_prepared_submission_retains_original_frame_until_receipt
+  Given the original encoded response was submitted and its peer has replied before write completion
+  When the original completion is acknowledged
+  Then exactly that original frame completes before the queued resolution is delivered with no second submission
+
+Scenario: Cancellation keeps unacknowledged submission uncertain
+  Test: native_codex_prepared_submission_cancel_preserves_unknown_transmission
+  Given a submitted original frame whose peer resolution has been read without a completion acknowledgement
+  When its owning send future is cancelled after that actual read
+  Then original bytes and pending-submission evidence survive with zero acknowledged bytes and no claim of zero transmission or successful write
+
+Scenario: Resolution before any submission retains the original quiet path
+  Test: native_codex_prepared_resolution_before_submission_keeps_quiet_path
+  Given a prepared frame with a resolution already ready before the first submission
+  When the original transport drains that resolution
+  Then no bytes are submitted and no write receipt is invented
 
 ## Out of Scope
 

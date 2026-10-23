@@ -171,9 +171,11 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin, E: AsyncRead + Unpin> Driver<R
                     bytes: writing.bytes.len(),
                 }));
             }
-            if writing.offset != 0 {
+            if writing.offset != 0 || self.write_submission_pending() {
                 // Once any bytes are accepted, finish/flush the same frame or
-                // fail with original accepted-byte evidence. Never retry it.
+                // fail with original accepted-byte evidence. An overlapped
+                // submission can reach the peer before poll_write returns;
+                // keep that exact frame too, without inventing a write ACK.
                 self.step(deadline).await?;
                 continue;
             }

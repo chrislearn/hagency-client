@@ -129,35 +129,110 @@ async fn native_matrix_get_connect_retry_reaches_a_late_peer() {
     peer.abort();
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn native_matrix_get_connect_retry_bounds() {
-    // Nothing ever listens: four dials, three growing waits, then the
-    // original failure word, which still fences as before.
-    let (_socket, port) = reserved();
-    let (_fixture, http) = client(port, Duration::from_secs(3));
-    let started = std::time::Instant::now();
-    let result = http.request(&PATH, None, &CancellationToken::new()).await;
+    // An eligible failure means no connection existed. Count the actual
+    // policy callback and control only its clock; a bound TCP port does not
+    // guarantee how quickly a particular OS reports connection refusal.
+    async fn refused(
+        calls: &AtomicUsize,
+        cancel: &CancellationToken,
+        deadline: Instant,
+    ) -> Result<Response, Error> {
+        connect_attempts(cancel, deadline, || {
+            calls.fetch_add(1, Ordering::SeqCst);
+            std::future::ready(Err(Failed::Connect))
+        })
+        .await
+        .map_err(Error::from)
+    }
+    let calls = AtomicUsize::new(0);
+    let started = Instant::now();
+    let result = refused(
+        &calls,
+        &CancellationToken::new(),
+        started + Duration::from_secs(3),
+    )
+    .await;
     assert!(matches!(result, Err(Error::Transport)));
+    assert_eq!(calls.load(Ordering::SeqCst), 4);
     assert!(started.elapsed() >= CONNECT_RETRY * 7);
     assert!(started.elapsed() < Duration::from_secs(3));
 
     // A wait that cannot fit the original deadline is not started.
-    let (_fixture, http) = client(port, Duration::from_millis(250));
-    let started = std::time::Instant::now();
-    let result = http.request(&PATH, None, &CancellationToken::new()).await;
+    let calls = AtomicUsize::new(0);
+    let started = Instant::now();
+    let result = refused(
+        &calls,
+        &CancellationToken::new(),
+        started + Duration::from_millis(250),
+    )
+    .await;
     assert!(matches!(result, Err(Error::Transport)));
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
     assert!(started.elapsed() < CONNECT_RETRY * 7);
 
     // The wait is cancellable.
-    let (_fixture, http) = client(port, Duration::from_secs(3));
+    let calls = AtomicUsize::new(0);
+    let started = Instant::now();
     let cancel = CancellationToken::new();
     let stop = cancel.clone();
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_millis(40)).await;
         stop.cancel();
     });
-    let result = http.request(&PATH, None, &cancel).await;
+    let result = refused(&calls, &cancel, started + Duration::from_secs(3)).await;
     assert!(matches!(result, Err(Error::Cancelled)));
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+    // A late wake of an already elapsed backoff must not start another dial
+    // after the original absolute deadline, even if its failure is ready.
+    let calls = AtomicUsize::new(0);
+    let cancel = CancellationToken::new();
+    let started = Instant::now();
+    let request = refused(&calls, &cancel, started + Duration::from_millis(250));
+    tokio::pin!(request);
+    assert!(
+        tokio::time::timeout(CONNECT_RETRY / 2, &mut request)
+            .await
+            .is_err()
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    tokio::time::advance(Duration::from_millis(250)).await;
+    let result = request.await;
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        1,
+        "an elapsed original deadline must not start another dial"
+    );
+    assert!(matches!(result, Err(Error::Timeout)));
+
+    // Neither an already expired request nor an already cancelled one may
+    // invoke the connector. Cancellation keeps its original precedence.
+    let calls = AtomicUsize::new(0);
+    let cancel = CancellationToken::new();
+    let result = refused(&calls, &cancel, Instant::now()).await;
+    assert!(matches!(result, Err(Error::Timeout)));
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    cancel.cancel();
+    let result = refused(&calls, &cancel, Instant::now()).await;
+    assert!(matches!(result, Err(Error::Cancelled)));
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+
+    // An unknown transport outcome is never eligible for another dial.
+    let calls = AtomicUsize::new(0);
+    let result = connect_attempts(
+        &CancellationToken::new(),
+        Instant::now() + Duration::from_secs(3),
+        || {
+            calls.fetch_add(1, Ordering::SeqCst);
+            std::future::ready(Err(Failed::Other(Error::Transport)))
+        },
+    )
+    .await
+    .map_err(Error::from);
+    assert!(matches!(result, Err(Error::Transport)));
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]

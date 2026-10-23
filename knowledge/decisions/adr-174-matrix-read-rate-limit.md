@@ -142,3 +142,22 @@ share one host-wide cooldown clock. A complete 429 is the server refusing the re
 so nothing was applied and a retry cannot duplicate a write. A lost response is still
 never retried, and uploads and downloads stay single-attempt. Pinned by
 `native_matrix_write_rate_limit_retries_like_get`.
+
+
+## Amendment (PR #6, 2026-10-23): recheck the original clock before each redial
+
+A backoff can wake after the request's absolute deadline. Before each connector
+invocation, check cancellation first and then that original deadline; an already
+ready connect failure must not cause a dial after expiry. The private retry
+policy retains four attempts, 100/200/400 ms waits, and only preconnection
+failures as eligible outcomes. No request or connect budget is increased.
+
+The bounds fixture counts the same policy's connector calls with a controlled
+clock and an explicit preconnection failure, rather than assuming a particular
+OS reports refusal within 250 ms. A late-wake regression made two connector calls
+before this guard and one afterward. The original 3 s and 250 ms cases still
+require Transport, cancellation requires Cancelled, expired entry/late wake
+require Timeout, and unknown transport outcomes never retry. Separate late-peer,
+real TCP/TLS, connection reuse and write scenarios remain native socket tests.
+This identifies a policy defect; the archived macOS bounds assertion did not
+record its actual error variant and does not prove that defect caused that run.

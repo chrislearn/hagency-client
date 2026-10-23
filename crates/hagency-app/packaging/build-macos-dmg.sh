@@ -65,6 +65,19 @@ for var in APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
     fi
 done
 
+# Explicit candidate opt-in until the appcast publication stage is qualified.
+SPARKLE=${HAGENCY_MACOS_SPARKLE:-0}
+if [[ "$SPARKLE" != 0 && "$SPARKLE" != 1 ]]; then
+    echo 'HAGENCY_MACOS_SPARKLE must be 0 or 1' >&2
+    exit 1
+fi
+if [[ "$SPARKLE" == 1 ]]; then
+    for var in HAGENCY_SPARKLE_SDK HAGENCY_SPARKLE_PUBLIC_KEY; do
+        if [[ -z "${!var:-}" ]]; then echo "Missing $var for the Sparkle candidate" >&2; exit 1; fi
+    done
+    export HAGENCY_SPARKLE_TEAM_ID="$APPLE_TEAM_ID"
+fi
+
 if [[ ! -f "$ENTITLEMENTS" ]]; then
     echo "Error: Entitlements file not found at $ENTITLEMENTS" >&2
     exit 1
@@ -98,6 +111,11 @@ codesign_with_retry() {
     local cs_args=(--force --sign "$SIGNING_IDENTITY" --timestamp)
     if [[ "$kind" == "app" ]]; then
         cs_args+=(--entitlements "$ENTITLEMENTS" --options runtime)
+    elif [[ "$kind" == "code" ]]; then
+        # Sparkle helpers keep their own identity; no app audio/location grants.
+        cs_args+=(--options runtime)
+    elif [[ "$kind" == "downloader" ]]; then
+        cs_args+=(--options runtime --preserve-metadata=entitlements)
     fi
 
     local max_attempts=5
@@ -164,17 +182,20 @@ rm -rf "$PROJECT_DIR/dist/$PRODUCT_NAME.app" \
 # completely skipped. We also unset APPLE_* so cargo-packager has no
 # way to find notarization credentials. Result: unsigned .app + DMG.
 
-sed -i.bak 's/^signing_identity[[:space:]]*=/#&/' "$CARGO_TOML"
-
 # cargo-packager copies our custom Info.plist verbatim, so the version keys in it
 # would otherwise stay frozen at whatever was committed. Stamp them from Cargo.toml.
 INFO_PLIST="$PROJECT_DIR/packaging/macos/Info.plist"
+cp "$CARGO_TOML" "$CARGO_TOML.bak"
 cp "$INFO_PLIST" "$INFO_PLIST.bak"
+trap 'mv "$CARGO_TOML.bak" "$CARGO_TOML" 2>/dev/null && echo "Restored Cargo.toml"; mv "$INFO_PLIST.bak" "$INFO_PLIST" 2>/dev/null && echo "Restored Info.plist"' EXIT
+sed -i '' 's/^signing_identity[[:space:]]*=/#&/' "$CARGO_TOML"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $PRODUCT_VERSION" "$INFO_PLIST"
-/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $(date +%Y%m%d.%H%M)" "$INFO_PLIST"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${PRODUCT_VERSION%%-*}" "$INFO_PLIST"
 echo "==> Info.plist version set to $PRODUCT_VERSION (build $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$INFO_PLIST"))"
 
-trap 'mv "$CARGO_TOML.bak" "$CARGO_TOML" 2>/dev/null && echo "Restored Cargo.toml"; mv "$INFO_PLIST.bak" "$INFO_PLIST" 2>/dev/null && echo "Restored Info.plist"' EXIT
+if [[ "$SPARKLE" == 1 ]]; then
+    python3 tools/prepare-macos-sparkle.py --manifest "$CARGO_TOML" --plist "$INFO_PLIST" --arch "$PACKAGER_ARCH"
+fi
 
 TS_MARKER=$(mktemp)
 
@@ -200,10 +221,37 @@ echo "==> Found unsigned DMG: $DMG_FILE"
 
 echo "==> Codesigning $APP_PATH..."
 xattr -cr "$APP_PATH"
+if [[ "$SPARKLE" == 1 ]]; then
+    FRAMEWORK="$APP_PATH/Contents/Frameworks/Sparkle.framework"
+    for target in "$FRAMEWORK/Versions/B/XPCServices/Installer.xpc" \
+                  "$FRAMEWORK/Versions/B/XPCServices/Downloader.xpc" \
+                  "$FRAMEWORK/Versions/B/Autoupdate" \
+                  "$FRAMEWORK/Versions/B/Updater.app" "$FRAMEWORK"; do
+        test -e "$target" || { echo "Missing Sparkle nested code: $target" >&2; exit 1; }
+        if [[ "$target" == */Downloader.xpc ]]; then
+            codesign_with_retry "$target" downloader
+        else
+            codesign_with_retry "$target" code
+        fi
+    done
+fi
 codesign_with_retry "$APP_PATH/Contents/MacOS/octos" app
 codesign_with_retry "$APP_PATH/Contents/MacOS/hagency" app
 codesign_with_retry "$APP_PATH" app
 codesign --verify --verbose=2 "$APP_PATH"
+
+if [[ "$SPARKLE" == 1 ]]; then
+    codesign --verify --strict --deep "$APP_PATH"
+    # The extracted app needs its own offline ticket, before the final DMG bytes
+    # are created. A ticket stapled only to the disk image does not establish this.
+    APP_ZIP="$PROJECT_DIR/dist/sparkle-notarization.zip"
+    ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$APP_ZIP"
+    xcrun notarytool submit "$APP_ZIP" --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+    xcrun stapler staple "$APP_PATH"
+    xcrun stapler validate "$APP_PATH"
+    spctl --assess --type execute --verbose "$APP_PATH"
+    rm -f "$APP_ZIP"
+fi
 
 # --- Step 4: Apply Applications-folder icon fix to DMG ------------------------
 
@@ -238,7 +286,7 @@ cleanup_rw() {
     hdiutil detach "$DEV_NAME" -force >/dev/null 2>&1 || true
     rm -f "$DMG_RW"
 }
-trap 'cleanup_rw; mv "$CARGO_TOML.bak" "$CARGO_TOML" 2>/dev/null && echo "Restored Cargo.toml"' EXIT
+trap 'cleanup_rw; mv "$CARGO_TOML.bak" "$CARGO_TOML" 2>/dev/null && echo "Restored Cargo.toml"; mv "$INFO_PLIST.bak" "$INFO_PLIST" 2>/dev/null && echo "Restored Info.plist"' EXIT
 
 if [[ ! -d "$MOUNT_DIR/$PRODUCT_NAME.app" ]]; then
     echo "Error: $PRODUCT_NAME.app not found inside mounted DMG at $MOUNT_DIR" >&2
@@ -257,7 +305,7 @@ hdiutil convert "$DMG_RW" -format UDZO -imagekey zlib-level=9 -o "$DMG_FILE" >/d
 rm -f "$DMG_RW"
 
 # RW DMG is gone; drop that part of the trap.
-trap 'mv "$CARGO_TOML.bak" "$CARGO_TOML" 2>/dev/null && echo "Restored Cargo.toml"' EXIT
+trap 'mv "$CARGO_TOML.bak" "$CARGO_TOML" 2>/dev/null && echo "Restored Cargo.toml"; mv "$INFO_PLIST.bak" "$INFO_PLIST" 2>/dev/null && echo "Restored Info.plist"' EXIT
 
 # --- Step 6: Codesign the DMG itself ------------------------------------------
 
@@ -283,7 +331,11 @@ xcrun stapler staple "$DMG_FILE"
 xcrun stapler validate "$DMG_FILE"
 
 echo "==> Verifying DMG with spctl..."
-spctl --assess --type open --context context:primary-signature --verbose "$DMG_FILE" || true
+if [[ "$SPARKLE" == 1 ]]; then
+    spctl --assess --type open --context context:primary-signature --verbose "$DMG_FILE"
+else
+    spctl --assess --type open --context context:primary-signature --verbose "$DMG_FILE" || true
+fi
 
 echo ""
 echo "==> Done!"
