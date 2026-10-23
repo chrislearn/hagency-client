@@ -84,3 +84,8 @@ cargo +1.99.0 run --locked -p hagency-app --example project_board_preview -- --d
 断网恢复、真实备份恢复与生产迁移耗时仍需发布前验证。未声称达到报告的延迟／吞吐目标。
 
 本次不包含 Web、附件、通知、Agent 执行、自定义列、离线写入与 E2EE。
+
+后续复核：以上原生视觉限制是首次实施时的记录。随后用户发现静态预览事件被冻结，
+现已修复并通过真实 macOS 窗口操作与 SQL 持久化核对；详见
+[功能复核与交互修复](project-kanban-feature-review-and-interaction-2026-10-23.zh.md)。
+Windows/Linux、真实 Matrix 账号和生产恢复等未验收边界仍保留。

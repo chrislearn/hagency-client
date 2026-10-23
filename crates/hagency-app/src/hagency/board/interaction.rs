@@ -3,9 +3,14 @@ use super::*;
 impl Widget for ProjectBoard {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if !self.active {
+            // Read-only design previews must still permit viewport interaction.
+            self.view.handle_event(cx, event, scope);
             return;
         }
-        if !Service::for_current().is_ok_and(|s| s.identity() == self.identity) {
+        if !self
+            .connection()
+            .is_ok_and(|s| s.identity() == self.identity)
+        {
             self.clear_content(cx);
             self.pending = None;
             self.retained.clear();
@@ -65,8 +70,17 @@ impl Widget for ProjectBoard {
                 0.0
             };
             if step != 0.0 {
-                self.scroll_x =
-                    (self.scroll_x + step).clamp(0.0, (5.0 * 272.0 - viewport.size.x).max(0.0));
+                let visible: Vec<_> = (0..5)
+                    .filter(|i| self.view.view(cx, column_path(*i)).visible())
+                    .collect();
+                let actual = visible
+                    .first()
+                    .map(|i| {
+                        viewport.pos.x - self.view.view(cx, column_path(*i)).area().rect(cx).pos.x
+                    })
+                    .unwrap_or(0.0);
+                let extent = (visible.len() as f64 * 272.0 - 12.0 - viewport.size.x).max(0.0);
+                self.scroll_x = (actual + step).clamp(0.0, extent);
                 self.view
                     .view(cx, ids!(board_scroll))
                     .set_scroll_pos(cx, dvec2(self.scroll_x, 0.0));
@@ -214,6 +228,52 @@ impl Widget for ProjectBoard {
             self.dirty = true;
             self.discard_armed = false;
         }
+        if self
+            .view
+            .drop_down(cx, ids!(new_status))
+            .changed(actions)
+            .is_some()
+            && self.creating
+        {
+            self.dirty = true;
+            self.discard_armed = false;
+        }
+        for index in 0..5 {
+            if self
+                .view
+                .view(cx, column_path(index))
+                .button(cx, ids!(add))
+                .clicked(actions)
+            {
+                self.new_task(cx);
+                if self.creating && !self.dirty {
+                    self.view
+                        .drop_down(cx, ids!(new_status))
+                        .set_selected_item(cx, index);
+                }
+            }
+        }
+        if self.view.button(cx, ids!(clear_filters)).clicked(actions) && !self.loading {
+            self.query = Query::default();
+            self.view.text_input(cx, ids!(search)).set_text(cx, "");
+            self.view
+                .text_input(cx, ids!(filter_label))
+                .set_text(cx, "");
+            self.view
+                .drop_down(cx, ids!(filter_state))
+                .set_selected_item(cx, 0);
+            self.view
+                .drop_down(cx, ids!(filter_assignee))
+                .set_selected_item(cx, 0);
+            self.view
+                .check_box(cx, ids!(overdue))
+                .set_active(cx, false, Animate::No);
+            self.view
+                .check_box(cx, ids!(archived))
+                .set_active(cx, false, Animate::No);
+            self.reset_viewports(cx);
+            self.load(cx);
+        }
         if self.view.button(cx, ids!(refresh)).clicked(actions) {
             self.failed = false;
             self.load(cx);
@@ -274,6 +334,7 @@ impl Widget for ProjectBoard {
                     ..Default::default()
                 };
                 if self.query.validate().is_ok() {
+                    self.reset_viewports(cx);
                     self.load(cx);
                 } else {
                     self.notice(
@@ -320,7 +381,12 @@ impl Widget for ProjectBoard {
                         input: Create {
                             idempotency_key: uuid::Uuid::new_v4().to_string(),
                             fields,
-                            state: "todo".into(),
+                            state: STATES[self
+                                .view
+                                .drop_down(cx, ids!(new_status))
+                                .selected_item()
+                                .min(4)]
+                            .into(),
                         },
                     },
                 );
@@ -395,6 +461,8 @@ impl Widget for ProjectBoard {
                         },
                     },
                 );
+            } else {
+                self.notice(cx, tr("Comments must contain 1–8192 bytes."));
             }
         }
         if self.view.button(cx, ids!(more_comments)).clicked(actions)
@@ -509,6 +577,13 @@ impl Widget for ProjectBoard {
                 }
             }
 
+            column.button(cx, ids!(add)).set_enabled(
+                cx,
+                self.snapshot.is_some()
+                    && self.pending.is_none()
+                    && !self.dirty
+                    && !self.query.archived,
+            );
             let lane = self.snapshot.as_ref().and_then(|s| s.lanes.get(index));
             column.label(cx, ids!(count)).set_text(
                 cx,
@@ -541,6 +616,9 @@ impl Widget for ProjectBoard {
             let lane = self.snapshot.as_ref().and_then(|s| s.lanes.get(index));
             let total = lane.map_or(0, |l| l.tasks.len());
             let more = lane.is_some_and(|l| l.next_cursor.is_some());
+            if total == 0 || list.first_id() >= total {
+                list.set_first_id_and_scroll(0, 0.0);
+            }
             list.set_item_range(cx, 0, total.max(1) + usize::from(more));
             while let Some(row_index) = list.next_visible_item(cx) {
                 if let Some(task) = lane.and_then(|l| l.tasks.get(row_index)) {
@@ -564,6 +642,32 @@ impl Widget for ProjectBoard {
                     );
                     card.label(cx, ids!(due))
                         .set_text(cx, task.due_date.as_deref().unwrap_or(""));
+                    let overdue = task.due_date.as_deref().is_some_and(|date| {
+                        date < chrono::Utc::now().format("%Y-%m-%d").to_string().as_str()
+                    }) && task.state != "done"
+                        && task.archived_at.is_none();
+                    let mut due = card.label(cx, ids!(due));
+                    if overdue {
+                        script_apply_eval!(cx,due,{draw_text.color:mod.widgets.RINX_WARNING_FG});
+                        due.set_text(
+                            cx,
+                            &format!(
+                                "{} · {}",
+                                tr("Overdue"),
+                                task.due_date.as_deref().unwrap_or("")
+                            ),
+                        );
+                    } else {
+                        script_apply_eval!(cx,due,{draw_text.color:mod.widgets.RINX_MUTED});
+                    }
+                    let mut priority = card.label(cx, ids!(priority));
+                    if task.priority == "urgent" {
+                        script_apply_eval!(cx,priority,{draw_text.color:mod.widgets.RINX_WARNING_FG});
+                    } else if task.priority == "high" {
+                        script_apply_eval!(cx,priority,{draw_text.color:mod.widgets.RINX_ACCENT});
+                    } else {
+                        script_apply_eval!(cx,priority,{draw_text.color:mod.widgets.RINX_MUTED});
+                    }
                     let mut card_bg = card.clone();
                     let selected = self.selected.as_ref().is_some_and(|t| t.id == task.id);
                     if selected {

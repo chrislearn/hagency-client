@@ -57,6 +57,7 @@ impl ProjectBoard {
             self.identity = identity.into();
             self.project = project.into();
             self.query = Query::default();
+            self.reset_viewports(cx);
             self.pending = self.retained.remove(project);
             self.view.text_input(cx, ids!(search)).set_text(cx, "");
             self.view
@@ -102,7 +103,7 @@ impl ProjectBoard {
         if !self.active {
             return;
         }
-        let Ok(service) = Service::for_current() else {
+        let Ok(service) = self.connection() else {
             return;
         };
         if service.identity() != self.identity {
@@ -120,6 +121,11 @@ impl ProjectBoard {
         }
         if matches!(kind, Read::Detail(_)) {
             self.detail_request = request;
+        }
+        match kind {
+            Read::Comments(..) => self.comments_request = request,
+            Read::Activity(..) => self.activity_request = request,
+            _ => (),
         }
         self.reads.insert(request);
         let detail_generation = self.detail_request;
@@ -141,6 +147,18 @@ impl ProjectBoard {
             });
         });
         self.sync_controls(cx);
+    }
+    pub(super) fn reset_viewports(&mut self, cx: &mut Cx) {
+        for index in 0..5 {
+            self.view
+                .view(cx, column_path(index))
+                .portal_list(cx, ids!(cards))
+                .set_first_id_and_scroll(0, 0.0);
+        }
+        self.scroll_x = 0.0;
+        self.view
+            .view(cx, ids!(board_scroll))
+            .set_scroll_pos(cx, dvec2(0.0, 0.0));
     }
     pub(super) fn load(&mut self, cx: &mut Cx) {
         cx.stop_timer(self.timer);
@@ -175,7 +193,7 @@ impl ProjectBoard {
         let Some(action) = self.pending.clone() else {
             return;
         };
-        let Ok(service) = Service::for_current() else {
+        let Ok(service) = self.connection() else {
             return;
         };
         if service.identity() != self.identity {
@@ -306,6 +324,15 @@ impl ProjectBoard {
             return;
         }
         self.creating = true;
+        let state = self
+            .query
+            .state
+            .as_deref()
+            .and_then(|s| STATES.iter().position(|v| *v == s))
+            .unwrap_or(0);
+        self.view
+            .drop_down(cx, ids!(new_status))
+            .set_selected_item(cx, state);
         self.selected = None;
         self.comments.clear();
         self.activity.clear();
@@ -374,6 +401,41 @@ impl ProjectBoard {
         );
     }
     pub(super) fn sync_controls(&mut self, cx: &mut Cx) {
+        self.view
+            .view(cx, ids!(create_status))
+            .set_visible(cx, self.creating);
+        let filtered = self.query.state.is_some()
+            || self.query.query.is_some()
+            || self.query.label.is_some()
+            || self.query.assignee.is_some()
+            || self.query.overdue
+            || self.query.archived;
+        self.view
+            .button(cx, ids!(clear_filters))
+            .set_visible(cx, filtered);
+        self.view
+            .button(cx, ids!(clear_filters))
+            .set_enabled(cx, !self.loading);
+        for (id, pending) in [
+            (
+                ids!(more_comments),
+                self.reads.contains(&self.comments_request),
+            ),
+            (
+                ids!(first_comments),
+                self.reads.contains(&self.comments_request),
+            ),
+            (
+                ids!(more_activity),
+                self.reads.contains(&self.activity_request),
+            ),
+            (
+                ids!(first_activity),
+                self.reads.contains(&self.activity_request),
+            ),
+        ] {
+            self.view.button(cx, id).set_enabled(cx, !pending);
+        }
         let archived = self
             .selected
             .as_ref()
@@ -385,15 +447,21 @@ impl ProjectBoard {
             && !archived;
         for id in [
             ids!(title),
+            ids!(new_status),
             ids!(description),
             ids!(priority),
             ids!(assignee),
             ids!(labels),
             ids!(due_date),
-            ids!(save),
         ] {
             self.view.widget(cx, id).set_disabled(cx, !editing);
         }
+        self.view
+            .button(cx, ids!(save))
+            .set_enabled(cx, editing && (self.creating || self.dirty));
+        self.view
+            .widget(cx, ids!(save))
+            .set_disabled(cx, !(editing && (self.creating || self.dirty)));
         self.view
             .button(cx, ids!(new_task))
             .set_enabled(cx, self.snapshot.is_some() && !writing && !self.failed);
@@ -416,16 +484,27 @@ impl ProjectBoard {
         self.view
             .view(cx, ids!(existing_actions))
             .set_visible(cx, !self.creating && self.selected.is_some());
-        for id in [
-            ids!(move_state),
-            ids!(move_top),
-            ids!(move_bottom),
-            ids!(add_comment),
-            ids!(comment),
-        ] {
+        for id in [ids!(move_state), ids!(comment)] {
             self.view
                 .widget(cx, id)
                 .set_disabled(cx, writing || self.conflict || archived);
+        }
+        for (id, enabled) in [
+            (
+                ids!(move_top),
+                !writing && !self.conflict && !archived && !self.dirty && self.detail_loaded,
+            ),
+            (
+                ids!(move_bottom),
+                !writing && !self.conflict && !archived && !self.dirty && self.detail_loaded,
+            ),
+            (
+                ids!(add_comment),
+                !writing && !self.conflict && !archived && self.detail_loaded,
+            ),
+        ] {
+            self.view.button(cx, id).set_enabled(cx, enabled);
+            self.view.widget(cx, id).set_disabled(cx, !enabled);
         }
         self.view
             .button(cx, ids!(archive))
@@ -506,6 +585,11 @@ impl ProjectBoard {
         }
         if matches!(done.kind, Read::Comments(..) | Read::Activity(..))
             && done.detail_generation != self.detail_request
+        {
+            return;
+        }
+        if matches!(done.kind, Read::Comments(..)) && done.request != self.comments_request
+            || matches!(done.kind, Read::Activity(..)) && done.request != self.activity_request
         {
             return;
         }

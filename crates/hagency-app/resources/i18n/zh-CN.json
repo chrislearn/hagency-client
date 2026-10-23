@@ -2301,5 +2301,8 @@
   "You have unsaved changes. Save them, or close again to discard the draft.": "您有未保存的更改。请保存，或再次关闭以放弃草稿。",
   "Back to first comments": "返回第一组评论",
   "Back to first activity": "返回最早的活动",
-  "Board": "看板"
+  "Board": "看板",
+  "Clear filters": "清除筛选",
+  "Status": "状态",
+  "Comments must contain 1–8192 bytes.": "评论不能为空，且不能超过 8192 字节。"
 }

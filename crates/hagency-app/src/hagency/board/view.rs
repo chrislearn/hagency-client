@@ -12,7 +12,17 @@ makepad_widgets::script_mod! {
     mod.widgets.KanbanCard = #(KanbanCard::register_widget(vm)) {
         width: Fill height: Fit margin: Inset{bottom: 8} padding: 12 flow: Down spacing: 9
         show_bg: true cursor: MouseCursor.Hand
-        draw_bg +: {color: mod.widgets.RINX_SURFACE border_radius: 8.0 border_size: 1.0 border_color: mod.widgets.RINX_BORDER}
+        draw_bg +: {
+            color: mod.widgets.RINX_SURFACE
+            border_radius: uniform(8.0) border_size: instance(1.0) border_color: instance(mod.widgets.RINX_BORDER)
+            pixel: fn() {
+                let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+                sdf.box(1.0, 1.0, self.rect_size.x - 2.0, self.rect_size.y - 2.0, self.border_radius)
+                sdf.fill_keep(self.color)
+                sdf.stroke(self.border_color, self.border_size)
+                return sdf.result
+            }
+        }
         View {width: Fill height: Fit align: Align{y: 0.5}
             number := Small {width: Fill}
             priority := Small {width: Fit}
@@ -28,11 +38,12 @@ makepad_widgets::script_mod! {
         }
     }
     let Column = RoundedView {width: 260 height: Fill padding: 10 flow: Down spacing: 10
-        draw_bg +: {color: mod.widgets.RINX_PANEL_BG border_radius: 10.0}
+        draw_bg +: {color: mod.widgets.RINX_PANEL_BG border_radius: 10.0 border_size:1.0 border_color:mod.widgets.RINX_BORDER}
         View {width: Fill height: 28 spacing: 8 align: Align{y: 0.5}
             marker := RoundedView {width: 7 height: 7 draw_bg +: {color: mod.widgets.RINX_MUTED border_radius: 3.5}}
             heading := Text {width: Fill draw_text.text_style: theme.font_bold{font_size: mod.widgets.RINX_BODY_SIZE}}
             count := Small {width: Fit}
+            add := RinxGhostButton {width:26 height:26 padding:0 text:"+"}
         }
         cards := PortalList {width: Fill height: Fill capture_overload: false
             Card := mod.widgets.KanbanCard {}
@@ -54,6 +65,7 @@ makepad_widgets::script_mod! {
             filter_assignee := Select {width: 180 labels: [#(crate::i18n::tr("All members"))]}
             filter_label := Input {width: 120 empty_text: #(crate::i18n::tr("Label")) i18n_empty_text: "Label"}
             apply_filters := Action {text: #(crate::i18n::tr("Filter")) i18n_text: "Filter"}
+            clear_filters := Action {visible:false text:#(crate::i18n::tr("Clear filters")) i18n_text:"Clear filters"}
             refresh := Action {text: #(crate::i18n::tr("Refresh")) i18n_text: "Refresh"}
             new_task := RinxPrimaryButton {height: 34 text: #(crate::i18n::tr("New task")) i18n_text: "New task"}
         }
@@ -77,12 +89,18 @@ makepad_widgets::script_mod! {
                 draw_bg +: {color: mod.widgets.RINX_SURFACE border_radius: 10.0 border_size: 1.0 border_color: mod.widgets.RINX_BORDER}
                 View {width: Fill height: Fit align: Align{y: 0.5}
                     detail_heading := Text {width: Fill draw_text.text_style: theme.font_bold{font_size: mod.widgets.RINX_BODY_SIZE}}
+                    save := RinxPrimaryButton {width: 100 height: 34 text: #(crate::i18n::tr("Save task")) i18n_text: "Save task"}
                     close_detail := Action {text: #(crate::i18n::tr("Close")) i18n_text: "Close"}
                 }
+                reload_latest := Action {visible: false width: Fill text: #(crate::i18n::tr("Discard draft and load latest")) i18n_text: "Discard draft and load latest"}
                 editor_scroll := ScrollYView {width: Fill height: Fill flow: Down spacing: 10
                     detail_notice := Small {}
                     Text {text: #(crate::i18n::tr("Title")) i18n_text: "Title"}
                     title := Input {empty_text: #(crate::i18n::tr("What needs to be done?")) i18n_empty_text: "What needs to be done?"}
+                    create_status := View {visible:false width:Fill height:Fit flow:Down spacing:5
+                        Text {text:#(crate::i18n::tr("Status")) i18n_text:"Status"}
+                        new_status := Select {labels:[#(crate::i18n::tr("To do")) #(crate::i18n::tr("In progress")) #(crate::i18n::tr("Blocked")) #(crate::i18n::tr("In review")) #(crate::i18n::tr("Done"))]}
+                    }
                     Text {text: #(crate::i18n::tr("Description")) i18n_text: "Description"}
                     description := Input {height: 130 is_multiline: true empty_text: #(crate::i18n::tr("Add context and acceptance criteria…")) i18n_empty_text: "Add context and acceptance criteria…"}
                     View {width: Fill height: Fit flow: Down spacing: 5
@@ -95,8 +113,6 @@ makepad_widgets::script_mod! {
                     labels := Input {empty_text: #(crate::i18n::tr("Comma-separated labels")) i18n_empty_text: "Comma-separated labels"}
                     Text {text: #(crate::i18n::tr("Due date")) i18n_text: "Due date"}
                     due_date := Input {empty_text: "YYYY-MM-DD"}
-                    save := RinxPrimaryButton {width: Fill height: 36 text: #(crate::i18n::tr("Save task")) i18n_text: "Save task"}
-                    reload_latest := Action {visible: false width: Fill text: #(crate::i18n::tr("Discard draft and load latest")) i18n_text: "Discard draft and load latest"}
                     existing_actions := View {visible: false width: Fill height: Fit flow: Down spacing: 8
                         Hr {width: Fill height: 1}
                         Text {text: #(crate::i18n::tr("Move task")) i18n_text: "Move task"}

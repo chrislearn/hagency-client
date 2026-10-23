@@ -1,4 +1,5 @@
 use super::*;
+use makepad_widgets::event::{ScrollEvent, ScrollPhase};
 use serde_json::json;
 use makepad_widgets::makepad_draw::cx_draw::CxDraw;
 fn task(id: &str, state: &str) -> BoardTask {
@@ -261,4 +262,150 @@ fn kanban_project_switch_retains_only_original_unconfirmed_intents_and_resets_vi
     );
     board.bind(&mut cx, "different-account", Some("p1"), true);
     assert!(board.pending.is_none() && board.retained.is_empty());
+}
+
+#[test]
+fn kanban_read_only_preview_still_scrolls_the_actual_native_viewports() {
+    let (mut cx, mut board) = panel();
+    populate(&mut board);
+    let lane = &mut board.snapshot.as_mut().unwrap().lanes[0];
+    lane.tasks = (0..30)
+        .map(|i| task(&format!("task_{i}"), "todo"))
+        .collect();
+    lane.total = 30;
+    board.active = false;
+    draw(&mut cx, &mut board, 700.0, 760.0);
+    let rect = board.view.view(&cx, ids!(todo)).area().rect(&cx);
+    let list = board
+        .view
+        .view(&cx, ids!(todo))
+        .portal_list(&cx, ids!(cards));
+    let before = (
+        list.borrow().unwrap().first_id(),
+        list.borrow().unwrap().first_scroll(),
+    );
+    let scroll = |delta| {
+        Event::Scroll(ScrollEvent {
+            window_id: WindowId(0, 0),
+            scroll: delta,
+            abs: rect.pos + dvec2(100.0, 150.0),
+            modifiers: KeyModifiers::default(),
+            handled_x: std::cell::Cell::new(false),
+            handled_y: std::cell::Cell::new(false),
+            is_mouse: false,
+            time: 1.0,
+            phase: ScrollPhase::Changed,
+        })
+    };
+    board.handle_event(&mut cx, &scroll(dvec2(0.0, 350.0)), &mut Scope::empty());
+    draw(&mut cx, &mut board, 700.0, 760.0);
+    let after = (
+        list.borrow().unwrap().first_id(),
+        list.borrow().unwrap().first_scroll(),
+    );
+    assert_ne!(
+        before, after,
+        "read-only means no mutations, not a frozen event tree"
+    );
+    board.handle_event(&mut cx, &scroll(dvec2(300.0, 0.0)), &mut Scope::empty());
+    draw(&mut cx, &mut board, 700.0, 760.0);
+    let after = board.view.view(&cx, ids!(todo)).area().rect(&cx);
+    assert!(
+        after.pos.x < rect.pos.x - 100.0,
+        "horizontal viewport must scroll: {rect:?} -> {after:?}"
+    );
+}
+
+#[test]
+fn kanban_mouse_drag_can_start_from_the_card_body() {
+    let (mut cx, mut board) = panel();
+    populate(&mut board);
+    draw(&mut cx, &mut board, 1100.0, 760.0);
+    let card = board
+        .view
+        .view(&cx, ids!(todo))
+        .portal_list(&cx, ids!(cards))
+        .item(&mut cx, 0, id!(Card));
+    let rect = card.area().rect(&cx);
+    let point = rect.pos + dvec2(40.0, rect.size.y * 0.5);
+    let actions = cx.capture_actions(|cx| {
+        card.handle_event(
+            cx,
+            &Event::MouseDown(MouseDownEvent {
+                abs: point,
+                button: MouseButton::PRIMARY,
+                window_id: WindowId(0, 0),
+                modifiers: KeyModifiers::default(),
+                handled: std::cell::Cell::new(Area::Empty),
+                time: 1.0,
+            }),
+            &mut Scope::empty(),
+        )
+    });
+    assert!(
+        actions
+            .iter()
+            .filter_map(|a| a.as_widget_action())
+            .any(|a| matches!(a.cast::<CardAction>(), CardAction::Start(_))),
+        "the card body must capture mouse dragging, not only the tiny handle"
+    );
+}
+
+#[test]
+fn kanban_empty_filtered_lane_resets_an_old_scroll_anchor() {
+    let (mut cx, mut board) = panel();
+    populate(&mut board);
+    let lane = &mut board.snapshot.as_mut().unwrap().lanes[0];
+    lane.tasks = (0..30)
+        .map(|i| task(&format!("task_{i}"), "todo"))
+        .collect();
+    lane.total = 30;
+    draw(&mut cx, &mut board, 1100.0, 760.0);
+    let list = board
+        .view
+        .view(&cx, ids!(todo))
+        .portal_list(&cx, ids!(cards));
+    list.set_first_id_and_scroll(25, -40.0);
+    let lane = &mut board.snapshot.as_mut().unwrap().lanes[0];
+    lane.tasks.clear();
+    lane.total = 0;
+    draw(&mut cx, &mut board, 1100.0, 760.0);
+    assert_eq!(list.first_id(), 0);
+    let empty = list.item(&mut cx, 0, id!(Empty));
+    assert!(
+        empty.area().rect(&cx).size.y > 50.0,
+        "an empty filtered lane must show its empty state rather than an old scroll offset"
+    );
+}
+
+#[test]
+fn kanban_older_history_pages_cannot_replace_the_latest_page() {
+    let (mut cx, mut board) = panel();
+    populate(&mut board);
+    board.selected = Some(task("task_one", "todo"));
+    board.detail_request = 7;
+    board.comments_request = 12;
+    board.reads.extend([11, 12]);
+    let old = Completed {
+        identity: "account".into(),
+        project: "p1".into(),
+        epoch: 1,
+        request: 11,
+        kind: Read::Comments("task_one".into(), true),
+        detail_generation: 7,
+        result: Ok(
+            json!({"items":[{"author":"@alice:test","body":"old page","createdAt":1}],"next":1,"hasMore":false}),
+        ),
+    };
+    board.apply_read(&mut cx, &old);
+    assert!(board.comments.is_empty());
+    let current = Completed {
+        request: 12,
+        result: Ok(
+            json!({"items":[{"author":"@bob:test","body":"current page","createdAt":2}],"next":2,"hasMore":false}),
+        ),
+        ..old
+    };
+    board.apply_read(&mut cx, &current);
+    assert_eq!(board.comments[0]["body"], "current page");
 }

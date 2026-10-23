@@ -2301,5 +2301,8 @@
   "You have unsaved changes. Save them, or close again to discard the draft.": "You have unsaved changes. Save them, or close again to discard the draft.",
   "Back to first comments": "Back to first comments",
   "Back to first activity": "Back to first activity",
-  "Board": "Board"
+  "Board": "Board",
+  "Clear filters": "Clear filters",
+  "Status": "Status",
+  "Comments must contain 1–8192 bytes.": "Comments must contain 1–8192 bytes."
 }

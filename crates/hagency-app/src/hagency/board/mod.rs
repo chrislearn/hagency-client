@@ -7,6 +7,8 @@ use super::backend::Service;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
+mod connection;
+use connection::BoardConnection;
 mod view;
 mod controller;
 mod interaction;
@@ -35,44 +37,52 @@ pub struct KanbanCard {
 impl Widget for KanbanCard {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let uid = self.widget_uid();
-        match event.hits(cx, self.view.view(cx, ids!(drag_handle)).area()) {
+        // Mouse users can grab the whole card. Touch keeps ordinary list scrolling;
+        // the explicit handle remains the touch drag target.
+        let handle = self.view.view(cx, ids!(drag_handle)).area();
+        let area = if matches!(event, Event::TouchUpdate(_)) {
+            handle
+        } else {
+            self.view.area()
+        };
+        match event.hits(cx, area) {
             Hit::FingerDown(e) => {
                 self.dragging = true;
+                cx.set_key_focus(self.view.area());
                 cx.widget_action(uid, CardAction::Start(e.abs));
             }
             Hit::FingerMove(e) if self.dragging => cx.widget_action(uid, CardAction::Drag(e.abs)),
             Hit::FingerUp(e) if self.dragging => {
                 self.dragging = false;
                 cx.widget_action(uid, CardAction::Drop(e.abs));
+                if e.was_tap() {
+                    cx.widget_action(uid, CardAction::Open);
+                }
             }
+            Hit::KeyDown(key)
+                if !key.is_repeat
+                    && matches!(key.key_code, KeyCode::ReturnKey | KeyCode::Space) =>
+            {
+                cx.widget_action(uid, CardAction::Open)
+            }
+            Hit::KeyFocus(_) => {
+                self.focused = true;
+                self.view.redraw(cx);
+            }
+            Hit::KeyFocusLost(_) => {
+                self.focused = false;
+                self.view.redraw(cx);
+            }
+            Hit::FingerHoverIn(_) => cx.set_cursor(MouseCursor::Hand),
             _ => (),
         }
         self.view.handle_event(cx, event, scope);
-        if !self.dragging {
-            match event.hits(cx, self.view.area()) {
-                Hit::FingerUp(e) if e.was_tap() => cx.widget_action(uid, CardAction::Open),
-                Hit::KeyDown(key)
-                    if !key.is_repeat
-                        && matches!(key.key_code, KeyCode::ReturnKey | KeyCode::Space) =>
-                {
-                    cx.widget_action(uid, CardAction::Open)
-                }
-                Hit::KeyFocus(_) => {
-                    self.focused = true;
-                    self.view.redraw(cx);
-                }
-                Hit::KeyFocusLost(_) => {
-                    self.focused = false;
-                    self.view.redraw(cx);
-                }
-                Hit::FingerHoverIn(_) => cx.set_cursor(MouseCursor::Hand),
-                _ => (),
-            }
-        }
     }
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        let border_size = if self.focused { 2.0 } else { 1.0 };
+        script_apply_eval!(cx,self.view,{draw_bg.border_size:#(border_size)});
         if self.focused {
-            script_apply_eval!(cx,self.view,{draw_bg +: {border_color:mod.widgets.RINX_ACCENT border_size:2.0}});
+            script_apply_eval!(cx,self.view,{draw_bg.border_color:mod.widgets.RINX_ACCENT});
         }
         let result = self.view.draw_walk(cx, scope, walk);
         if result.is_done() {
@@ -122,6 +132,8 @@ pub struct ProjectBoard {
     #[deref]
     view: View,
     #[rust]
+    connection_override: Option<BoardConnection>,
+    #[rust]
     identity: String,
     #[rust]
     project: String,
@@ -166,9 +178,13 @@ pub struct ProjectBoard {
     #[rust]
     comments_after: i64,
     #[rust]
+    comments_request: u64,
+    #[rust]
     activity: Vec<Value>,
     #[rust]
     activity_after: i64,
+    #[rust]
+    activity_request: u64,
     #[rust]
     card_areas: HashMap<String, Area>,
     #[rust]
