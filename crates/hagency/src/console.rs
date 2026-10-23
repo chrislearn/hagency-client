@@ -20,6 +20,7 @@ mod owned_runtime;
 mod owner_projects;
 mod owner_provider;
 pub mod palpo_import;
+mod project_board;
 mod project_sides;
 mod resource_configuration;
 mod resources;

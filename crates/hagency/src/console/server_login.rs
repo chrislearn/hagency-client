@@ -1513,6 +1513,10 @@ async fn register_device(
 
 /// A closed set of owner operations. No caller supplies a URL or bearer token.
 pub(super) enum OwnerOperation {
+    ProjectBoard {
+        project: String,
+        action: hagency_core::project_board::BoardAction,
+    },
     AgentCommandStatus {
         operation: String,
         command: String,
@@ -1679,7 +1683,11 @@ impl OwnerOperation {
                 None,
             ));
         }
+        if let Self::ProjectBoard { project, action } = self {
+            return super::project_board::request(&project, action);
+        }
         let (method, suffix, body) = match self {
+            Self::ProjectBoard { .. } => unreachable!(),
             Self::SetThreadAutoReply { binding, enabled } => {
                 operation_id(&binding)?;
                 (
@@ -1887,6 +1895,7 @@ impl ServerLogin {
         pin: Option<&super::device_execution::DeviceIdentity>,
         operation: OwnerOperation,
     ) -> Result<OwnerReply, OwnerError> {
+        let is_board = matches!(&operation, OwnerOperation::ProjectBoard { .. });
         let needs_device = matches!(
             &operation,
             OwnerOperation::Create { .. } | OwnerOperation::AssignExecutionDevice { .. }
@@ -1946,6 +1955,18 @@ impl ServerLogin {
         }
         let server = origin(&session.binding.origin)
             .map_err(|_| OwnerError::new(401, "sign_in_required"))?;
+        if is_board {
+            let metadata = crate::server_admission::discover(server.as_str())
+                .await
+                .map_err(|_| OwnerError::new(503, "server_unavailable"))?;
+            if !metadata
+                .capabilities
+                .iter()
+                .any(|c| c == hagency_core::project_board::CAPABILITY)
+            {
+                return Err(OwnerError::new(409, "board_unsupported"));
+            }
+        }
         let client = http().map_err(|_| OwnerError::new(503, "server_unavailable"))?;
         let mut device = session.device.clone();
         let bearer = if needs_device {
@@ -1976,7 +1997,7 @@ impl ServerLogin {
             .await
             .map_err(|_| OwnerError::new(503, "server_unavailable"))?
         {
-            if raw.len() + chunk.len() > 128 * 1024 {
+            if raw.len() + chunk.len() > if is_board { 1024 * 1024 } else { 128 * 1024 } {
                 return Err(OwnerError::new(502, "invalid_server_response"));
             }
             raw.extend_from_slice(&chunk);

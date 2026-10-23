@@ -1302,6 +1302,7 @@ pub fn register_widgets(vm: &mut ScriptVm) {
     crate::block_user_modal::script_mod(vm);
     crate::verification_modal::script_mod(vm);
     crate::profile::script_mod(vm);
+    crate::hagency::board::script_mod(vm);
     crate::hagency::ui::script_mod(vm);
     crate::home::script_mod(vm);
     crate::moments::script_mod(vm);

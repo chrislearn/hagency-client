@@ -148,6 +148,10 @@ impl<'de> Deserialize<'de> for RoomCreationPolicy {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Command {
+    ProjectBoard {
+        project_id: String,
+        action: hagency_core::project_board::BoardAction,
+    },
     AgentConfigurationStatus {
         agent_id: String,
     },
@@ -376,6 +380,16 @@ fn request(command: Command) -> Result<(&'static str, String, Option<Value>), Na
         Command::LoginStatus => ("GET", "/console/server-login".into()),
         Command::Logout => ("POST", "/console/server-login/logout".into()),
         Command::BeginLogin => return Err(failure(400, "login_requires_native_context")),
+        Command::ProjectBoard { project_id, action } => {
+            key(&project_id)?;
+            body = Some(
+                serde_json::to_value(action).map_err(|_| failure(400, "invalid_board_payload"))?,
+            );
+            (
+                "POST",
+                format!("{root}/owner-projects/{project_id}/board-command"),
+            )
+        }
         Command::Projects => ("GET", format!("{root}/owner-projects")),
         Command::AgentCommands => ("GET", format!("{root}/owned-agents/commands")),
         Command::CheckAgentCommand { id } => {

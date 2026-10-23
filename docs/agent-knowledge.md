@@ -3,6 +3,14 @@
 
 # Repository audit knowledge
 
+- **Project kanban scope review, 2026-10-23:** The proposed shared native board
+  needs Server authority/storage/API and Client UI/typed calls. Cloud's existing
+  database configuration, Server image selection and host/root-prefix routing
+  support this deployment contract. Cloud code changes are not a P0 dependency;
+  image upgrades and consistent recovery verification are deployment acceptance.
+  Cloud plan entitlements, console controls and new self-service recovery require
+  separate scope. Revised report lives in the sibling hagency-cloud/dev-vibe tree.
+
 - **Live two-agent private DMs, 2026-09-17:** After explicit rate-limit recovery,
   root3 PID18059 on19432 physically provisions two local Codex agents and passes
   two task rounds, with exact distinct workspaces, canonical Done, encrypted
@@ -5284,3 +5292,9 @@ Desktop CI repair is verified on main 6e81c157 (2026-10-12): all five desktop ta
 - A fixture observing operation expiry must order that clock before unrelated writer reply timeouts. Prepare any blocking SQLite writer lock before synchronously creating a receive owner and starting its original materialization clock. Do not rearm an existing owner's deadline after an effect, widen production budgets, or accept an unrelated authority-loss outcome as the intended observation.
 
 - A bounded HTTP poll must not stay deliberately parked across unrelated SDK persistence just to prove permit independence. Hold an actual poll, require the SAME collector refresh/intake to reach its authenticated HTTP request before releasing it, and require clean poll completion plus actual message ingestion. Exercise both admission paths independently; restoring the old busy permit must still fail before the peer request. Do not widen HTTP bounds or accept an expired poll as successful concurrency.
+
+
+- Shared Project board is independent of the historical operator/runner projection. Server owns hagency_project_v1; capability project-board-v1; current Space membership and native session authorize access. Cloud code/config additions are not required. The optional Server kill switch defaults enabled and retains data when disabled.
+- Native board must set skip_widget_tree_search on its root: HagencyPanel recursively searches generic control IDs such as workspace, which otherwise collide with encapsulated board Views. Internal board-root lookup still works. Keep explicit makepad_widgets::script_mod! in the split view module to avoid a cyclic wildcard macro reexport.
+- Board async replies are fenced by account, Project, view epoch and detail request. ACK invalidates earlier reads; unknown writes retain the exact original intent in memory across same-account Project changes. NativeOwner operations are not physically cancelled by view changes. No crash-persistent draft or offline-write guarantee exists.
+- Native project_board_http integration uses the real Server/SQL/NativeOwner route with explicit fixture Pasion/Matrix sources. Each run must use unique intent keys for create AND move/update. UI fixtures prove layout/virtualization, not shared operation; real-device acceptance is separately recorded.

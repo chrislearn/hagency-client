@@ -119,6 +119,18 @@ async fn call(req: &mut Request, depot: &Depot) -> Result<Value, OwnerError> {
         return Err(error(400, "invalid_arguments"));
     }
     let operation = match (req.method().clone(), parts.as_slice()) {
+        (Method::POST, [project, "board-command"]) => {
+            key(project)?;
+            let bytes = body(req, 65536)
+                .await
+                .map_err(|_| error(400, "invalid_board_payload"))?;
+            let action = serde_json::from_slice::<hagency_core::project_board::BoardAction>(&bytes)
+                .map_err(|_| error(400, "invalid_board_payload"))?;
+            OwnerOperation::ProjectBoard {
+                project: (*project).into(),
+                action,
+            }
+        }
         (Method::GET, []) => OwnerOperation::Projects,
         (Method::GET, [project, "service-state"]) => {
             key(project)?;

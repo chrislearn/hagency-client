@@ -17,6 +17,7 @@ pub(crate) fn can_add_to_shared_room(agent: &Value) -> bool {
 /// keep running: even a first read bootstraps owner authorization and a device.
 /// Never extend this list to actions that create, resume, save or run anything.
 pub(super) fn management_read(command: &Command) -> bool {
+    if let Command::ProjectBoard {action,..}=command {return action.is_read();}
     matches!(command,
         Command::Projects | Command::ProjectRooms {..} | Command::SpaceCandidates {..}
         | Command::RoomRoster {..} | Command::Agents | Command::DiscoverAgents | Command::Bindings {..}
