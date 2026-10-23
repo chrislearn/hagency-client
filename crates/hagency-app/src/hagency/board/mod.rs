@@ -14,6 +14,7 @@ mod controller;
 mod interaction;
 mod drag;
 mod markdown;
+mod collaboration;
 mod extensions;
 use extensions::column_title;
 pub use view::script_mod;
@@ -97,6 +98,10 @@ impl Widget for KanbanCard {
 }
 #[derive(Clone, Debug)]
 enum Read {
+    Notifications(i64),
+    NotificationAck,
+    OpenTask(String),
+    Attachment(String, bool),
     Snapshot,
     Changes,
     Page(usize),
@@ -247,6 +252,28 @@ pub struct ProjectBoard {
     #[rust]
     comment_preview: bool,
     #[rust]
+    comment_drafts: HashMap<(String, String), String>,
+    #[rust]
+    notifications: Vec<Value>,
+    #[rust]
+    discussion: bool,
+    #[rust]
+    notification_before: i64,
+    #[rust]
+    notification_latest: i64,
+    #[rust]
+    open_request: u64,
+    #[rust]
+    attachment_request: u64,
+    #[rust]
+    notification_request: u64,
+    #[rust]
+    notification_targets: HashMap<WidgetUid, Value>,
+    #[rust]
+    attachments: Vec<Value>,
+    #[rust]
+    attachment_targets: HashMap<WidgetUid, (String, bool)>,
+    #[rust]
     draft_parent: Option<String>,
     #[rust]
     draft_state: String,
@@ -330,6 +357,9 @@ fn error_message(code: &str) -> &str {
         "board_assignee_not_member" => {
             "The assignee is no longer a Project member. Choose another member."
         }
+        "invalid_board_attachment" => "Choose a non-empty file smaller than 2 MB.",
+        "board_attachment_limit" => "This task has reached its attachment limit.",
+        "board_attachment_not_found" => "This attachment is no longer available.",
         "board_human_assignee_required" => {
             "Choose a person. Agent execution will be available separately."
         }
@@ -350,7 +380,10 @@ fn denied(code: &str) -> bool {
 fn uncertain(code: &str) -> bool {
     !matches!(
         code,
-        "invalid_board_columns"
+        "invalid_board_attachment"
+            | "board_attachment_limit"
+            | "board_attachment_not_found"
+            | "invalid_board_columns"
             | "board_wip_limit_reached"
             | "board_column_not_empty"
             | "invalid_board_parent"

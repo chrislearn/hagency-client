@@ -3,8 +3,12 @@ use makepad_widgets::event::{ScrollEvent, ScrollPhase};
 use serde_json::json;
 use makepad_widgets::makepad_draw::cx_draw::CxDraw;
 fn task(id: &str, state: &str) -> BoardTask {
-    serde_json::from_value(json!({"id":id,"projectId":"p1","number":1,"title":"Design a clear, shared project board","description":"Acceptance criteria and context.","state":state,"rank":1024,"priority":"high","assigneeMxid":"@alice:test","labels":["design","desktop"],"dueDate":"2026-11-01","version":1,"createdBy":"@alice:test","createdAt":1,"updatedAt":1,"archivedAt":null})).unwrap()
+    serde_json::from_value(task_value(id, state)).unwrap()
 }
+fn task_value(id: &str, state: &str) -> Value {
+    json!({"id":id,"projectId":"p1","number":1,"title":"Design a clear, shared project board","description":"Acceptance criteria and context.","state":state,"rank":1024,"priority":"high","assigneeMxid":"@alice:test","labels":["design","desktop"],"dueDate":"2026-11-01","version":1,"createdBy":"@alice:test","createdAt":1,"updatedAt":1,"archivedAt":null})
+}
+
 fn panel() -> (Cx, ProjectBoard) {
     let mut cx = Cx::new(Box::new(|_, _| {}));
     let board = cx.with_vm(|vm| {
@@ -99,11 +103,11 @@ fn kanban_script_layout_and_narrow_inspector_use_the_available_viewport() {
         draw(&mut cx, &mut board, width, 760.0);
         let panel = board.view.view(&cx, ids!(inspector)).area().rect(&cx);
         assert!(panel.pos.x + panel.size.x <= width + 1.0, "{panel:?}");
-        if width < 850.0 {
+        if width < 950.0 {
             assert!(!board.view.view(&cx, ids!(board_scroll)).visible());
             assert!(panel.size.x > width - 30.0);
         } else {
-            assert!((panel.size.x - 340.0).abs() < 1.0);
+            assert!((panel.size.x - 420.0).abs() < 1.0);
         }
     }
 }
@@ -743,5 +747,107 @@ fn kanban_unsupported_server_is_not_mislabeled_offline() {
             .label(&cx, ids!(sync_status))
             .text()
             .contains("Offline")
+    );
+}
+
+#[test]
+fn comment_drafts_restore_per_task_without_cross_card_leaks() {
+    let (mut cx, mut board) = panel();
+    populate(&mut board);
+    let a = task("a", "todo");
+    let b = task("b", "todo");
+    board.select(&mut cx, &a);
+    board
+        .view
+        .text_input(&cx, ids!(comment_editor.source))
+        .set_text(&mut cx, "Draft for A");
+    board.select(&mut cx, &b);
+    assert_eq!(
+        board
+            .view
+            .text_input(&cx, ids!(comment_editor.source))
+            .text(),
+        ""
+    );
+    board
+        .view
+        .text_input(&cx, ids!(comment_editor.source))
+        .set_text(&mut cx, "Draft for B");
+    board.select(&mut cx, &a);
+    assert_eq!(
+        board
+            .view
+            .text_input(&cx, ids!(comment_editor.source))
+            .text(),
+        "Draft for A"
+    );
+    board.select(&mut cx, &b);
+    assert_eq!(
+        board
+            .view
+            .text_input(&cx, ids!(comment_editor.source))
+            .text(),
+        "Draft for B"
+    );
+    board.remember_comment(&cx);
+    board.project = "another_project".into();
+    board.restore_comment(&mut cx, Some("a"));
+    assert_eq!(
+        board
+            .view
+            .text_input(&cx, ids!(comment_editor.source))
+            .text(),
+        ""
+    );
+}
+#[test]
+fn activity_describes_assignment_and_attachment_changes() {
+    let text = collaboration::activity_text(
+        &json!({"actor":"@alice:test","kind":"edited","details":{"fields":[{"field":"assigneeMxid","before":null,"after":"@bob:test"}]}}),
+    );
+    assert!(text.contains("bob") && text.contains('→'));
+    let text = collaboration::activity_text(
+        &json!({"kind":"attachment_added","details":{"filename":"design.png"}}),
+    );
+    assert!(text.contains("design.png"));
+}
+
+#[test]
+fn late_attachment_and_notification_navigation_cannot_reopen_another_task() {
+    let (mut cx, mut board) = panel();
+    populate(&mut board);
+    board.select(&mut cx, &task("b", "todo"));
+    board.detail_request = 9;
+    board.attachment_request = 12;
+    board.open_request = 13;
+    for (request, kind) in [
+        (11, Read::Attachment("a".into(), false)),
+        (13, Read::OpenTask("a".into())),
+    ] {
+        board.reads.insert(request);
+        board.apply_read(
+            &mut cx,
+            &Completed {
+                identity: "account".into(),
+                project: "p1".into(),
+                epoch: 1,
+                request,
+                kind,
+                detail_generation: 8,
+                result: Ok(json!({"task":task_value("a","todo")})),
+            },
+        );
+        assert_eq!(board.selected.as_ref().unwrap().id, "b");
+    }
+    assert_eq!(
+        collaboration::member_choice("@alice:test", &["@alice:test".into()]),
+        "alice"
+    );
+    assert_eq!(
+        collaboration::member_choice(
+            "@alice:test",
+            &["@alice:test".into(), "@alice:elsewhere".into()]
+        ),
+        "@alice:test"
     );
 }

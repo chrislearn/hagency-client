@@ -120,6 +120,7 @@ impl Widget for ProjectBoard {
         };
         self.handle_extensions(cx, actions);
         self.handle_markdown(cx, actions);
+        self.handle_collaboration(cx, actions);
         for action in actions {
             if let Some(done) = action.downcast_ref::<Completed>() {
                 self.apply_read(cx, done);
@@ -397,6 +398,7 @@ impl Widget for ProjectBoard {
                     tr("You have unsaved changes. Save them, or close again to discard the draft."),
                 );
             } else {
+                self.remember_comment(cx);
                 self.selected = None;
                 self.creating = false;
                 self.dirty = false;
@@ -558,12 +560,12 @@ impl Widget for ProjectBoard {
         let inspector = self.view.view(cx, ids!(inspector)).visible();
         self.view
             .view(cx, ids!(board_scroll))
-            .set_visible(cx, !inspector || width >= 850.0);
+            .set_visible(cx, !inspector || width >= 950.0);
         let mut panel = self.view.view(cx, ids!(inspector));
-        let size = if width < 850.0 {
+        let size = if width < 950.0 {
             Size::fill()
         } else {
-            Size::Fixed(340.0)
+            Size::Fixed(420.0)
         };
         script_apply_eval!(cx,panel,{width:#(size)});
         self.prepare_extension_draw(cx);
@@ -640,6 +642,9 @@ impl Widget for ProjectBoard {
             script_apply_eval!(cx,column,{draw_bg +: {border_size:#(if highlighted{2.0}else{0.0}) border_color:mod.widgets.RINX_ACCENT}});
         }
         while let Some(step) = self.view.draw_walk(cx, scope, walk).step() {
+            if self.draw_collaboration(cx, scope, &step) {
+                continue;
+            }
             if self.draw_extension_list(cx, scope, &step) {
                 continue;
             }
@@ -800,6 +805,12 @@ pub(super) fn fill_card(
     card.label(cx, ids!(priority))
         .set_text(cx, priority_label(&task.priority));
     let mut tags = task.labels.clone();
+    if task.attachment_count > 0 {
+        tags.push(format!("📎 {}", task.attachment_count));
+    }
+    if task.comment_count > 0 {
+        tags.push(format!("▤ {}", task.comment_count));
+    }
     if task.checklist_total > 0 {
         tags.push(format!(
             "☑ {}/{}",

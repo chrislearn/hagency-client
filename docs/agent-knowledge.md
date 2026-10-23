@@ -5315,3 +5315,5 @@ Desktop CI repair is verified on main 6e81c157 (2026-10-12): all five desktop ta
 
 - Native Markdown composers must wrap TextInput in a View to toggle visibility; generic TextInput set_visible did not remove its drawing/layout in native acceptance. Toolbar transformations should call replace_range(UndoGroup::New) with byte-indexed native selection and skip active IME composition. Source remains the API/storage contract; render independently from it.
 - Full-client local board acceptance can restore an isolated fake OAuth session through the normal SDK (prepare_project_client_fixture example), with explicit loopback identity metadata/whoami/sync from Server's project_board_fixture. Production Service origin/issuer/account guards remain unchanged. This validates full app Projects navigation and actual Server board writes, not real Pasion login or Matrix chat. Do not reuse the production account data directory for fixture sessions.
+
+- 看板 v3：评论草稿是账号内 `(project, task)` 的会话期缓存；详情请求代次和图片请求序号共同隔离旧回包。通知存在 Server，项目内轮询，不是 OS push。附件只经项目成员鉴权 API 读取；预览限额不能替代 Server 单文件/总容量限额。原生测试必须用完整 app；Bob 可通过 `HAGENCY_BOARD_FIXTURE_ACCOUNT=bob` 生成独立会话目录，既有目录拒绝覆盖。

@@ -9,6 +9,17 @@ impl ProjectBoard {
         self.view.redraw(cx);
     }
     pub(super) fn clear_content(&mut self, cx: &mut Cx) {
+        self.notifications.clear();
+        self.notification_targets.clear();
+        self.attachment_targets.clear();
+        self.notification_before = 0;
+        self.notification_latest = 0;
+        self.view
+            .view(cx, ids!(notifications_panel))
+            .set_visible(cx, false);
+        self.view
+            .button(cx, ids!(notifications_button))
+            .set_text(cx, tr("Notifications"));
         self.columns_draft = None;
         self.draft_checklist.clear();
         self.draft_parent = None;
@@ -23,6 +34,10 @@ impl ProjectBoard {
         self.creating = false;
         self.dirty = false;
         self.conflict = false;
+        self.attachments.clear();
+        self.view
+            .widget(cx, ids!(attachment_preview))
+            .set_visible(cx, false);
         self.comments.clear();
         self.activity.clear();
         self.members.clear();
@@ -54,6 +69,7 @@ impl ProjectBoard {
         let project = project.unwrap_or("");
         let context_changed = self.identity != identity || self.project != project;
         if context_changed {
+            self.remember_comment(cx);
             if !self.project.is_empty() && self.identity == identity {
                 if let Some(pending) = self.pending.take() {
                     self.retained.insert(self.project.clone(), pending);
@@ -61,6 +77,7 @@ impl ProjectBoard {
             }
             if self.identity != identity {
                 self.retained.clear();
+                self.comment_drafts.clear();
             }
             self.clear_content(cx);
             self.identity = identity.into();
@@ -133,6 +150,9 @@ impl ProjectBoard {
             self.detail_request = request;
         }
         match kind {
+            Read::OpenTask(..) => self.open_request = request,
+            Read::Attachment(..) => self.attachment_request = request,
+            Read::Notifications(_) => self.notification_request = request,
             Read::Comments(..) => self.comments_request = request,
             Read::Activity(..) => self.activity_request = request,
             _ => (),
@@ -319,7 +339,14 @@ impl ProjectBoard {
             );
             return;
         }
+        self.remember_comment(cx);
+        self.attachments.clear();
+        self.view
+            .widget(cx, ids!(attachment_preview))
+            .set_visible(cx, false);
+        self.restore_comment(cx, Some(&task.id));
         self.creating = false;
+        self.discussion = false;
         self.detail_loaded = false;
         self.subtasks.clear();
         self.parent_task = None;
@@ -357,7 +384,10 @@ impl ProjectBoard {
         self.view
             .view(cx, ids!(editor_scroll))
             .set_scroll_pos(cx, dvec2(0.0, 0.0));
+        self.remember_comment(cx);
+        self.restore_comment(cx, None);
         self.creating = true;
+        self.discussion = false;
         let state = self
             .query
             .state
@@ -405,7 +435,11 @@ impl ProjectBoard {
         }
         let previous_filter = self.query.assignee.clone();
         let mut labels = vec![tr("All members").to_owned()];
-        labels.extend(self.members.iter().cloned());
+        labels.extend(
+            self.members
+                .iter()
+                .map(|id| collaboration::member_choice(id, &self.members)),
+        );
         self.view
             .drop_down(cx, ids!(filter_assignee))
             .set_labels(cx, labels);
@@ -425,6 +459,8 @@ impl ProjectBoard {
             .map(|label| {
                 if label.starts_with('@') && !joined.contains(&label) {
                     format!("{} · {}", label, tr("Former member"))
+                } else if label.starts_with('@') {
+                    collaboration::member_choice(&label, &self.members)
                 } else {
                     label
                 }
@@ -442,6 +478,40 @@ impl ProjectBoard {
         );
     }
     pub(super) fn sync_controls(&mut self, cx: &mut Cx) {
+        self.view
+            .view(cx, ids!(details_body))
+            .set_visible(cx, !self.discussion);
+        for (id, selected) in [
+            (ids!(detail_tab).as_slice(), !self.discussion),
+            (ids!(discussion_tab).as_slice(), self.discussion),
+        ] {
+            let mut button = self.view.button(cx, id);
+            if selected {
+                script_apply_eval!(cx, button, {draw_bg +: {color:mod.widgets.RINX_PANEL_BG color_focus:mod.widgets.RINX_PANEL_BG} draw_text.color:mod.widgets.RINX_ACCENT});
+            } else {
+                script_apply_eval!(cx, button, {draw_bg +: {color:#0000 color_focus:#0000} draw_text.color:mod.widgets.RINX_INK});
+            }
+        }
+        self.view
+            .button(cx, ids!(discussion_tab))
+            .set_enabled(cx, self.selected.is_some() && !self.creating);
+        self.view
+            .button(cx, ids!(archive))
+            .set_visible(cx, self.selected.is_some() && !self.creating);
+        let mut attachments = self.view.portal_list(cx, ids!(attachment_list));
+        script_apply_eval!(cx, attachments, {height: #(self.attachments.len().max(1) as f64 * 42.0)});
+        self.view
+            .view(cx, ids!(attachments_section))
+            .set_visible(cx, self.selected.is_some() && !self.creating);
+        self.view.button(cx, ids!(upload_attachment)).set_enabled(
+            cx,
+            self.detail_loaded
+                && self.pending.is_none()
+                && !self
+                    .selected
+                    .as_ref()
+                    .is_some_and(|t| t.archived_at.is_some()),
+        );
         self.sync_extension_controls(cx);
         self.view
             .view(cx, ids!(create_status))
@@ -524,9 +594,10 @@ impl ProjectBoard {
             cx,
             self.conflict || self.selected.is_some() && !self.detail_loaded,
         );
-        self.view
-            .view(cx, ids!(existing_actions))
-            .set_visible(cx, !self.creating && self.selected.is_some());
+        self.view.view(cx, ids!(existing_actions)).set_visible(
+            cx,
+            !self.creating && self.selected.is_some() && self.discussion,
+        );
         for id in [ids!(move_state).as_slice(), ids!(comment_editor.source)] {
             self.view
                 .widget(cx, id)
@@ -590,6 +661,19 @@ impl ProjectBoard {
                 ""
             }),
         );
+        self.view
+            .view(cx, ids!(task_status))
+            .set_visible(cx, !self.creating && self.selected.is_some());
+        let can_assign = editing
+            && self
+                .current_mxid()
+                .is_some_and(|id| self.members.contains(&id));
+        self.view
+            .button(cx, ids!(assign_me))
+            .set_enabled(cx, can_assign);
+        self.view
+            .widget(cx, ids!(assign_me))
+            .set_disabled(cx, !can_assign);
         self.sync_markdown_controls(
             cx,
             editing,
@@ -644,6 +728,27 @@ impl ProjectBoard {
         if matches!(done.kind, Read::Snapshot | Read::Changes | Read::Page(_)) {
             self.loading = false;
         }
+        if matches!(done.kind, Read::OpenTask(..))
+            && (done.request != self.open_request || done.detail_generation != self.detail_request)
+        {
+            return;
+        }
+        if matches!(done.kind, Read::Notifications(_)) && done.request != self.notification_request
+        {
+            return;
+        }
+        if let Read::Notifications(before) = done.kind
+            && before != self.notification_before
+        {
+            self.refresh_notifications(cx);
+            return;
+        }
+        if matches!(done.kind, Read::Attachment(..))
+            && (done.detail_generation != self.detail_request
+                || done.request != self.attachment_request)
+        {
+            return;
+        }
         match &done.result {
             Err(code) => {
                 self.offline = uncertain(code);
@@ -662,6 +767,10 @@ impl ProjectBoard {
                 self.offline = false;
                 self.retry_delay = 5.0;
                 match &done.kind {
+                    Read::Notifications(_)
+                    | Read::NotificationAck
+                    | Read::OpenTask(_)
+                    | Read::Attachment(..) => self.apply_collaboration(cx, &done.kind, value),
                     Read::Snapshot => match serde_json::from_value::<Snapshot>(value.clone()) {
                         Ok(snapshot)
                             if snapshot.project_id == self.project
@@ -687,6 +796,7 @@ impl ProjectBoard {
                             });
                             let members = snapshot.members.clone();
                             self.snapshot = Some(snapshot);
+                            self.refresh_notifications(cx);
                             self.failed = false;
                             self.sync_members(cx, members);
                             self.sync_column_labels(cx);
@@ -707,6 +817,7 @@ impl ProjectBoard {
                         _ => self.notice(cx, error_message("invalid_server_response")),
                     },
                     Read::Changes => {
+                        self.refresh_notifications(cx);
                         let seq = value["sequence"].as_i64().unwrap_or(-1);
                         if self.snapshot.as_ref().is_some_and(|s| s.sequence != seq) {
                             self.load(cx);
@@ -779,6 +890,8 @@ impl ProjectBoard {
                                 self.sync_controls(cx);
                                 return;
                             }
+                            self.attachments =
+                                value["attachments"].as_array().cloned().unwrap_or_default();
                             self.subtasks = children;
                             self.parent_task = parent;
                             self.detail_loaded = true;
@@ -847,24 +960,9 @@ impl ProjectBoard {
                                 .join("")
                         } else {
                             rows.iter()
-                                .map(|v| {
-                                    format!(
-                                        "{} · {}\n{}",
-                                        member_label(v["actor"].as_str().unwrap_or("")),
-                                        timestamp(&v["occurredAt"]),
-                                        tr(match v["kind"].as_str().unwrap_or("") {
-                                            "created" => "Created task",
-                                            "edited" => "Edited task",
-                                            "moved" => "Moved task",
-                                            "archived" => "Archived task",
-                                            "restored" => "Restored task",
-                                            "commented" => "Added a comment",
-                                            _ => "Updated task",
-                                        })
-                                    )
-                                })
+                                .map(collaboration::activity_text)
                                 .collect::<Vec<_>>()
-                                .join("\n")
+                                .join("\n\n")
                         };
                         self.view
                             .widget(
@@ -923,12 +1021,18 @@ impl ProjectBoard {
                 let was_columns =
                     matches!(self.pending, Some(BoardAction::ConfigureColumns { .. }));
                 let was_comment = matches!(self.pending, Some(BoardAction::Comment { .. }));
+                let was_attachment = matches!(
+                    self.pending,
+                    Some(
+                        BoardAction::UploadAttachment { .. } | BoardAction::RemoveAttachment { .. }
+                    )
+                );
                 self.epoch = nonce();
                 self.reads.clear();
                 self.loading = false;
                 self.pending = None;
                 self.retained.remove(&self.project);
-                if !was_comment {
+                if !was_comment && !was_attachment {
                     self.dirty = false;
                 }
                 self.conflict = false;
@@ -941,16 +1045,30 @@ impl ProjectBoard {
                     self.view
                         .label(cx, ids!(detail_heading))
                         .set_text(cx, &format!("#{}", task.number));
-                    if !was_comment {
+                    if !was_comment && !was_attachment {
                         self.fill_editor(cx, task.fields());
-                    } else {
+                    } else if was_comment {
+                        self.view
+                            .label(cx, ids!(comment_draft_hint))
+                            .set_text(cx, "");
                         self.view
                             .text_input(cx, ids!(comment_editor.source))
                             .set_text(cx, "");
+                        self.comment_drafts
+                            .remove(&(self.project.clone(), task.id.clone()));
                         self.comment_preview = false;
                         self.sync_markdown_views(cx);
                     }
                     self.detail_history(cx, &task.id);
+                    if was_attachment {
+                        self.read(
+                            cx,
+                            Read::Detail(task.id.clone()),
+                            BoardAction::Detail {
+                                task: task.id.clone(),
+                            },
+                        );
+                    }
                 }
                 if was_columns {
                     self.columns_draft = None;

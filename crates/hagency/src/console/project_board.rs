@@ -43,7 +43,10 @@ pub(super) fn request(
     key(project)?;
     let root = format!("/hagency/api/v1/projects/{project}");
     let task = match &action {
-        BoardAction::Detail { task }
+        BoardAction::Attachment { task, .. }
+        | BoardAction::UploadAttachment { task, .. }
+        | BoardAction::RemoveAttachment { task, .. }
+        | BoardAction::Detail { task }
         | BoardAction::Comments { task, .. }
         | BoardAction::Activity { task, .. }
         | BoardAction::Update { task, .. }
@@ -59,6 +62,54 @@ pub(super) fn request(
     let task_root = format!("{root}/tasks/{}", task.unwrap_or_default());
     let serialize = |input| serde_json::to_value(input).map_err(|_| invalid());
     Ok(match action {
+        BoardAction::Notifications { before } => {
+            if before < 0 {
+                return Err(invalid());
+            }
+            (
+                Method::GET,
+                format!("{root}/board/notifications?after={before}"),
+                None,
+            )
+        }
+        BoardAction::ReadNotification { input } => {
+            if input.sequence < 1 {
+                return Err(invalid());
+            }
+            (
+                Method::POST,
+                format!("{root}/board/notifications/read"),
+                Some(serde_json::to_value(input).map_err(|_| invalid())?),
+            )
+        }
+        BoardAction::Attachment { attachment, .. } => {
+            key(&attachment)?;
+            (
+                Method::GET,
+                format!("{task_root}/attachments/{attachment}"),
+                None,
+            )
+        }
+        BoardAction::UploadAttachment { input, .. } => {
+            key(&input.idempotency_key)?;
+            if input.data.len() > 2_796_204 || input.filename.chars().count() > 180 {
+                return Err(invalid());
+            }
+            (
+                Method::POST,
+                format!("{task_root}/attachments"),
+                Some(serde_json::to_value(input).map_err(|_| invalid())?),
+            )
+        }
+        BoardAction::RemoveAttachment { input, .. } => {
+            key(&input.idempotency_key)?;
+            key(&input.attachment)?;
+            (
+                Method::POST,
+                format!("{task_root}/attachments/remove"),
+                Some(serde_json::to_value(input).map_err(|_| invalid())?),
+            )
+        }
         BoardAction::Snapshot { query: q } => {
             (Method::GET, format!("{root}/board?{}", query(q)?), None)
         }

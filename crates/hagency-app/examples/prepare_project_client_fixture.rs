@@ -16,10 +16,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         return Err("only the explicit disposable loopback fixture is supported".into());
     }
-    let root = std::env::temp_dir().join("hagency-full-client-local");
+    let account = std::env::var("HAGENCY_BOARD_FIXTURE_ACCOUNT").unwrap_or_else(|_| "alice".into());
+    if !matches!(account.as_str(), "alice" | "bob") {
+        return Err("fixture account must be alice or bob".into());
+    }
+    let root = std::env::temp_dir().join(if account == "alice" {
+        "hagency-full-client-local"
+    } else {
+        "hagency-full-client-bob"
+    });
     // Refuse to overwrite even a previous fixture session.
     std::fs::create_dir(&root)?;
-    let user = "@alice:example.test";
+    let user = format!("@{account}:example.test");
     let state = root
         .join(format!(
             "account_{}",
@@ -29,7 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::fs::create_dir_all(&state)?;
     let session = json!({
         "client_session":{"homeserver":origin,"db_path":"matrix-fixture-db","passphrase":"disposable-fixture-only"},
-        "user_session":{"oauth_client_id":"fixture-native-client","user_id":user,"device_id":"FIXTURE_ALICE","access_token":"fixture-oauth-alice"},
+        "user_session":{"oauth_client_id":"fixture-native-client","user_id":user,"device_id":format!("FIXTURE_{}", account.to_uppercase()),"access_token":format!("fixture-oauth-{account}")},
         "sliding_sync_version":"Native"
     });
     // Validate against the same persistence type used by the complete app.

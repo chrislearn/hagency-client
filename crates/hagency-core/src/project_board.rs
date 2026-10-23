@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 pub const STATES: [&str; 5] = ["todo", "in_progress", "blocked", "in_review", "done"];
 pub const PRIORITIES: [&str; 4] = ["low", "normal", "high", "urgent"];
-pub const CAPABILITY: &str = "project-board-v2";
+pub const CAPABILITY: &str = "project-board-v3";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -283,25 +283,78 @@ impl ConfigureColumns {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
 pub enum BoardAction {
-    Snapshot { query: Query },
-    Page { query: Query },
-    Detail { task: String },
-    Changes { after: i64 },
-    Comments { task: String, after: i64 },
-    Activity { task: String, after: i64 },
-    ConfigureColumns { input: ConfigureColumns },
-    Create { input: Create },
-    Update { task: String, input: Update },
-    Move { task: String, input: Move },
-    Archive { task: String, input: Versioned },
-    Restore { task: String, input: Versioned },
-    Comment { task: String, input: Comment },
+    Snapshot {
+        query: Query,
+    },
+    Page {
+        query: Query,
+    },
+    Detail {
+        task: String,
+    },
+    Changes {
+        after: i64,
+    },
+    Comments {
+        task: String,
+        after: i64,
+    },
+    Activity {
+        task: String,
+        after: i64,
+    },
+    Notifications {
+        before: i64,
+    },
+    ReadNotification {
+        input: NotificationRead,
+    },
+    Attachment {
+        task: String,
+        attachment: String,
+    },
+    UploadAttachment {
+        task: String,
+        input: AttachmentUpload,
+    },
+    RemoveAttachment {
+        task: String,
+        input: AttachmentRemove,
+    },
+    ConfigureColumns {
+        input: ConfigureColumns,
+    },
+    Create {
+        input: Create,
+    },
+    Update {
+        task: String,
+        input: Update,
+    },
+    Move {
+        task: String,
+        input: Move,
+    },
+    Archive {
+        task: String,
+        input: Versioned,
+    },
+    Restore {
+        task: String,
+        input: Versioned,
+    },
+    Comment {
+        task: String,
+        input: Comment,
+    },
 }
 impl BoardAction {
     pub fn is_read(&self) -> bool {
         matches!(
             self,
             Self::Snapshot { .. }
+                | Self::Notifications { .. }
+                | Self::Attachment { .. }
                 | Self::Page { .. }
                 | Self::Detail { .. }
                 | Self::Changes { .. }
@@ -339,6 +392,10 @@ pub struct BoardTask {
     pub subtask_total: i64,
     #[serde(default)]
     pub subtask_done: i64,
+    #[serde(default)]
+    pub attachment_count: i64,
+    #[serde(default)]
+    pub comment_count: i64,
     pub version: i64,
     pub created_by: String,
     pub created_at: i64,
@@ -380,4 +437,26 @@ pub struct Snapshot {
     pub lanes: Vec<Lane>,
     pub members: Vec<String>,
     pub capability: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AttachmentUpload {
+    pub idempotency_key: String,
+    pub filename: String,
+    pub content_type: String,
+    pub data: String,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AttachmentRemove {
+    pub idempotency_key: String,
+    pub attachment: String,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NotificationRead {
+    pub sequence: i64,
+    #[serde(default)]
+    pub all_before: bool,
 }

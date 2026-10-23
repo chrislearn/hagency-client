@@ -14156,3 +14156,7 @@ PR #1 is merged by chrislearn as 6e81c157d660d1d0eaa5c0190bf8930b5bf06a17; the m
 - Actual complete binary with original account reached Projects → test project → Board; remote Server lacks capability. Operator chose local Server. Added isolated fixture-session preparer; complete binary then used normal SDK OAuth restore/issuer/whoami/device checks and NativeOwner against real loopback Server/PG with explicit Pasion/Matrix test doubles.
 - CUA full flow passed project list/detail/overview/board/search/#20, description edit/preview/save, comment toolbar/preview/post, close/reopen/tab switching and Server+Client restart. SQL task#20 v2 retains raw Markdown, both posted test comments persisted. Complete local client /tmp/HagencyLocal.app remains available. Report: dev-vibe/project-kanban-markdown-and-full-client-validation-2026-10-23.zh.md.
 - Final verification: App597 passed/0failed/2existing ignored; Board18/18; strict Client and Server fixture Clippy pass; i18n2332entries/1766calls/0missing; diff checks pass. Both description and comments were visually reread after restarting Server and complete client.
+
+## 2026-10-23 项目看板协作改进
+
+在 `codex/project-kanban` 完成按任务隔离评论草稿、详情/讨论页签、快捷分配、项目通知箱、结构化变更记录及图片附件上传/预览/下载。完整 Alice/Bob 原生客户端 + 本地真实 Server/PostgreSQL 已实测切卡、改派通知、已读跳转、Markdown 评论、PNG 上传预览和下载字节一致性。具体证据、验证结果与范围见 `dev-vibe/project-kanban-collaboration-validation-2026-10-23.zh.md`。未部署/推送。

@@ -102,12 +102,31 @@ makepad_widgets::script_mod! {
         }
         View {width: Fill height: Fit flow: Flow.Right{wrap: true} spacing: 14 align: Align{y: 0.5}
             summary := Small {width: Fit text: #(crate::i18n::tr("Shared with Project members")) i18n_text: "Shared with Project members"}
+            notifications_button := RinxGhostButton {height:28 text:#(crate::i18n::tr("Notifications")) i18n_text:"Notifications"}
+            my_tasks := RinxGhostButton {height:28 text:#(crate::i18n::tr("My tasks")) i18n_text:"My tasks"}
             overdue := RinxCheckBox {text: #(crate::i18n::tr("Overdue")) i18n_text: "Overdue"}
             archived := RinxCheckBox {text: #(crate::i18n::tr("Archived tasks")) i18n_text: "Archived tasks"}
             sync_status := Small {width: Fit}
         }
         notice := Text {visible: false draw_text.color: mod.widgets.RINX_MUTED}
         retry := Action {visible: false text: #(crate::i18n::tr("Retry original save")) i18n_text: "Retry original save"}
+        notifications_panel := RoundedView {visible:false width:Fill height:270 flow:Down padding:12 spacing:8
+            draw_bg +: {color:mod.widgets.RINX_SURFACE border_color:mod.widgets.RINX_BORDER border_size:1.0 border_radius:10.0}
+            View {width:Fill height:30 spacing:10 align:Align{y:0.5}
+                Small {width:Fill text:#(crate::i18n::tr("Project notifications · assignments, comments and changes")) i18n_text:"Project notifications · assignments, comments and changes"}
+                notifications_read := Action {text:#(crate::i18n::tr("Mark all read")) i18n_text:"Mark all read"}
+                notifications_close := Action {text:#(crate::i18n::tr("Close")) i18n_text:"Close"}
+            }
+            notifications_list := PortalList {width:Fill height:Fill capture_overload:false
+                Item := View {width:Fill height:76 flow:Down spacing:3 padding:Inset{right:16 bottom:8}
+                    open := RinxGhostButton {width:Fill height:30 padding:0 align:Align{x:0.0 y:0.5}}
+                    detail := Small {max_lines:2 text_overflow:Ellipsis}
+                }
+                Filler := View {width:Fill height:12}
+                Empty := Small {width:Fill height:40 text:#(crate::i18n::tr("No notifications yet")) i18n_text:"No notifications yet"}
+            }
+            notifications_older := Action {visible:false text:#(crate::i18n::tr("Older notifications")) i18n_text:"Older notifications"}
+        }
         column_settings := RoundedView {visible:false width:Fill height:Fit padding:14 flow:Down spacing:10
             draw_bg +: {color:mod.widgets.RINX_SURFACE border_radius:10.0 border_size:1.0 border_color:mod.widgets.RINX_BORDER}
             View {width:Fill height:Fit align:Align{y:0.5} spacing:10
@@ -145,7 +164,7 @@ makepad_widgets::script_mod! {
                 custom_6 := Column {visible:false}
 
             }
-            inspector := RoundedView {visible: false width: 340 height: Fill padding: 16 flow: Down spacing: 10
+            inspector := RoundedView {visible: false width: 420 height: Fill padding: 16 flow: Down spacing: 10
                 draw_bg +: {color: mod.widgets.RINX_SURFACE border_radius: 10.0 border_size: 1.0 border_color: mod.widgets.RINX_BORDER}
                 View {width: Fill height: Fit align: Align{y: 0.5}
                     detail_heading := Text {width: Fill draw_text.text_style: theme.font_bold{font_size: mod.widgets.RINX_BODY_SIZE}}
@@ -153,17 +172,60 @@ makepad_widgets::script_mod! {
                     close_detail := Action {text: #(crate::i18n::tr("Close")) i18n_text: "Close"}
                 }
                 reload_latest := Action {visible: false width: Fill text: #(crate::i18n::tr("Discard draft and load latest")) i18n_text: "Discard draft and load latest"}
+                View {width:Fill height:32 spacing:8
+                    detail_tab := RinxGhostButton {height:30 text:#(crate::i18n::tr("Task details")) i18n_text:"Task details"}
+                    discussion_tab := RinxGhostButton {height:30 text:#(crate::i18n::tr("Discussion & activity")) i18n_text:"Discussion & activity"}
+                }
                 editor_scroll := ScrollYView {width: Fill height: Fill flow: Down spacing: 10 padding:Inset{right:12}
                     detail_notice := Small {}
+                    details_body := View {width:Fill height:Fit flow:Down spacing:10
                     Text {text: #(crate::i18n::tr("Title")) i18n_text: "Title"}
                     title := Input {empty_text: #(crate::i18n::tr("What needs to be done?")) i18n_empty_text: "What needs to be done?"}
                     create_status := View {visible:false width:Fill height:Fit flow:Down spacing:5
                         Text {text:#(crate::i18n::tr("Status")) i18n_text:"Status"}
                         new_status := Select {labels:[#(crate::i18n::tr("To do")) #(crate::i18n::tr("In progress")) #(crate::i18n::tr("Blocked")) #(crate::i18n::tr("In review")) #(crate::i18n::tr("Done"))]}
                     }
+                    task_status := View {visible:false width:Fill height:Fit flow:Down spacing:6
+                        Text {text: #(crate::i18n::tr("Status")) i18n_text: "Status"}
+                        move_state := Select {labels: [#(crate::i18n::tr("To do")) #(crate::i18n::tr("In progress")) #(crate::i18n::tr("Blocked")) #(crate::i18n::tr("In review")) #(crate::i18n::tr("Done"))]}
+                        View {width: Fill height: Fit spacing: 8
+                            move_top := Action {text: #(crate::i18n::tr("Move to top")) i18n_text: "Move to top"}
+                            move_bottom := Action {text: #(crate::i18n::tr("Move to bottom")) i18n_text: "Move to bottom"}
+                        }
+                    }
                     parent_link := View {visible:false width:Fill height:Fit spacing:6
                         open_parent := Action {width:Fill}
                         unlink_parent := Action {text:#(crate::i18n::tr("Unlink")) i18n_text:"Unlink"}
+                    }
+                    View {width: Fill height: Fit flow: Down spacing: 5
+                        Text {text: #(crate::i18n::tr("Priority")) i18n_text: "Priority"}
+                        priority := Select {labels: [#(crate::i18n::tr("Low")) #(crate::i18n::tr("Normal")) #(crate::i18n::tr("High")) #(crate::i18n::tr("Urgent"))]}
+                    }
+                    View {width:Fill height:Fit align:Align{y:0.5}
+                        Text {width:Fill text:#(crate::i18n::tr("Assignee")) i18n_text:"Assignee"}
+                        assign_me := RinxGhostButton {height:28 text:#(crate::i18n::tr("Assign to me")) i18n_text:"Assign to me"}
+                    }
+                    assignee := Select {labels: [#(crate::i18n::tr("Unassigned"))]}
+                    Text {text: #(crate::i18n::tr("Labels")) i18n_text: "Labels"}
+                    labels := Input {empty_text: #(crate::i18n::tr("Comma-separated labels")) i18n_empty_text: "Comma-separated labels"}
+                    Text {text: #(crate::i18n::tr("Due date")) i18n_text: "Due date"}
+                    due_date := Input {empty_text: "YYYY-MM-DD"}
+                    Text {text: #(crate::i18n::tr("Description")) i18n_text: "Description"}
+                    description_editor := Composer {}
+                    attachments_section := View {width:Fill height:Fit flow:Down spacing:8
+                        View {width:Fill height:30 align:Align{y:0.5}
+                            Text {width:Fill text:#(crate::i18n::tr("Attachments")) i18n_text:"Attachments"}
+                            upload_attachment := Action {text:#(crate::i18n::tr("Add file")) i18n_text:"Add file"}
+                        }
+                        Small {text:#(crate::i18n::tr("Images and files · up to 2 MB each, 20 per task")) i18n_text:"Images and files · up to 2 MB each, 20 per task"}
+                        attachment_list := PortalList {width:Fill height:1 capture_overload:false
+                            Filler := View {width:Fill height:12}
+                            Item := View {width:Fill height:42 spacing:6 align:Align{y:0.5}
+                                open := RinxGhostButton {width:Fill height:34 padding:0}
+                                download := RinxGhostButton {height:30 text:#(crate::i18n::tr("Download")) i18n_text:"Download"}
+                            }
+                        }
+                        attachment_preview := Image {visible:false width:Fill height:220 fit:ImageFit.Smallest}
                     }
                     checklist_section := View {width:Fill height:Fit flow:Down spacing:8
                         View {width:Fill height:Fit align:Align{y:0.5}
@@ -197,32 +259,16 @@ makepad_widgets::script_mod! {
                         }
                         add_subtask := Action {width:Fill text:#(crate::i18n::tr("Add subtask")) i18n_text:"Add subtask"}
                     }
-                    Text {text: #(crate::i18n::tr("Description")) i18n_text: "Description"}
-                    description_editor := Composer {}
-                    View {width: Fill height: Fit flow: Down spacing: 5
-                        Text {text: #(crate::i18n::tr("Priority")) i18n_text: "Priority"}
-                        priority := Select {labels: [#(crate::i18n::tr("Low")) #(crate::i18n::tr("Normal")) #(crate::i18n::tr("High")) #(crate::i18n::tr("Urgent"))]}
+                        archive := Action {width:Fill text:#(crate::i18n::tr("Archive task")) i18n_text:"Archive task"}
                     }
-                    Text {text: #(crate::i18n::tr("Assignee")) i18n_text: "Assignee"}
-                    assignee := Select {labels: [#(crate::i18n::tr("Unassigned"))]}
-                    Text {text: #(crate::i18n::tr("Labels")) i18n_text: "Labels"}
-                    labels := Input {empty_text: #(crate::i18n::tr("Comma-separated labels")) i18n_empty_text: "Comma-separated labels"}
-                    Text {text: #(crate::i18n::tr("Due date")) i18n_text: "Due date"}
-                    due_date := Input {empty_text: "YYYY-MM-DD"}
                     existing_actions := View {visible: false width: Fill height: Fit flow: Down spacing: 8
                         Hr {width: Fill height: 1}
-                        Text {text: #(crate::i18n::tr("Move task")) i18n_text: "Move task"}
-                        move_state := Select {labels: [#(crate::i18n::tr("To do")) #(crate::i18n::tr("In progress")) #(crate::i18n::tr("Blocked")) #(crate::i18n::tr("In review")) #(crate::i18n::tr("Done"))]}
-                        View {width: Fill height: Fit spacing: 8
-                            move_top := Action {text: #(crate::i18n::tr("Move to top")) i18n_text: "Move to top"}
-                            move_bottom := Action {text: #(crate::i18n::tr("Move to bottom")) i18n_text: "Move to bottom"}
-                        }
-                        archive := Action {width: Fill text: #(crate::i18n::tr("Archive task")) i18n_text: "Archive task"}
-                        Hr {width: Fill height: 1}
+
                         Text {text: #(crate::i18n::tr("Comments")) i18n_text: "Comments"}
                         comments := mod.widgets.BoardMarkdown {width:Fill height:Fit padding:0}
                         more_comments := Action {visible: false text: #(crate::i18n::tr("Load more comments")) i18n_text: "Load more comments"}
                         first_comments := Action {visible:false text:#(crate::i18n::tr("Back to first comments")) i18n_text:"Back to first comments"}
+                        comment_draft_hint := Small {}
                         comment_editor := Composer {source_wrap +: {source +: {height:120}}}
                         add_comment := Action {text: #(crate::i18n::tr("Add comment")) i18n_text: "Add comment"}
                         Text {text: #(crate::i18n::tr("Activity")) i18n_text: "Activity"}
