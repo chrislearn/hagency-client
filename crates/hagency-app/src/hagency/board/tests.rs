@@ -511,3 +511,127 @@ fn kanban_malformed_child_payload_cannot_become_an_empty_success() {
     assert!(!board.detail_loaded);
     assert_eq!(board.fields(&mut cx).title, selected.title);
 }
+
+#[test]
+fn kanban_lift_preserves_geometry_and_leaves_a_scrollbar_gutter() {
+    let (mut cx, mut board) = panel();
+    populate(&mut board);
+    draw(&mut cx, &mut board, 1100.0, 760.0);
+    let list = board
+        .view
+        .view(&cx, ids!(todo))
+        .portal_list(&cx, ids!(cards));
+    let card = list.item(&mut cx, 0, id!(Card));
+    let rect = card.area().rect(&cx);
+    let viewport = list.area().rect(&cx);
+    assert!(viewport.pos.x + viewport.size.x - rect.pos.x - rect.size.x >= 13.0);
+    let start = rect.pos + dvec2(70.0, 50.0);
+    board.drag = Some(Drag {
+        task: task("task_todo", "todo"),
+        start,
+        at: start + dvec2(280.0, 35.0),
+        moved: true,
+        source: rect,
+    });
+    draw(&mut cx, &mut board, 1100.0, 760.0);
+    let floating = board.view.widget(&cx, ids!(drag_preview.content.floating));
+    let ghost = floating.area().rect(&cx);
+    assert!(
+        (ghost.pos - rect.pos - dvec2(280.0, 35.0)).length() < 1.0,
+        "{ghost:?} {rect:?}"
+    );
+    assert!(
+        (ghost.size - rect.size).length() < 1.0,
+        "full card dimensions must match: {ghost:?} {rect:?}"
+    );
+    assert_eq!(floating.label(&cx, ids!(assignee)).text(), "alice");
+    assert_eq!(floating.label(&cx, ids!(tags)).text(), "design · desktop");
+    assert_eq!(
+        card.label(&cx, ids!(title))
+            .borrow()
+            .unwrap()
+            .draw_text
+            .color
+            .w,
+        0.0
+    );
+    assert!(
+        floating
+            .label(&cx, ids!(title))
+            .borrow()
+            .unwrap()
+            .draw_text
+            .color
+            .w
+            > 0.0
+    );
+    assert_eq!(
+        board.card_areas["task_todo"].rect(&cx),
+        rect,
+        "lifting must not collapse the captured list row"
+    );
+    board.cancel_drag(&mut cx);
+    draw(&mut cx, &mut board, 1100.0, 760.0);
+    board.advance_landing(&mut cx, 1.0);
+    board.advance_landing(&mut cx, 1.11);
+    let middle = board.landing.as_ref().unwrap().position();
+    assert!(middle.x > rect.pos.x && middle.x < ghost.pos.x);
+    board.advance_landing(&mut cx, 1.23);
+    draw(&mut cx, &mut board, 1100.0, 760.0);
+    assert!(board.landing.is_none());
+    assert!(
+        card.label(&cx, ids!(title))
+            .borrow()
+            .unwrap()
+            .draw_text
+            .color
+            .w
+            > 0.0
+    );
+}
+
+#[test]
+fn kanban_drop_waits_for_ack_and_animates_to_the_authoritative_slot() {
+    let (mut cx, mut board) = panel();
+    populate(&mut board);
+    draw(&mut cx, &mut board, 1100.0, 760.0);
+    let source = board.card_areas["task_todo"].rect(&cx);
+    let drag = Drag {
+        task: task("task_todo", "todo"),
+        source,
+        start: source.pos + dvec2(30.0, 30.0),
+        at: source.pos + dvec2(320.0, 70.0),
+        moved: true,
+    };
+    board.landing = Some(Landing {
+        drag,
+        target: source.pos,
+        awaiting: true,
+        layout_ready: false,
+        started: None,
+        progress: 0.0,
+    });
+    board.advance_landing(&mut cx, 1.0);
+    board.advance_landing(&mut cx, 3.0);
+    assert!(board.landing.as_ref().unwrap().started.is_none());
+    assert_eq!(board.snapshot.as_ref().unwrap().lanes[0].tasks.len(), 1);
+    // Model the snapshot returned after server acknowledgement, including rank.
+    let lanes = &mut board.snapshot.as_mut().unwrap().lanes;
+    let mut moved = lanes[0].tasks.remove(0);
+    moved.state = "in_progress".into();
+    lanes[1].tasks.insert(0, moved);
+    board.landing.as_mut().unwrap().awaiting = false;
+    board.advance_landing(&mut cx, 3.9);
+    assert!(
+        board.landing.as_ref().unwrap().started.is_none(),
+        "do not animate to the stale pre-reply geometry"
+    );
+    draw(&mut cx, &mut board, 1100.0, 760.0);
+    let target = board.card_areas["task_todo"].rect(&cx).pos;
+    board.advance_landing(&mut cx, 4.0);
+    assert_eq!(board.landing.as_ref().unwrap().target, target);
+    board.advance_landing(&mut cx, 4.23);
+    assert!(board.landing.is_none());
+    board.clear_content(&mut cx);
+    assert!(board.drag.is_none() && board.landing.is_none());
+}

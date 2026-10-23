@@ -12,6 +12,7 @@ use connection::BoardConnection;
 mod view;
 mod controller;
 mod interaction;
+mod drag;
 mod extensions;
 use extensions::column_title;
 pub use view::script_mod;
@@ -126,6 +127,27 @@ struct Drag {
     start: Vec2d,
     at: Vec2d,
     moved: bool,
+    source: Rect,
+}
+impl Drag {
+    fn position(&self) -> Vec2d {
+        self.source.pos + self.at - self.start
+    }
+}
+#[derive(Clone)]
+struct Landing {
+    drag: Drag,
+    target: Vec2d,
+    started: Option<f64>,
+    progress: f64,
+    awaiting: bool,
+    layout_ready: bool,
+}
+impl Landing {
+    fn position(&self) -> Vec2d {
+        let t = 1.0 - (1.0 - self.progress).powi(3);
+        self.drag.position() * (1.0 - t) + self.target * t
+    }
 }
 #[derive(Script, ScriptHook, Widget)]
 pub struct ProjectBoard {
@@ -197,6 +219,8 @@ pub struct ProjectBoard {
     drag: Option<Drag>,
     #[rust]
     drag_frame: NextFrame,
+    #[rust]
+    landing: Option<Landing>,
     #[rust]
     scroll_x: f64,
     #[rust(true)]

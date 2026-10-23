@@ -14,11 +14,12 @@ makepad_widgets::script_mod! {
         show_bg: true cursor: MouseCursor.Hand
         draw_bg +: {
             color: mod.widgets.RINX_SURFACE
+            lifted: instance(0.0)
             border_radius: uniform(8.0) border_size: instance(1.0) border_color: instance(mod.widgets.RINX_BORDER)
             pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size)
                 sdf.box(1.0, 1.0, self.rect_size.x - 2.0, self.rect_size.y - 2.0, self.border_radius)
-                sdf.fill_keep(self.color)
+                sdf.fill_keep(mix(self.color, mod.widgets.RINX_PANEL_BG, self.lifted))
                 sdf.stroke(self.border_color, self.border_size)
                 return sdf.result
             }
@@ -27,7 +28,7 @@ makepad_widgets::script_mod! {
             number := Small {width: Fill}
             priority := Small {width: Fit}
             drag_handle := View {width: 26 height: 24 align: Align{x: 1.0 y: 0.5} cursor: MouseCursor.Move
-                Small {width: Fit text: "⠿"}
+                grip := Small {width: Fit text: "⠿"}
             }
         }
         title := Text {max_lines: 3 text_overflow: Ellipsis draw_text.text_style: theme.font_bold{font_size: mod.widgets.RINX_BODY_SIZE}}
@@ -46,11 +47,11 @@ makepad_widgets::script_mod! {
             add := RinxGhostButton {width:26 height:26 padding:0 text:"+"}
         }
         cards := PortalList {width: Fill height: Fill capture_overload: false
-            Card := mod.widgets.KanbanCard {}
+            Card := mod.widgets.KanbanCard {margin: Inset{right:14 bottom:8}}
             Empty := View {width: Fill height: 92 padding: 14
                 Small {text: #(crate::i18n::tr("No tasks here yet")) i18n_text: "No tasks here yet"}
             }
-            More := View {width: Fill height: 48
+            More := View {width: Fill height: 48 margin: Inset{right:14}
                 more := Action {width: Fill text: #(crate::i18n::tr("Load more tasks")) i18n_text: "Load more tasks"}
             }
             Filler := View {width: Fill height: 12}
@@ -204,8 +205,16 @@ makepad_widgets::script_mod! {
             }
         }
         drag_notice := Small {visible: false text: #(crate::i18n::tr("Drop on a column to move. Use the task menu for precise placement.")) i18n_text: "Drop on a column to move. Use the task menu for precise placement."}
-        drag_preview := Tooltip {abs_pos:vec2(0,0) content +: {padding:12 draw_bg +: {color:mod.widgets.RINX_SURFACE border_color:mod.widgets.RINX_ACCENT border_radius:8.0}
-            tooltip_label +: {width:230 max_lines:2 text_overflow:Ellipsis draw_text +: {color:mod.widgets.RINX_INK text_style:theme.font_regular{font_size:mod.widgets.RINX_BODY_SIZE}}}
+        drop_marker := Tooltip {abs_pos:vec2(0,0) content +: {width:226 height:3 padding:0
+            draw_bg +: {color:mod.widgets.RINX_ACCENT border_size:0.0 border_radius:1.5}
+            tooltip_label +: {visible:false}
+        }}
+        drag_preview := Tooltip {abs_pos:vec2(0,0) content := RoundedShadowView {width:Fit height:Fit padding:0
+            draw_bg +: {color:mod.widgets.RINX_SURFACE border_radius:8.0 shadow_radius:16.0 shadow_offset:vec2(0,4) shadow_color:#0003}
+            tooltip_label := Label {visible:false}
+            floating := mod.widgets.KanbanCard {width:226 margin:0 cursor:MouseCursor.Move
+                draw_bg +: {border_color:mod.widgets.RINX_ACCENT border_size:2.0}
+            }
         }}
     }
 }

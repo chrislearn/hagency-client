@@ -29,6 +29,7 @@ impl ProjectBoard {
         self.card_targets.clear();
         self.more_targets.clear();
         self.drag = None;
+        self.landing = None;
         for id in [
             ids!(title),
             ids!(description),
@@ -101,6 +102,7 @@ impl ProjectBoard {
             self.loading = false;
             self.saving = false;
             self.drag = None;
+            self.landing = None;
             if active && !project.is_empty() {
                 self.load(cx);
             }
@@ -900,6 +902,9 @@ impl ProjectBoard {
             return;
         }
         self.saving = false;
+        if let Some(landing) = &mut self.landing {
+            landing.awaiting = false;
+        }
         match &done.result {
             Ok(value) => {
                 let was_columns =

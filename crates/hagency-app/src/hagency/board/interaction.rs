@@ -21,6 +21,7 @@ impl Widget for ProjectBoard {
         }
         match event {
             Event::WindowLostFocus(_) => {
+                self.cancel_drag(cx);
                 self.foreground = false;
                 cx.stop_timer(self.timer);
             }
@@ -31,7 +32,7 @@ impl Widget for ProjectBoard {
                 }
             }
             Event::KeyDown(e) if e.key_code == KeyCode::Escape => {
-                self.drag = None;
+                self.cancel_drag(cx);
                 self.view
                     .label(cx, ids!(drag_notice))
                     .set_visible(cx, false);
@@ -56,6 +57,9 @@ impl Widget for ProjectBoard {
             } else {
                 self.schedule(cx);
             }
+        }
+        if let Some(frame) = self.drag_frame.is_event(event) {
+            self.advance_landing(cx, frame.time);
         }
         if self.drag_frame.is_event(event).is_some()
             && let Some(drag) = self.drag.clone()
@@ -129,10 +133,17 @@ impl Widget for ProjectBoard {
                         CardAction::Start(abs)
                             if self.pending.is_none()
                                 && !self.dirty
+                                && self.landing.is_none()
                                 && self.columns_draft.is_none()
                                 && !self.query.archived =>
                         {
+                            let source = self
+                                .card_areas
+                                .get(&task.id)
+                                .map(|a| a.rect(cx))
+                                .unwrap_or_default();
                             self.drag = Some(Drag {
+                                source,
                                 task,
                                 start: abs,
                                 at: abs,
@@ -154,6 +165,19 @@ impl Widget for ProjectBoard {
                             if let Some(drag) = self.drag.take()
                                 && drag.moved
                             {
+                                // PortalList reuses the source row for another task after a move.
+                                cx.set_key_focus(Area::Empty);
+                                let mut drag = drag;
+                                drag.at = abs;
+                                self.landing = Some(Landing {
+                                    target: drag.source.pos,
+                                    drag: drag.clone(),
+                                    started: None,
+                                    progress: 0.0,
+                                    awaiting: false,
+                                    layout_ready: false,
+                                });
+                                self.drag_frame = cx.new_next_frame();
                                 if let Some(index) = (0..self.column_count()).find(|i| {
                                     self.view
                                         .view(cx, column_path(*i))
@@ -161,6 +185,7 @@ impl Widget for ProjectBoard {
                                         .rect(cx)
                                         .contains(abs)
                                 }) {
+                                    self.landing.as_mut().unwrap().awaiting = true;
                                     let filtered = self.query.query.is_some()
                                         || self.query.label.is_some()
                                         || self.query.assignee.is_some()
@@ -518,25 +543,10 @@ impl Widget for ProjectBoard {
         self.sync_controls(cx);
     }
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.draw_drag_preview(cx);
         self.card_targets.clear();
         self.card_areas.clear();
         self.more_targets.clear();
-        if let Some(drag) = &self.drag
-            && drag.moved
-        {
-            let size = cx.current_pass_size();
-            let at = dvec2(
-                (drag.at.x + 16.0).clamp(8.0, (size.x - 270.0).max(8.0)),
-                (drag.at.y + 18.0).clamp(8.0, (size.y - 90.0).max(8.0)),
-            );
-            self.view.tooltip(cx, ids!(drag_preview)).show_with_options(
-                cx,
-                at,
-                &format!("#{} · {}", drag.task.number, drag.task.title),
-            );
-        } else {
-            self.view.tooltip(cx, ids!(drag_preview)).hide(cx);
-        }
 
         let width = cx.turtle().rect().size.x;
         let inspector = self.view.view(cx, ids!(inspector)).visible();
@@ -604,7 +614,7 @@ impl Widget for ProjectBoard {
                     .map(|l| {
                         l.wip_limit.map_or_else(
                             || l.total.to_string(),
-                            |limit| format!("{}/{}", l.task_count, limit),
+                            |limit| format!("WIP {}/{}", l.task_count, limit),
                         )
                     })
                     .unwrap_or_else(|| "—".into()),
@@ -652,68 +662,22 @@ impl Widget for ProjectBoard {
                 if let Some(task) = lane.and_then(|l| l.tasks.get(row_index)) {
                     let card = list.item(cx, row_index, id!(Card));
                     self.card_targets.insert(card.widget_uid(), task.clone());
-                    card.label(cx, ids!(number))
-                        .set_text(cx, &format!("#{}", task.number));
-                    card.label(cx, ids!(title)).set_text(cx, &task.title);
-                    card.label(cx, ids!(priority))
-                        .set_text(cx, priority_label(&task.priority));
-                    let mut tags = task.labels.clone();
-                    if task.checklist_total > 0 {
-                        tags.push(format!(
-                            "☑ {}/{}",
-                            task.checklist_done, task.checklist_total
-                        ));
-                    }
-                    if task.subtask_total > 0 {
-                        tags.push(format!("↳ {}/{}", task.subtask_done, task.subtask_total));
-                    }
-                    if let Some(n) = task.parent_number {
-                        tags.push(format!("↳ #{}", n));
-                    }
-                    card.label(cx, ids!(tags)).set_text(cx, &tags.join(" · "));
-                    card.label(cx, ids!(tags)).set_visible(cx, !tags.is_empty());
-                    card.label(cx, ids!(assignee)).set_text(
+                    let lifted = self
+                        .drag
+                        .as_ref()
+                        .is_some_and(|d| d.moved && d.task.id == task.id)
+                        || self
+                            .landing
+                            .as_ref()
+                            .is_some_and(|l| l.drag.task.id == task.id);
+                    fill_card(
                         cx,
-                        task.assignee_mxid
-                            .as_deref()
-                            .map(member_label)
-                            .unwrap_or_else(|| tr("Unassigned")),
+                        &card,
+                        task,
+                        lane.is_some_and(|l| l.is_done),
+                        self.selected.as_ref().is_some_and(|t| t.id == task.id),
+                        lifted,
                     );
-                    card.label(cx, ids!(due))
-                        .set_text(cx, task.due_date.as_deref().unwrap_or(""));
-                    let overdue = task.due_date.as_deref().is_some_and(|date| {
-                        date < chrono::Utc::now().format("%Y-%m-%d").to_string().as_str()
-                    }) && !lane.is_some_and(|l| l.is_done)
-                        && task.archived_at.is_none();
-                    let mut due = card.label(cx, ids!(due));
-                    if overdue {
-                        script_apply_eval!(cx,due,{draw_text.color:mod.widgets.RINX_WARNING_FG});
-                        due.set_text(
-                            cx,
-                            &format!(
-                                "{} · {}",
-                                tr("Overdue"),
-                                task.due_date.as_deref().unwrap_or("")
-                            ),
-                        );
-                    } else {
-                        script_apply_eval!(cx,due,{draw_text.color:mod.widgets.RINX_MUTED});
-                    }
-                    let mut priority = card.label(cx, ids!(priority));
-                    if task.priority == "urgent" {
-                        script_apply_eval!(cx,priority,{draw_text.color:mod.widgets.RINX_WARNING_FG});
-                    } else if task.priority == "high" {
-                        script_apply_eval!(cx,priority,{draw_text.color:mod.widgets.RINX_ACCENT});
-                    } else {
-                        script_apply_eval!(cx,priority,{draw_text.color:mod.widgets.RINX_MUTED});
-                    }
-                    let mut card_bg = card.clone();
-                    let selected = self.selected.as_ref().is_some_and(|t| t.id == task.id);
-                    if selected {
-                        script_apply_eval!(cx,card_bg,{draw_bg +: {border_color:mod.widgets.RINX_ACCENT}});
-                    } else {
-                        script_apply_eval!(cx,card_bg,{draw_bg +: {border_color:mod.widgets.RINX_BORDER}});
-                    }
                     card.draw_all(cx, scope);
                     self.card_areas.insert(task.id.clone(), card.area());
                 } else if more && row_index == total {
@@ -736,6 +700,7 @@ impl Widget for ProjectBoard {
                 }
             }
         }
+        self.resolve_landing_layout(cx);
         DrawStep::done()
     }
 }
@@ -798,6 +763,110 @@ impl ProjectBoard {
                     )
                 })
             }
+        }
+    }
+}
+
+pub(super) fn fill_card(
+    cx: &mut Cx,
+    card: &WidgetRef,
+    task: &BoardTask,
+    is_done: bool,
+    selected: bool,
+    lifted: bool,
+) {
+    for id in [
+        ids!(number),
+        ids!(priority),
+        ids!(tags),
+        ids!(assignee),
+        ids!(due),
+        ids!(grip),
+    ] {
+        let mut label = card.label(cx, id);
+        script_apply_eval!(cx,label,{draw_text.color:mod.widgets.RINX_MUTED});
+    }
+    let mut title = card.label(cx, ids!(title));
+    script_apply_eval!(cx,title,{draw_text.color:mod.widgets.RINX_INK});
+    card.label(cx, ids!(number))
+        .set_text(cx, &format!("#{}", task.number));
+    card.label(cx, ids!(title)).set_text(cx, &task.title);
+    card.label(cx, ids!(priority))
+        .set_text(cx, priority_label(&task.priority));
+    let mut tags = task.labels.clone();
+    if task.checklist_total > 0 {
+        tags.push(format!(
+            "☑ {}/{}",
+            task.checklist_done, task.checklist_total
+        ));
+    }
+    if task.subtask_total > 0 {
+        tags.push(format!("↳ {}/{}", task.subtask_done, task.subtask_total));
+    }
+    if let Some(n) = task.parent_number {
+        tags.push(format!("↳ #{}", n));
+    }
+    card.label(cx, ids!(tags)).set_text(cx, &tags.join(" · "));
+    card.label(cx, ids!(tags)).set_visible(cx, !tags.is_empty());
+    card.label(cx, ids!(assignee)).set_text(
+        cx,
+        task.assignee_mxid
+            .as_deref()
+            .map(member_label)
+            .unwrap_or_else(|| tr("Unassigned")),
+    );
+    card.label(cx, ids!(due))
+        .set_text(cx, task.due_date.as_deref().unwrap_or(""));
+    let overdue = task
+        .due_date
+        .as_deref()
+        .is_some_and(|date| date < chrono::Utc::now().format("%Y-%m-%d").to_string().as_str())
+        && !is_done
+        && task.archived_at.is_none();
+    let mut due = card.label(cx, ids!(due));
+    if overdue {
+        script_apply_eval!(cx,due,{draw_text.color:mod.widgets.RINX_WARNING_FG});
+        due.set_text(
+            cx,
+            &format!(
+                "{} · {}",
+                tr("Overdue"),
+                task.due_date.as_deref().unwrap_or("")
+            ),
+        );
+    } else {
+        script_apply_eval!(cx,due,{draw_text.color:mod.widgets.RINX_MUTED});
+    }
+    let mut priority = card.label(cx, ids!(priority));
+    if task.priority == "urgent" {
+        script_apply_eval!(cx,priority,{draw_text.color:mod.widgets.RINX_WARNING_FG});
+    } else if task.priority == "high" {
+        script_apply_eval!(cx,priority,{draw_text.color:mod.widgets.RINX_ACCENT});
+    } else {
+        script_apply_eval!(cx,priority,{draw_text.color:mod.widgets.RINX_MUTED});
+    }
+    let mut card_bg = card.clone();
+
+    if selected {
+        script_apply_eval!(cx,card_bg,{draw_bg +: {border_color:mod.widgets.RINX_ACCENT}});
+    } else {
+        script_apply_eval!(cx,card_bg,{draw_bg +: {border_color:mod.widgets.RINX_BORDER}});
+    }
+
+    let mut bg = card.clone();
+    script_apply_eval!(cx,bg,{draw_bg.lifted:#(if lifted {1.0} else {0.0})});
+    if lifted {
+        for id in [
+            ids!(number),
+            ids!(title),
+            ids!(priority),
+            ids!(tags),
+            ids!(assignee),
+            ids!(due),
+            ids!(grip),
+        ] {
+            let mut label = card.label(cx, id);
+            script_apply_eval!(cx,label,{draw_text.color:#0000});
         }
     }
 }
