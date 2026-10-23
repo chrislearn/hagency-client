@@ -1,4 +1,5 @@
 use makepad_widgets::*;
+use crate::shared::{feedback::InlineNoticeWidgetExt,popup_list::PopupKind};
 
 use crate::sliding_sync::{submit_async_request, LoginByPassword, LoginRequest, MatrixRequest};
 
@@ -151,6 +152,7 @@ script_mod! {
                             draw_text +: {color: COLOR_TEXT, text_style: REGULAR_TEXT {font_size: mod.widgets.RINX_UI_SIZE}}
                             text: ""
                         }
+                        server_error := InlineNotice {}
                     }
 
                     method_step := View {
@@ -433,6 +435,7 @@ impl LoginScreen {
         self.view.view(cx, ids!(server_step)).set_visible(cx, true);
         self.view.view(cx, ids!(method_step)).set_visible(cx, false);
         self.view.label(cx, ids!(server_status)).set_text(cx, "");
+        self.view.inline_notice(cx,ids!(server_error)).clear(cx);
         self.view.text_input(cx, ids!(password_input)).set_text(cx, "");
         self.view.text_input(cx, ids!(registration_username)).set_text(cx, "");
         self.view.text_input(cx, ids!(registration_password)).set_text(cx, "");
@@ -451,6 +454,7 @@ impl LoginScreen {
         let generation = self.discovery_generation;
         self.discovery_pending = true;
         self.view.label(cx, ids!(server_status)).set_text(cx, crate::i18n::tr("Checking homeserver and sign-in methods…"));
+        self.view.inline_notice(cx,ids!(server_error)).clear(cx);
         crate::sliding_sync::spawn_async_task(async move {
             let result = super::homeserver::discover("", &server).await.map_err(|e| e.to_string());
             Cx::post_action(LoginAction::ServerDiscovered { generation, result });
@@ -667,7 +671,10 @@ impl MatchEvent for LoginScreen {
                     self.discovery_pending = false;
                     match result {
                         Ok(methods) => self.show_methods(cx, methods.clone()),
-                        Err(error) => self.view.label(cx, ids!(server_status)).set_text(cx, &crate::i18n::format("Could not check this server: {error}", &[("error", error.clone())])),
+                        Err(error) => {
+                            self.view.label(cx,ids!(server_status)).set_text(cx,"");
+                            self.view.inline_notice(cx,ids!(server_error)).show(cx,PopupKind::Error,"Could not connect to server",&crate::i18n::format("Could not check this server: {error}",&[("error",error.clone())]),"",false);
+                        },
                     }
                 }
                 Some(LoginAction::CliAutoLogin { user_id, homeserver }) => {

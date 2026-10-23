@@ -726,6 +726,19 @@ async fn call(req: &mut Request, depot: &Depot) -> Result<Value, OwnerError> {
         if parts.len() == 1 && method == Method::GET {
             return commands::list(req, depot).await;
         }
+        if parts.len() == 2 && method == Method::GET {
+            return commands::check(req, depot, parts[1]).await;
+        }
+        if parts.len() == 3 && parts[2] == "dismiss" && method == Method::POST {
+            if !body(req, 1)
+                .await
+                .map_err(|_| error(400, "invalid_arguments"))?
+                .is_empty()
+            {
+                return Err(error(400, "invalid_arguments"));
+            }
+            return commands::dismiss(req, depot, parts[1]).await;
+        }
         if parts.len() == 3 && parts[2] == "resume" && method == Method::POST {
             if !body(req, 1)
                 .await

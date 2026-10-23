@@ -551,6 +551,11 @@ async fn oauth(req: &mut Request, depot: &Depot, res: &mut Response) {
                     assert_eq!(input["projectId"], "prj_fixture");
                     assert_eq!(input["roomId"], "!room:example.test");
                 } else {
+                    if input["displayName"] == "Reject request fixture" {
+                        res.status_code(StatusCode::BAD_REQUEST);
+                        res.render(Json(json!({"code":"invalid_arguments"})));
+                        return;
+                    }
                     assert!(input.get("projectId").is_none());
                     assert!(input.get("roomId").is_none());
                     assert!(input.get("deviceId").is_none());
@@ -1445,6 +1450,76 @@ async fn native_owned_agents_user_scope_local_policy_privacy_and_lifecycle() {
         .send(&service)
         .await;
     assert_eq!(duplicate.status_code, Some(StatusCode::CONFLICT));
+    let before_commands = fake.state.lock().unwrap().commands.len();
+    let checked = get(
+        &format!("/console/api/owned-agents/commands/{original_id}"),
+        &cookie,
+    )
+    .send(&service)
+    .await;
+    assert_eq!(checked.status_code, Some(StatusCode::OK));
+    assert_eq!(
+        fake.state.lock().unwrap().commands.len(),
+        before_commands,
+        "checking status must never create or bind"
+    );
+    let dismissed = post(
+        &format!("/console/api/owned-agents/commands/{original_id}/dismiss"),
+        &cookie,
+    )
+    .send(&service)
+    .await;
+    assert_eq!(
+        dismissed.status_code,
+        Some(StatusCode::CONFLICT),
+        "an uncertain request cannot be silently discarded"
+    );
+    let rejected = post("/console/api/owned-agents", &cookie)
+        .json(&json!({"displayName":"Reject request fixture","idempotencyKey":"rejected-request"}))
+        .send(&service)
+        .await;
+    assert_eq!(rejected.status_code, Some(StatusCode::BAD_REQUEST));
+    let mut journal = get("/console/api/owned-agents/commands", &cookie)
+        .send(&service)
+        .await;
+    let records = journal.take_json::<Value>().await.unwrap();
+    let failed = records["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["input"]["idempotencyKey"] == "rejected-request")
+        .unwrap();
+    assert_eq!(failed["state"], "rejected");
+    assert_eq!(failed["errorCode"], "invalid_arguments");
+    let rejected_id = failed["id"].as_str().unwrap();
+    let mut checked = get(
+        &format!("/console/api/owned-agents/commands/{rejected_id}"),
+        &cookie,
+    )
+    .send(&service)
+    .await;
+    assert_eq!(
+        checked.take_json::<Value>().await.unwrap()["command"]["state"],
+        "rejected"
+    );
+    assert_eq!(fake.state.lock().unwrap().commands.len(), before_commands);
+    let dismissed = post(
+        &format!("/console/api/owned-agents/commands/{rejected_id}/dismiss"),
+        &cookie,
+    )
+    .send(&service)
+    .await;
+    assert_eq!(dismissed.status_code, Some(StatusCode::OK));
+    let mut journal = get("/console/api/owned-agents/commands", &cookie)
+        .send(&service)
+        .await;
+    assert!(
+        !journal.take_json::<Value>().await.unwrap()["commands"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["id"] == rejected_id)
+    );
     let agent_policy = "/console/api/owned-agents/agt_fixture/agent-policy";
     let mut initial = get(agent_policy, &cookie).send(&service).await;
     assert_eq!(initial.status_code, Some(StatusCode::OK));

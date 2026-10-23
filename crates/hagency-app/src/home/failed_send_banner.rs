@@ -29,10 +29,10 @@ script_mod! {
 
         show_bg: true
         draw_bg +: {
-            color: (COLOR_PRIMARY)
-            border_radius: 5.0
+            color: mod.widgets.RINX_DANGER_BG
+            border_radius: 8.0
             border_color: mod.widgets.RINX_DANGER_FG
-            border_size: 2.0
+            border_size: 1.0
         }
 
         reason_label := RinxLabel {

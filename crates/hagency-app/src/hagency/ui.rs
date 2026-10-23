@@ -5,6 +5,7 @@ use serde_json::{Value, json};
 use super::{backend::Service, model::*, approvals::Notices};
 use std::{collections::HashSet, time::Instant};
 use crate::sliding_sync::spawn_async_task;
+use crate::shared::{feedback::{InlineNoticeWidgetExt,InlineNoticeWidgetRefExt}, popup_list::PopupKind};
 
 #[derive(Clone, Debug)]
 pub enum HagencyAction {
@@ -44,7 +45,6 @@ enum Target {
     Spaces,
     Agents,
     Bindings,
-    PublicAgents,
     VisibilityChanged,
     BindingChanged,
     ReplyPolicyChanged,
@@ -52,6 +52,8 @@ enum Target {
     ScopeState,
     AgentJournal,
     AgentResumed,
+    AgentCommandChecked,
+    AgentCommandDismissed,
     AgentDetails,
     AgentAssigned,
     Devices,
@@ -126,7 +128,8 @@ fn service_needs_model(value:&Value)->bool {
     !service_enabled(value) && value["service"]["modelConfigured"] == false
 }
 fn runtime_diagnostic(code: &str) -> String {
-    // Only engine-defined codes are rendered; arbitrary backend text is discarded.
+    // Use fixed explanations for runtime failures; other machine codes go
+    // through the same validation as management errors.
     let message = match code {
         "agent_model_required" => "No model is configured on this device. Open Model & resources, connect an account and save a model before starting.",
         "runtime_profile_unavailable" => "The saved local model, workspace or account is unavailable. Open Model & resources, reconnect the account and save an available model.",
@@ -265,14 +268,16 @@ fn members_match(target: &Option<(String, bool)>, value: &Value) -> bool {
     })
 }
 fn agent_command_label(command:&Value)->String {
-    let state=if string(command,"state") == "unknown" {"result unconfirmed"} else {"still being confirmed"};
-    if string(command,"operation") == "agent.create" {format!("Create {} · {state}",string(&command["input"],"displayName"))}
-    else {format!("Connect to {} · {state}",string(&command["input"],"roomId"))}
+    if string(command,"operation") == "agent.create" {
+        crate::i18n::format("Create {name}",&[("name",string(&command["input"],"displayName").into())])
+    } else {crate::i18n::format("Add Room {room}",&[("room",string(&command["input"],"roomId").into())])}
 }
 fn agent_command_details(command:&Value)->String {
-    let heading=agent_command_label(command);
-    if string(command,"operation") == "agent.create" {heading}
-    else {format!("{heading}\nAgent: {}\nProject: {}",string(command,"agentId"),string(&command["input"],"projectId"))}
+    match string(command,"state") {
+        "rejected" => crate::i18n::tr(user_error(string(command,"errorCode"))).into(),
+        "pending" => crate::i18n::tr("The server is still setting this up. Check again in a moment. You can create other Agents meanwhile.").into(),
+        _ => crate::i18n::tr("We could not confirm the result. Check status first, or retry this same request safely. You can create other Agents meanwhile.").into(),
+    }
 }
 pub(crate) fn runtime_summary(runtime:&Value,agent:&str,binding:Option<&str>)->String {
     if runtime.is_null() {return crate::i18n::tr("Not running on this device.").into();}
@@ -324,10 +329,14 @@ fn provider_error_message(error: &str) -> Option<&'static str> {
     })
 }
 fn visible_error(error: &str) -> String {
-    if let Some(message) = provider_error_message(error) {
-        format!("{} ({error})", crate::i18n::tr(message))
+    let message = crate::i18n::tr(user_error(error));
+    // Match the owner API's bounded machine-code contract. Never render raw
+    // response bodies, provider stderr, paths or credential-bearing details.
+    if !error.is_empty() && error.len() <= 80
+        && error.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_') {
+        format!("{message} ({error})")
     } else {
-        crate::i18n::tr(user_error(error)).to_owned()
+        message.to_owned()
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -417,6 +426,15 @@ fn agent_empty_message(loaded: bool, loading: bool) -> &'static str {
 fn user_error(error: &str) -> &str {
     if let Some(message) = provider_error_message(error) { return message; }
     match error {
+        "invalid_agent_name" => "The Agent name must contain 1–64 characters and no control characters.",
+        "invalid_arguments" => "The request contains invalid fields. Check the name and selected options; if they are valid, check that the client and server versions are compatible.",
+        "idempotency_key_reused" => "This request identifier was already used with different settings. Refresh Agents and check the original request before creating again.",
+        "agent_command_state_unavailable" | "local_state_unavailable" | "native_state_unavailable" => "Could not read or save local request state. Check local storage permissions and available disk space, then retry the original request.",
+        "invalid_server_response" | "invalid_native_response" => "The server or local service returned an unexpected response. Check that the client and server versions are compatible, then refresh the original request's status.",
+        "appservice_startup_not_ready" | "appservice_roundtrip_unconfirmed" => "The server's Agent service is not ready. Check its appservice registration, Matrix connection and startup logs, then retry the original request.",
+        "storage_unavailable" => "The server could not access its database. Check the server logs and database connection, then refresh the original request's status.",
+        "domain_unavailable" => "Agent management is unavailable on this server. Check its Agent service configuration and restart the server if needed.",
+        "server_request_failed" | "native_operation_failed" => "The service rejected the operation without a usable error code. Check the service logs and refresh the original request's status.",
         "agent_model_required" => "No model is configured on this device. Open Model & resources, connect an account and save a model before starting.",
         "runtime_profile_unavailable" => "The saved local model, workspace or account is unavailable. Open Model & resources, reconnect the account and save an available model.",
         "provider_profile_mismatch" | "provider_authorization_lost" => "The connected account changed or expired. Reconnect it in Model & resources and save the model again.",
@@ -436,9 +454,8 @@ fn user_error(error: &str) -> &str {
         "room_join_required" => {
             "Join this Space or Room first. Discussion Rooms have independent membership."
         }
-        "agent_command_recovery_required" => {
-            "An original Agent request needs confirmation. Refresh Agents and resume that original request."
-        }
+        "agent_command_recovery_required" => "A matching request already exists. Open My Agents and check that request; other Agent names can still be created.",
+        "agent_command_outcome_unknown" => "This request may have reached the server. Check its status or retry the same request before dismissing it.",
         "management_request_unavailable" => "This management read is still waiting. You can refresh to retry; any late response from this view will be ignored.",
         "private_agent_owner_direct_only" => "Private Agents can only chat with you. Publish this Agent before adding a shared Room.",
         "leave_shared_rooms_before_private" => "Leave every shared Room before switching to private. Your private chat remains available.",
@@ -451,9 +468,6 @@ fn user_error(error: &str) -> &str {
         }
         "device_authorization_required" | "local_access_required" => {
             "Your account authorization expired. Sign in again to continue."
-        }
-        value if value.contains('_') && !value.contains(' ') => {
-            "This action could not be completed. Refresh and retry."
         }
         _ => "This action could not be completed. Refresh and retry.",
     }
@@ -544,15 +558,19 @@ script_mod! {
         device_label := RinxLabel {width: Fit height: Fit padding: 0 draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: mod.widgets.RINX_META_SIZE}}}
     }
     let Cards = PortalList {width: Fill height: Fill
-        Card := RoundedView {width: Fill height: Fit flow: Right padding: 16 spacing: 16 margin: Inset{bottom: 12} align: Align{y: 0.5}
+        Card := RoundedView {width: Fill height: Fit flow: Right padding: 16 spacing: 16 margin: Inset{right: 20 bottom: 12} align: Align{y: 0.5}
             draw_bg +: {color: mod.widgets.RINX_SURFACE border_color: mod.widgets.RINX_BORDER border_size: 1 border_radius: 8}
             View {width: Fill height: Fit flow: Down spacing: 6
                 title := Text {draw_text.text_style: theme.font_bold{font_size: mod.widgets.RINX_TITLE_SIZE}}
                 badge_row := View {width: Fill height: Fit flow: Flow.Right{wrap: true} spacing: 6
-                    ownership_badge := DeviceBadge {visible: false}
                     audience_badge := DeviceBadge {visible: false}
                     device_badge := DeviceBadge {visible: false}
-                    runtime_badge := DeviceBadge {visible: false}
+                    runtime_badge := RinxGhostButton {
+                        visible: false width: Fit height: 24 padding: Inset{left: 8 right: 8 top: 0 bottom: 0}
+                        spacing: 0 icon_walk: Walk{width: 0 height: 0}
+                        draw_bg +: {color: RINX_HOVER color_hover: RINX_PRESSED border_radius: 8}
+                        draw_text +: {color: RINX_MUTED text_style: theme.font_regular{font_size: RINX_META_SIZE}}
+                    }
                 }
                 summary := Text {draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: mod.widgets.RINX_BODY_SIZE}}}
             }
@@ -563,7 +581,7 @@ script_mod! {
             open := Action {text: #(crate::i18n::tr("View details")) i18n_text: "View details"}
         }
         Filler := View {width: Fill height: 64}
-        Empty := View {width: Fill height: 64 padding: 16
+        Empty := View {width: Fill height: 64 padding: 16 margin: Inset{right: 20}
             empty_message := Text {text: #(crate::i18n::tr("No Projects yet. Create a Project to start a shared workspace.")) i18n_text: "No Projects yet. Create a Project to start a shared workspace."}
         }
     }
@@ -578,23 +596,26 @@ script_mod! {
             refresh := Action {text: #(crate::i18n::tr("Refresh")) i18n_text: "Refresh"}
         }
         owner := Text {visible: false}
-        status_holder := View {visible: false width: Fill height: Fit status := Text {width: Fill height: Fit visible: false}}
+        status_holder := InlineNotice {margin: Inset{right: 20}}
         login := Action {visible: false text: #(crate::i18n::tr("Sign in again")) i18n_text: "Sign in again"}
-        lists_pane := View {width: Fill height: Fill margin: Inset{right: 20 bottom: 16} flow: Down spacing: 10
-                agent_recovery := Section {visible: false width: Fill height: Fit flow: Down spacing: 8
-                    Text {text: #(crate::i18n::tr("Unfinished Agent requests")) i18n_text: "Unfinished Agent requests" draw_text.text_style: theme.font_bold{font_size: mod.widgets.RINX_HEADING_SIZE}}
-                    agent_pending_count := Text {draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: mod.widgets.RINX_BODY_SIZE}}}
-                    agent_pending := Select {labels: [#(crate::i18n::tr("Select an original request"))]}
-                    agent_pending_details := Text {}
-                    resume_agent_command := Action {text: #(crate::i18n::tr("Resume original Agent request")) i18n_text: "Resume original Agent request"}
+        lists_pane := View {width: Fill height: Fill margin: Inset{bottom: 16} flow: Down spacing: 8
+                agent_recovery := View {visible: false width: Fill height: Fit flow: Down margin: Inset{right: 20}
+                    agent_request_list := FlatList {width: Fill height: Fit flow: Down spacing: 8
+                        scroll_bars +: {show_scroll_x: false show_scroll_y: false}
+                        Request := View {width: Fill height: Fit flow: Down spacing: 6
+                            request_notice := InlineNotice {padding: 10 spacing: 4
+                                header +: {flow: Flow.Right{wrap: true} spacing: 8
+                                    title +: {width: Fit}
+                                    request_actions := View {width: Fit height: Fit flow: Flow.Right{wrap: true} spacing: 8
+                                        check_request := Action {text: #(crate::i18n::tr("Check status")) i18n_text: "Check status"}
+                                        retry_request := Primary {text: #(crate::i18n::tr("Retry request")) i18n_text: "Retry request"}
+                                        dismiss_request := Action {text: #(crate::i18n::tr("Dismiss failed request")) i18n_text: "Dismiss failed request"}
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
-            public_catalog := View {visible: false width: Fill height: Fit flow: Down spacing: 4
-                discover_agents := Action {text: #(crate::i18n::tr("Browse public Agents")) i18n_text: "Browse public Agents"}
-                public_catalog_content := View {visible: false width: Fill height: Fit flow: Down spacing: 6
-                    public_agent_holder := View {visible: false width: Fill height: Fit public_agent_selection := Select {labels: [#(crate::i18n::tr("Select a public Agent"))]}}
-                    public_agent_details := Text {text: #(crate::i18n::tr("Discover services shared by other users. Private Agents are visible only to their owner.")) i18n_text: "Discover services shared by other users. Private Agents are visible only to their owner." draw_text.color: mod.widgets.RINX_MUTED}
-                }
-            }
             project_list_holder := View {width: Fill height: Fill project_list := Cards {}}
             agent_list_holder := View {visible: false width: Fill height: Fill agent_list := Cards {}}
         }
@@ -685,7 +706,7 @@ script_mod! {
                 View {visible: false width: 0 height: 0 agents := Select {labels: [#(crate::i18n::tr("Select my Agent"))]}}
                 agent_create := Section {visible: false width: Fill height: Fit flow: Down spacing: 8
                     agent_creation_heading := Text {visible: false text: #(crate::i18n::tr("Create Agent")) i18n_text: "Create Agent" draw_text.text_style: theme.font_bold{font_size: mod.widgets.RINX_TITLE_SIZE}}
-                    Text {text: #(crate::i18n::tr("Create an Agent on this device. Connect a local runtime and add Rooms afterward.")) i18n_text: "Create an Agent on this device. Connect a local runtime and add Rooms afterward." draw_text.color: mod.widgets.RINX_MUTED}
+                    Text {text: #(crate::i18n::tr("Give your Agent a name. After creation, connect a model to start chatting. Adding shared Rooms is optional.")) i18n_text: "Give your Agent a name. After creation, connect a model to start chatting. Adding shared Rooms is optional." draw_text.color: mod.widgets.RINX_MUTED}
                     agent_binding_target := View {visible: false width: Fill height: Fit flow: Down spacing: 8
                         agent_project := Select {labels: [#(crate::i18n::tr("Select a Project"))]}
                         agent_room := Select {labels: [#(crate::i18n::tr("Select a visible registered Room"))]}
@@ -697,7 +718,10 @@ script_mod! {
                         new_agent_visibility := Select {labels: [#(crate::i18n::tr("Private · owner chat only")) #(crate::i18n::tr("Public service"))] i18n_labels: ["Private · owner chat only" "Public service"]}
                         Text {text: #(crate::i18n::tr("Private Agents can only chat with you. Public Agents can serve members in shared Rooms.")) i18n_text: "Private Agents can only chat with you. Public Agents can serve members in shared Rooms." draw_text.color: mod.widgets.RINX_MUTED}
                     }
-                    create_agent := Primary {text: #(crate::i18n::tr("Create Agent")) i18n_text: "Create Agent"}
+                    View {width: Fill height: Fit flow: Right spacing: 10 align: Align{y: 0.5}
+                        create_agent := Primary {text: #(crate::i18n::tr("Create Agent")) i18n_text: "Create Agent"}
+                        agent_create_spinner := LoadingSpinner {visible: false width: 18 height: 18 draw_bg.color: RINX_MUTED}
+                    }
                     bind_agent := Primary {text: #(crate::i18n::tr("Bind selected existing Agent to Room")) i18n_text: "Bind selected existing Agent to Room"}
                 }
                 agent_detail := View {visible: false width: Fill height: Fit flow: Down spacing: 10
@@ -791,6 +815,7 @@ script_mod! {
                         reset_policy := Action {text: #(crate::i18n::tr("Reset this scope")) i18n_text: "Reset this scope"}
                     }
                     model_section := Section {visible: false width: Fill height: Fit flow: Down spacing: 8
+                        model_setup_notice := InlineNotice {}
                         Text {text: #(crate::i18n::tr("Model & resources")) i18n_text: "Model & resources" draw_text.text_style: theme.font_bold{font_size: mod.widgets.RINX_TITLE_SIZE}}
                         Text {text: #(crate::i18n::tr("Model settings apply to this Agent across its Rooms.")) i18n_text: "Model settings apply to this Agent across its Rooms." draw_text.color: mod.widgets.RINX_MUTED}
                         Text {text: #(crate::i18n::tr("Local agent runtime")) i18n_text: "Local agent runtime"}
@@ -838,7 +863,8 @@ script_mod! {
                             save_model := Primary {text: #(crate::i18n::tr("Save local model profile")) i18n_text: "Save local model profile"}
                             model_save_spinner := LoadingSpinner {visible: false width: 18 height: 18 draw_bg +: {color: mod.widgets.RINX_ACCENT stroke_width: 2.0}}
                         }
-                        model_save_feedback := Text {visible: false}
+                        model_save_feedback := InlineNotice {}
+                        continue_to_service := Primary {visible: false text: #(crate::i18n::tr("Continue to Service")) i18n_text: "Continue to Service"}
                         Text {text: #(crate::i18n::tr("Restart the Agent service to apply saved model settings.")) i18n_text: "Restart the Agent service to apply saved model settings." draw_text.color: mod.widgets.RINX_MUTED}
                     }
                     runtime_section := View {visible: false width: Fill height: Fit flow: Down spacing: 12
@@ -1021,7 +1047,6 @@ pub struct HagencyPanel {
     #[rust] model_save_failed: bool,
     #[rust] runtime_action_error: String,
     #[rust] service_row_targets: ServiceRowTargets,
-    #[rust] public_agents: Vec<Value>,
     #[rust] agent_card_targets: AgentCardTargets,
     #[rust] list_service_pending_agent: String,
     #[rust]
@@ -1032,6 +1057,8 @@ pub struct HagencyPanel {
     agent_command: Option<(Value, String)>,
     #[rust]
     agent_pending_commands: Vec<Value>,
+    #[rust] agent_request_targets: AgentCardTargets,
+    #[rust] agent_creating: bool,
     #[rust]
     agent_journal_loaded: bool,
     #[rust] configuration_status: Value,
@@ -1367,14 +1394,33 @@ impl HagencyPanel {
     fn status(&self, cx: &mut Cx, message: &str) {
         let loading = message == "Loading…";
         self.view.widget(cx, ids!(loading_status)).set_visible(cx, loading);
-        let mut label=self.view.label(cx,ids!(status));
-        let text=crate::i18n::tr(message).to_owned();
-        let source=message.to_owned();
-        script_apply_eval!(cx,label,{text:#(text) i18n_text:#(source)});
-        self.view.view(cx, ids!(status_holder)).set_visible(cx, !message.is_empty() && !loading);
-        self.view
-            .label(cx, ids!(status))
-            .set_visible(cx, !message.is_empty());
+        let notice=self.view.inline_notice(cx,ids!(status_holder));
+        if message.is_empty() || loading {notice.clear(cx);}
+        else {
+            let kind=if message.starts_with("Enter ") || message.starts_with("Choose ") || message.starts_with("Select ") || message.starts_with("Confirm ") {PopupKind::Warning} else {PopupKind::Info};
+            notice.show(cx,kind,"Please check",message,"",true);
+        }
+    }
+    fn show_failure(&self,cx:&mut Cx,target:Target,code:&str,message:&str) {
+        self.view.widget(cx,ids!(loading_status)).set_visible(cx,false);
+        let uncertain=matches!(target,Target::AgentCreated | Target::AgentBound | Target::AgentResumed) && matches!(code,
+            "server_unavailable" | "invalid_server_response" | "invalid_native_response" | "native_operation_failed" | "agent_command_outcome_unknown" | "agent_command_state_unavailable");
+        let title = if uncertain {"Check the request result"} else {match target {
+            Target::AgentCreated => "Could not create Agent",
+            Target::AgentBound => "Could not add Room",
+            Target::AgentResumed => "Could not retry request",
+            Target::AgentCommandChecked => "Could not check request status",
+            Target::ModelSaved => "Could not save model",
+            _ => "Could not complete this action",
+        }};
+        let suffix=format!(" ({code})");
+        let message=message.strip_suffix(&suffix).unwrap_or(message);
+        let details=if !code.is_empty() && code.len()<=80 && code.bytes().all(|b|b.is_ascii_lowercase() || b.is_ascii_digit() || b==b'_') {
+            crate::i18n::format("Error code: {code}",&[("code",code.into())])
+        } else {String::new()};
+        let notice=self.view.inline_notice(cx,ids!(status_holder));
+        notice.show(cx,if uncertain {PopupKind::Warning} else {PopupKind::Error},title,message,&details,true);
+        if uncertain || code=="agent_command_recovery_required" {notice.set_action(cx,"View requests");}
     }
     fn input(&self, cx: &mut Cx, id: &[LiveId]) -> String {
         self.view.text_input(cx, id).text().trim().to_owned()
@@ -1470,7 +1516,6 @@ impl HagencyPanel {
             ids!(requests),
             ids!(tool_risk),
             ids!(approvals),
-            ids!(agent_pending),
             ids!(assignment_confirm),
             ids!(assign_current_device),
             ids!(requester),
@@ -1495,6 +1540,7 @@ impl HagencyPanel {
         }
     }
     fn list_page(&self, cx: &mut Cx) {
+        self.status(cx, "");
         self.view.label(cx, ids!(heading)).set_text(
             cx,
             crate::i18n::tr(if self.page == Page::Projects {"Projects"} else {"My Agents"}),
@@ -1568,7 +1614,11 @@ impl HagencyPanel {
             },
         );
     }
-    fn begin_agent_creation(&self, cx: &mut Cx) {
+    fn begin_agent_creation(&mut self, cx: &mut Cx) {
+        self.status(cx, "");
+        self.agent_command=None;
+        self.agent_creating=false;
+        self.view.text_input(cx,ids!(agent_name)).set_text(cx,"");
         self.view.drop_down(cx, ids!(new_agent_visibility)).set_selected_item(cx,0);
         self.view.view(cx, ids!(agent_name_holder)).set_visible(cx,true);
         self.view.button(cx, ids!(create_agent)).set_visible(cx,true);
@@ -1580,6 +1630,7 @@ impl HagencyPanel {
         let Some(a) = self.agents.get(index).cloned() else {
             return;
         };
+        self.status(cx, "");
         self.wanted_model=None;
         self.service_logs_open=false;
         self.view.view(cx,ids!(service_logs_panel)).set_visible(cx,false);
@@ -1783,8 +1834,11 @@ impl HagencyPanel {
         for id in [ids!(create_agent), ids!(bind_agent)] {
             self.view
                 .button(cx, id)
-                .set_enabled(cx, self.agent_journal_loaded && !self.busy);
+                .set_enabled(cx, !self.busy);
         }
+        self.view.button(cx,ids!(create_agent)).set_text(cx,crate::i18n::tr(if self.agent_creating {"Creating…"} else {"Create Agent"}));
+        self.view.widget(cx,ids!(agent_create_spinner)).set_visible(cx,self.agent_creating);
+        self.view.widget(cx,ids!(new_agent_visibility)).set_disabled(cx,self.busy);
         let assigned_here = self.local_agent(cx);
         let remote = self.remote_agent(cx);
         let configurable = assigned_here || (remote && self.configuration_online());
@@ -1954,7 +2008,6 @@ impl HagencyPanel {
         self.view.view(cx,ids!(lists_pane)).set_visible(cx,!detail && !self.display_blocked);
         self.view.view(cx,ids!(details_scroll)).set_visible(cx,detail && !self.display_blocked);
         self.view.view(cx,ids!(project_list_holder)).set_visible(cx,!detail && self.page==Page::Projects);
-        self.view.view(cx,ids!(public_catalog)).set_visible(cx,!detail && self.page==Page::Agents);
         self.view.view(cx,ids!(agent_list_holder)).set_visible(cx,!detail && self.page==Page::Agents);
         let members=self.page==Page::Projects && detail && self.view.view(cx,ids!(members_section)).visible();
         for id in [ids!(projects_page),ids!(project_detail),ids!(members_section)] {
@@ -1993,6 +2046,23 @@ impl HagencyPanel {
             },
         );
         for (index, row) in list.items_with_actions(actions) {
+            if self.page == Page::Agents && !list.was_scrolling() && row.button(cx,ids!(runtime_badge)).clicked(actions) {
+                let Some(agent)=self.agents.get(index) else {return true;};
+                let id=string(agent,"id");
+                if self.agent_card_targets.get(&row.widget_uid()).map(String::as_str)!=Some(id)
+                    || agent_device_state(agent,&self.current_device_id,&self.execution_devices,self.devices_loaded)!=AgentDeviceState::Here {return true;}
+                let mut description=runtime_service_description(self.runtime_list.get(id),id);
+                if let Some(error)=self.runtime_list_errors.get(id) && !description.contains(error.as_str()) {description.push_str(&format!("\n{error}"));}
+                let button=row.button(cx,ids!(runtime_badge));
+                let kind=if button.text()==crate::i18n::tr("Needs attention") {PopupKind::Warning} else {PopupKind::Info};
+                let (fg,bg)=crate::shared::feedback::colors(&crate::theme::snapshot(cx),kind);
+                cx.widget_action(button.widget_uid(),TooltipAction::HoverIn {
+                    widget_rect:button.area().rect(cx),
+                    text:description,
+                    options:CalloutTooltipOptions {position:TooltipPosition::Bottom,text_color:fg,bg_color:bg,..Default::default()},
+                });
+                return true;
+            }
             if self.page == Page::Agents && !list.was_scrolling() && row.button(cx,ids!(service_control)).clicked(actions) {
                 let Some(agent)=self.agents.get(index).cloned() else {return true;};
                 if agent_device_state(&agent,&self.current_device_id,&self.execution_devices,self.devices_loaded)!=AgentDeviceState::Here {return true;}
@@ -2033,9 +2103,27 @@ impl HagencyPanel {
         self.wanted_agent = None;
         self.wanted_model = None;
         self.list_page(cx);
-        self.refresh_runtime_list(cx);
+        if self.page == Page::Agents {self.run(cx,Target::AgentJournal,Command::AgentCommands);}
+        else {self.refresh_runtime_list(cx);}
         self.status(cx, "");
         true
+    }
+    fn agent_request_actions(&mut self,cx:&mut Cx,actions:&Actions)->bool {
+        if !self.view.view(cx,ids!(agent_recovery)).visible() {return false;}
+        let list=self.view.flat_list(cx,ids!(agent_request_list));
+        for (_,row) in list.items_with_actions(actions) {
+            let Some(id)=self.agent_request_targets.get(&row.widget_uid()).cloned() else {continue;};
+            let Some(command)=self.agent_pending_commands.iter().find(|c|string(c,"id")==id) else {continue;};
+            let action=if row.button(cx,ids!(check_request)).clicked(actions) {
+                Some((Target::AgentCommandChecked,Command::CheckAgentCommand{id}))
+            } else if row.button(cx,ids!(retry_request)).clicked(actions) && string(command,"state")!="pending" {
+                Some((Target::AgentResumed,Command::ResumeAgentCommand{id}))
+            } else if row.button(cx,ids!(dismiss_request)).clicked(actions) && string(command,"state")=="rejected" {
+                Some((Target::AgentCommandDismissed,Command::DismissAgentCommand{id}))
+            } else {None};
+            if let Some((target,command))=action {self.run(cx,target,command);return true;}
+        }
+        false
     }
     fn section(&self, cx: &mut Cx, selected: &[LiveId]) {
         if !self.view.view(cx,selected).visible() {self.view.view(cx,ids!(details_scroll)).set_scroll_pos(cx,dvec2(0.0,0.0));}
@@ -2156,6 +2244,7 @@ impl HagencyPanel {
         );
     }
     fn set_page(&mut self, cx: &mut Cx, page: Page) {
+        self.status(cx, "");
         self.page = page;
         self.view.label(cx, ids!(heading)).set_text(
             cx,
@@ -2237,6 +2326,7 @@ impl HagencyPanel {
         }
         if configuration_digest.is_some() {self.configuration_feedback=crate::i18n::tr("Applying settings on the execution device…").into();}
         self.set_busy(cx, true);
+        if matches!(target,Target::AgentCreated) {self.agent_creating=true;}
         self.sync_navigation(cx);
         let quiet = matches!(target,Target::ModelSaved | Target::ListService | Target::ServiceRoomChanged | Target::ConfigurationStatus) || (matches!(target,Target::Runtime) && self.agent_service_state.is_object());
         if !matches!(target,Target::ConfigurationStatus) {self.status(
@@ -2268,18 +2358,26 @@ impl HagencyPanel {
     fn render_model_save(&self,cx:&mut Cx) {
         self.view.button(cx,ids!(save_model)).set_text(cx,crate::i18n::tr(if self.model_saving {"Saving…"} else {"Save local model profile"}));
         self.view.widget(cx,ids!(model_save_spinner)).set_visible(cx,self.model_saving);
-        let mut feedback=self.view.label(cx,ids!(model_save_feedback));
-        feedback.set_text(cx,&self.model_save_message);
-        feedback.set_visible(cx,!self.model_save_message.is_empty());
-        if self.model_save_failed {script_apply_eval!(cx,feedback,{draw_text +: {color: mod.widgets.RINX_WARNING_FG}});}
-        else {script_apply_eval!(cx,feedback,{draw_text +: {color: mod.widgets.RINX_SUCCESS_FG}});}
+        let feedback=self.view.inline_notice(cx,ids!(model_save_feedback));
+        if self.model_save_message.is_empty() {feedback.clear(cx);}
+        else {
+            let (message,details)=self.model_save_message.strip_suffix(')').and_then(|s|s.rsplit_once(" (")).filter(|(_,code)|code.len()<=80 && code.bytes().all(|b|b.is_ascii_lowercase() || b.is_ascii_digit() || b==b'_')).unwrap_or((&self.model_save_message,""));
+            feedback.show(cx,if self.model_save_failed {PopupKind::Error} else {PopupKind::Success},if self.model_save_failed {"Could not save model"} else {"Model saved"},message,details,false);
+        }
+        let configured=!string(&self.policy["modelProfile"],"model").is_empty();
+        let setup=self.view.inline_notice(cx,ids!(model_setup_notice));
+        if !configured && self.local_agent(cx) {
+            setup.show(cx,PopupKind::Info,"Next: connect a model","Your Agent has been created. Connect a local account, choose a model and save it. You can add shared Rooms later; they do not block creating other Agents.","",false);
+        } else {setup.clear(cx);}
+        self.view.button(cx,ids!(continue_to_service)).set_visible(cx,configured);
+        self.view.button(cx,ids!(continue_to_service)).set_enabled(cx,!self.busy);
     }
     fn clear_model_save_feedback(&mut self,cx:&mut Cx) {
         self.model_save_message.clear();self.model_save_failed=false;self.render_model_save(cx);
     }
     fn model_save_validation_failed(&mut self,cx:&mut Cx,message:&str) {
         self.model_save_message=crate::i18n::tr(message).into();self.model_save_failed=true;
-        self.status(cx,message);self.render_model_save(cx);
+        self.render_model_save(cx);
     }
     fn finish_model_save(&mut self,cx:&mut Cx,result:Result<(),&str>) {
         self.model_saving=false;
@@ -2514,7 +2612,9 @@ impl HagencyPanel {
                     .set_text(cx, string(value, "ownerMxid"));
                 if let Some(wanted)=self.wanted_agent.take() {
                     if let Some(index)=self.agents.iter().position(|a|string(a,"id") == wanted) {
+                        let open_model=self.wanted_model.as_deref()==Some(wanted.as_str());
                         self.agent_detail(cx,index);
+                        if open_model {self.wanted_model=Some(wanted);}
                         return;
                     }
                 }
@@ -2533,12 +2633,6 @@ impl HagencyPanel {
                     }
                 }
             }
-            Target::PublicAgents => {
-                self.public_agents = array(value, "agents");
-                self.labels(cx, ids!(public_agent_selection), "Select a public Agent", &self.public_agents, "id");
-                self.view.view(cx, ids!(public_agent_holder)).set_visible(cx, !self.public_agents.is_empty());
-                self.view.label(cx, ids!(public_agent_details)).set_text(cx, crate::i18n::tr(if self.public_agents.is_empty() {"No public Agent services are available."} else {"Select a public Agent to see its creator and Matrix identity."}));
-            }
             Target::VisibilityChanged => {
                 let record = &value["agent"];
                 if self.agent(cx).as_deref() != record["id"].as_str() { return; }
@@ -2546,9 +2640,6 @@ impl HagencyPanel {
                 if let Some(existing) = self.agents.iter_mut().find(|a|a["id"] == record["id"]) { *existing = record.clone(); }
                 self.view.view(cx, ids!(detail_audience_badge)).label(cx, ids!(device_label)).set_text(cx, crate::i18n::tr(audience_label(record)));
                 self.status(cx, "Service audience saved.");
-                self.public_agents.clear();
-                self.view.view(cx, ids!(public_agent_holder)).set_visible(cx, false);
-                self.view.label(cx, ids!(public_agent_details)).set_text(cx, crate::i18n::tr("Refresh public services to see the latest audience changes."));
             }
             Target::AgentAssigned | Target::AgentDetails => {
                 let Some(agent) = self.agent(cx) else {return;};
@@ -2579,24 +2670,31 @@ impl HagencyPanel {
             }
             Target::AgentJournal => {
                 self.agent_journal_loaded = true;
-                self.agent_pending_commands = array(value, "commands").into_iter().filter(|c|matches!(string(c,"state"),"unknown"|"pending") && !string(c,"id").is_empty()).collect();
+                self.agent_pending_commands = array(value, "commands").into_iter().filter(|c|matches!(string(c,"state"),"unknown"|"pending"|"rejected") && !string(c,"id").is_empty()).collect();
+                self.agent_request_targets.clear();
                 self.view
                     .view(cx, ids!(agent_recovery))
                     .set_visible(cx, !self.agent_pending_commands.is_empty());
-                self.view.label(cx,ids!(agent_pending_count)).set_text(cx,&crate::i18n::format("{count} unfinished requests. Resume the original request instead of creating it again.",&[("count",self.agent_pending_commands.len().to_string())]));
-                let placeholder=crate::i18n::tr("Select an unfinished request").to_owned();
-                let labels=std::iter::once(placeholder).chain(self.agent_pending_commands.iter().map(agent_command_label)).collect();
-                self.view.drop_down(cx,ids!(agent_pending)).set_labels(cx,labels);
-                self.view.drop_down(cx,ids!(agent_pending)).set_selected_item(cx,0);
-                self.view
-                    .label(cx, ids!(agent_pending_details))
-                    .set_text(cx, "");
                 self.run(cx, Target::Agents, Command::Agents);
             }
-            Target::AgentResumed => {
-                self.agent_command = None;
-                self.list_page(cx);
+            Target::AgentCommandDismissed => {
                 self.run(cx, Target::AgentJournal, Command::AgentCommands);
+            }
+            Target::AgentCommandChecked => {
+                let command=&value["command"];
+                let id=string(command,"id");
+                if let Some(index)=self.agent_pending_commands.iter().position(|r|string(r,"id")==id) {
+                    if matches!(string(command,"state"),"unknown"|"pending"|"rejected") {self.agent_pending_commands[index]=command.clone();}
+                    else {self.agent_pending_commands.remove(index);}
+                }
+                let agent_id=string(&command["creation"]["creation"]["agent"],"id");
+                if !agent_id.is_empty() {
+                    self.wanted_agent=Some(agent_id.into());self.run(cx,Target::Agents,Command::Agents);
+                } else {
+                    if string(command,"state")=="rejected" {
+                        let code=string(command,"errorCode");self.show_failure(cx,Target::AgentResumed,code,&visible_error(code));
+                    } else {self.status(cx,"No confirmed result yet. Retry request uses the same identifier and will not create a duplicate.");}
+                }
             }
             Target::ScopeChanged => {
                 let room = self.scope_state["roomId"].is_string();
@@ -2919,7 +3017,7 @@ impl HagencyPanel {
                 } else {"Decision delivery is unconfirmed. Refresh status; do not resubmit this request."}));
                 self.refresh_approvals(cx);
             }
-            Target::AgentCreated => {
+            Target::AgentCreated | Target::AgentResumed => {
                 cx.action(crate::home::project_tree::ProjectTreeChanged {identity:self.identity.clone()});
                 self.agent_command=None;
                 self.list_page(cx);
@@ -2928,7 +3026,10 @@ impl HagencyPanel {
                     self.direct_agent=id.into();
                     self.direct_state=json!({"state":"pending"});
                     self.wanted_agent=Some(id.into());
-                    self.run(cx,Target::OwnerDirectCreated,Command::EnsureAgentOwnerDirect {agent_id:id.into()});
+                    if value["creation"]["binding"].is_null() {
+                        self.wanted_model=Some(id.into());
+                        self.run(cx,Target::OwnerDirectCreated,Command::EnsureAgentOwnerDirect {agent_id:id.into()});
+                    } else {self.run(cx,Target::AgentJournal,Command::AgentCommands);}
                 } else {self.run(cx,Target::AgentJournal,Command::AgentCommands);}
             }
             Target::OwnerDirect | Target::OwnerDirectCreated => {
@@ -3290,6 +3391,7 @@ impl Widget for HagencyPanel {
                     self.runtime_action_error=done.result.as_ref().err().map(|error|runtime_diagnostic(error)).unwrap_or_default();
                 }
                 self.set_busy(cx, false);
+                if matches!(done.target,Target::AgentCreated) {self.agent_creating=false;}
                 self.sync_navigation(cx);
                 if matches!(done.target, Target::Agents) { self.agents_loading = false; }
                 if done.configuration_fence.is_some() {self.finish_configuration_intent(done.configuration_digest.as_ref(),&done.result);}
@@ -3303,7 +3405,6 @@ impl Widget for HagencyPanel {
                         }
                     }
                     Err(error) => {
-                        if matches!(done.target,Target::PublicAgents) {self.view.label(cx,ids!(public_agent_details)).set_text(cx,crate::i18n::tr("This action could not be completed. Refresh and retry."));}
                         if matches!(done.target,Target::ModelSaved) {self.finish_model_save(cx,Err(error));}
                         if done.configuration_fence.is_some() {self.sync_navigation(cx);}
                         if matches!(done.target,Target::ApprovalDecision) {
@@ -3330,7 +3431,7 @@ impl Widget for HagencyPanel {
                         } else {
                             if matches!(done.target,Target::ListService | Target::Runtime) {runtime_diagnostic(error)} else {visible_error(error)}
                         };
-                        if !matches!(done.target,Target::ConfigurationStatus) {self.status(cx, &message);}
+                        if !matches!(done.target,Target::ConfigurationStatus | Target::ModelSaved) {self.show_failure(cx,done.target,error,&message);}
                         if matches!(done.target,Target::Runtime) {
                             let current=Ok(self.agent_service_state.clone());
                             let mut summary=runtime_service_description(Some(&current),self.agent(cx).as_deref().unwrap_or(""));
@@ -3368,6 +3469,20 @@ impl Widget for HagencyPanel {
             }
         }
         if self.busy {
+            return;
+        }
+        if self.view.inline_notice(cx,ids!(status_holder)).action_clicked(cx,actions) {
+            self.list_page(cx);self.run(cx,Target::AgentJournal,Command::AgentCommands);return;
+        }
+        if self.agent_request_actions(cx,actions) {return;}
+        if self.view.view(cx,ids!(agent_create)).visible()
+            && (self.view.text_input(cx,ids!(agent_name)).changed(actions).is_some()
+                || self.view.drop_down(cx,ids!(new_agent_visibility)).selected(actions).is_some()) {
+            self.status(cx,"");self.agent_command=None;return;
+        }
+        if self.view.button(cx,ids!(continue_to_service)).clicked(actions) {
+            self.status(cx,"");self.section(cx,ids!(runtime_section));
+            if self.local_agent(cx) {self.load_runtime_resources(cx);}
             return;
         }
         if self.view.view(cx,ids!(runtime_section)).visible() {
@@ -3614,21 +3729,6 @@ impl Widget for HagencyPanel {
                 return;
             }
         }
-        if self.view.button(cx, ids!(discover_agents)).clicked(actions) {
-            self.view.view(cx, ids!(public_catalog_content)).set_visible(cx, true);
-            self.public_agents.clear();
-            self.view.view(cx, ids!(public_agent_holder)).set_visible(cx, false);
-            self.view.label(cx, ids!(public_agent_details)).set_text(cx, crate::i18n::tr("Loading public Agent services…"));
-            self.run(cx, Target::PublicAgents, Command::DiscoverAgents);
-            return;
-        }
-        if self.view.drop_down(cx, ids!(public_agent_selection)).selected(actions).is_some() {
-            if let Some(agent) = self.selected(cx, ids!(public_agent_selection), &self.public_agents) {
-                let mine = if agent["isMine"] == true { crate::i18n::tr("Mine") } else { crate::i18n::tr("Public service") };
-                self.view.label(cx, ids!(public_agent_details)).set_text(cx, &format!("{} · {}\n{}\n{}", string(&agent,"displayName"), mine, string(&agent,"ownerMxid"), string(&agent,"puppetMxid")));
-            }
-            return;
-        }
         if self.view.button(cx, ids!(save_agent_visibility)).clicked(actions) {
             if let Some(agent_id) = self.agent(cx) {
                 if !self.selected(cx, ids!(agents), &self.agents).is_some_and(|a|matches!(a["visibility"].as_str(),Some("public" | "private")) && matches!(a["state"].as_str(),Some("creating" | "active" | "suspended"))) {return;}
@@ -3841,18 +3941,15 @@ impl Widget for HagencyPanel {
         if self.view.button(cx, ids!(create_agent)).clicked(actions)
             || self.view.button(cx, ids!(bind_agent)).clicked(actions)
         {
-            if !self.agent_journal_loaded {
-                self.status(cx,"Load the original Agent request history before creating or binding again.");
-                self.run(cx,Target::AgentJournal,Command::AgentCommands);
-                return;
-            }
             let bind = self.view.button(cx, ids!(bind_agent)).clicked(actions);
             let mut input = if bind {
                 let (Some(project), Some(room)) = (self.selected(cx, ids!(agent_project), &self.projects), self.selected(cx, ids!(agent_room), &self.agent_rooms)) else {self.status(cx,"Choose a Project and a visible registered Room."); return;};
                 json!({"projectId":project["id"],"roomId":room["roomId"]})
             } else {
                 let name = self.input(cx, ids!(agent_name));
-                if name.is_empty() { self.status(cx,"Enter the Agent name."); return; }
+                if name.is_empty() || name.chars().count()>64 || name.chars().any(char::is_control) {
+                    self.show_failure(cx,Target::AgentCreated,"invalid_agent_name",crate::i18n::tr(user_error("invalid_agent_name")));return;
+                }
                 json!({"displayName":name,"visibility":if self.view.drop_down(cx, ids!(new_agent_visibility)).selected_item() == 1 {"public"} else {"private"}})
             };
             if self
@@ -3895,42 +3992,6 @@ impl Widget for HagencyPanel {
                 }
                 return;
             }
-        }
-        if self
-            .view
-            .drop_down(cx, ids!(agent_pending))
-            .selected(actions)
-            .is_some()
-        {
-            if let Some(command) =
-                self.selected(cx, ids!(agent_pending), &self.agent_pending_commands)
-            {
-                self.view.label(cx, ids!(agent_pending_details)).set_text(
-                    cx,
-                    &agent_command_details(&command),
-                );
-            }
-            return;
-        }
-        if self
-            .view
-            .button(cx, ids!(resume_agent_command))
-            .clicked(actions)
-        {
-            if let Some(command) =
-                self.selected(cx, ids!(agent_pending), &self.agent_pending_commands)
-            {
-                self.run(
-                    cx,
-                    Target::AgentResumed,
-                    Command::ResumeAgentCommand {
-                        id: string(&command, "id").into(),
-                    },
-                );
-            } else {
-                self.status(cx, "Select the original Agent request first.");
-            }
-            return;
         }
         if self.view.button(cx, ids!(retire_agent)).clicked(actions) {
             if !self.view.check_box(cx, ids!(retire_confirm)).active(cx) {
@@ -4297,6 +4358,31 @@ impl Widget for HagencyPanel {
         while let Some(step) = self.view.draw_walk(cx, scope, walk).step() {
             let is_members =
                 step.widget_uid() == self.view.portal_list(cx, ids!(members_list)).widget_uid();
+            if step.widget_uid()==self.view.flat_list(cx,ids!(agent_request_list)).widget_uid() {
+                let Some(mut list)=step.borrow_mut::<FlatList>() else {continue;};
+                for command in &self.agent_pending_commands {
+                    let Some(row)=list.item(cx,LiveId::from_str(string(command,"id")),id!(Request)) else {continue;};
+                    self.agent_request_targets.insert(row.widget_uid(),string(command,"id").into());
+                    let rejected=string(command,"state")=="rejected";
+                    let code=string(command,"errorCode");
+                    let details=if code.len()<=80 && code.bytes().all(|b|b.is_ascii_lowercase() || b.is_ascii_digit() || b==b'_') {code} else {""};
+                    let title=format!("{} · {}",agent_command_label(command),crate::i18n::tr(if rejected {"Failed"} else if string(command,"state")=="pending" {"Creating…"} else {"Check result"}));
+                    row.inline_notice(cx,ids!(request_notice)).show(cx,if rejected {PopupKind::Error} else {PopupKind::Warning},&title,&agent_command_details(command),details,false);
+                    let mut check=row.button(cx,ids!(check_request));
+                    check.set_visible(cx,!rejected);check.set_enabled(cx,!self.busy);
+                    crate::shared::styles::apply_primary_button_style(cx,&mut check);
+                    let mut retry=row.button(cx,ids!(retry_request));
+                    if rejected {crate::shared::styles::apply_primary_button_style(cx,&mut retry);}
+                    else {crate::shared::styles::apply_neutral_button_style(cx,&mut retry);}
+                    row.button(cx,ids!(retry_request)).set_visible(cx,string(command,"state")!="pending");
+                    row.button(cx,ids!(retry_request)).set_enabled(cx,!self.busy);
+                    row.button(cx,ids!(dismiss_request)).set_visible(cx,rejected);
+                    row.button(cx,ids!(dismiss_request)).set_enabled(cx,!self.busy);
+                    row.draw_all(cx,scope);
+                }
+                list.items.retain_visible();
+                continue;
+            }
             let Some(mut list) = step.borrow_mut::<PortalList>() else {
                 continue;
             };
@@ -4396,20 +4482,18 @@ impl Widget for HagencyPanel {
                     };
                     format!("{identity_state} · {}\n{local}", string(value,"puppetMxid"))
                 };
-                for (id, label) in [(ids!(ownership_badge), "Mine"), (ids!(audience_badge), audience_label(value))] {
-                    let badge = row.view(cx, id);
-                    badge.set_visible(cx, self.page == Page::Agents);
-                    badge.label(cx, ids!(device_label)).set_text(cx, crate::i18n::tr(label));
-                }
+                let audience = row.view(cx, ids!(audience_badge));
+                audience.set_visible(cx, self.page == Page::Agents);
+                audience.label(cx, ids!(device_label)).set_text(cx, crate::i18n::tr(audience_label(value)));
                 row.view(cx, ids!(device_badge)).set_visible(cx, self.page == Page::Agents);
                 if self.page == Page::Agents {
                     let badge = row.widget(cx, ids!(device_badge));
                     let state=agent_device_state(value, &self.current_device_id, &self.execution_devices, self.devices_loaded);
                     render_device_badge(cx, &badge, state, &self.device_badge(value));
-                    let runtime=row.view(cx,ids!(runtime_badge));runtime.set_visible(cx,state==AgentDeviceState::Here);
+                    let runtime=row.button(cx,ids!(runtime_badge));runtime.set_visible(cx,state==AgentDeviceState::Here);
                     let label=runtime_list_label(self.runtime_list.get(string(value,"id")),string(value,"id"));
                     let badge=if label.starts_with("Not running") {"Not running"} else if label.starts_with("Running") || label.starts_with("Processing") {"Running"} else if label.starts_with("Service enabled") {"Enabled"} else if label.starts_with("Starting") {"Starting…"} else if label.starts_with("Checking") {"Checking…"} else if label=="Waiting for the previous runtime lease to be released…" {"Waiting for lease"} else {"Needs attention"};
-                    runtime.label(cx,ids!(device_label)).set_text(cx,crate::i18n::tr(badge));
+                    runtime.set_text(cx,crate::i18n::tr(badge));
                 }
                 self.agent_card_targets.insert(row.widget_uid(),string(value,"id").into());
                 let control=row.button(cx,ids!(service_control));
@@ -4466,10 +4550,6 @@ impl HagencyPanelRef {
             panel.rooms.clear();
             panel.agent_rooms.clear();
             panel.spaces.clear();
-            panel.public_agents.clear();
-            panel.view.view(cx,ids!(public_catalog_content)).set_visible(cx,false);
-            panel.view.view(cx,ids!(public_agent_holder)).set_visible(cx,false);
-            panel.view.label(cx,ids!(public_agent_details)).set_text(cx, "");
             panel.agents.clear(); panel.runtime_list.clear();panel.runtime_list_errors.clear();panel.runtime_list_loading=false;panel.runtime_list_request=nonce();
             panel.devices_loaded = false; panel.current_device_id.clear(); panel.execution_devices.clear(); panel.execution_agent_record = Value::Null;
             panel.agents_loaded = false;
@@ -4602,7 +4682,7 @@ impl HagencyPanelRef {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn private_audience_disables_shared_rooms_and_public_catalog_keeps_owner_marker() {
+    fn private_audience_disables_shared_rooms() {
         let mut cx=Cx::new(Box::new(|_,_|{}));
         let mut panel=cx.with_vm(|vm| {makepad_widgets::script_mod(vm);crate::app::register_widgets(vm);let value=script_eval!(vm,{mod.widgets.HagencyPanel {}});HagencyPanel::script_from_value(vm,value)});
         assert_eq!(panel.view.drop_down(&cx,ids!(new_agent_visibility)).selected_item(),0);
@@ -4614,13 +4694,8 @@ mod tests {
         panel.apply(&mut cx,Target::VisibilityChanged,&json!({"agent":{"id":"mine","visibility":"public","state":"active"}}));
         panel.sync_navigation(&mut cx);
         assert!(panel.view.button(&cx,ids!(another_binding)).borrow().unwrap().enabled());
-        panel.apply(&mut cx,Target::PublicAgents,&json!({"agents":[{"id":"other","displayName":"Shared","visibility":"public","isMine":false}]}));
-        assert_eq!(panel.public_agents.len(),1);
-        assert_eq!(panel.public_agents[0]["isMine"],false);
         panel.apply(&mut cx,Target::VisibilityChanged,&json!({"agent":{"id":"mine","visibility":"private","state":"active"}}));
         panel.sync_navigation(&mut cx);
-        assert!(panel.public_agents.is_empty());
-        assert!(!panel.view.view(&cx,ids!(public_agent_holder)).visible());
         assert!(!panel.view.button(&cx,ids!(another_binding)).borrow().unwrap().enabled());
         assert_eq!(audience_label(&json!({})),"Service audience unavailable. Update the server and refresh.");
         panel.agents[0].as_object_mut().unwrap().remove("visibility");
@@ -4828,17 +4903,16 @@ mod tests {
             overlay.end(&mut cx2d);cx2d.end_pass_sized_turtle();dl.end(&mut cx2d);cx2d.end_pass(&pass);}
             let list=panel.view.portal_list(&cx,if page==Page::Projects {ids!(project_list)} else {ids!(agent_list)});
             let rect=list.area().rect(&cx);
-            let catalog_height=if page==Page::Agents {panel.view.view(&cx,ids!(public_catalog)).area().rect(&cx).size.y+10.0} else {0.0};
-            assert!(rect.size.y>height-120.0-catalog_height,"list should fill the body below discovery: {rect:?}, height {height}");
+            assert!(rect.size.y>height-120.0,"list should fill the body: {rect:?}, height {height}");
             assert!(rect.pos.y+rect.size.y<=height-15.0,"list stays within panel padding: {rect:?}");
             let second=list.item(&mut cx,1,id!(Card)).area().rect(&cx);assert!(second.size.y>0.0 && second.pos.y+second.size.y<height,"second card is fully visible: {second:?}");
             if page==Page::Agents {
-                let row=list.item(&mut cx,0,id!(Card));let device=row.view(&cx,ids!(device_badge)).area().rect(&cx);let runtime=row.view(&cx,ids!(runtime_badge)).area().rect(&cx);
+                let row=list.item(&mut cx,0,id!(Card));let device=row.view(&cx,ids!(device_badge)).area().rect(&cx);let runtime=row.button(&cx,ids!(runtime_badge)).area().rect(&cx);
                 if width==980.0 {assert!((device.pos.y-runtime.pos.y).abs()<1.0);assert!(runtime.pos.x>=device.pos.x+device.size.x);}
                 assert!(device.size.y<=28.0 && runtime.size.y<=28.0);
                 let badges=row.view(&cx,ids!(badge_row)).area().rect(&cx);
-                for id in [ids!(ownership_badge),ids!(audience_badge),ids!(device_badge),ids!(runtime_badge)] {
-                    let badge=row.view(&cx,id).area().rect(&cx);
+                for id in [ids!(audience_badge),ids!(device_badge),ids!(runtime_badge)] {
+                    let badge=row.widget(&cx,id).area().rect(&cx);
                     assert!(badge.size.x>0.0 && badge.size.y>0.0);
                     assert!(badge.pos.x>=badges.pos.x-1.0 && badge.pos.x+badge.size.x<=badges.pos.x+badges.size.x+1.0,"badge overflows at {width}px: {badge:?} in {badges:?}");
                 }
@@ -4849,6 +4923,64 @@ mod tests {
         cx2d.begin_pass(&pass,None);dl.begin_always(&mut cx2d);overlay.begin(&mut cx2d);cx2d.begin_root_turtle(dvec2(980.0,height),Layout::flow_overlay());panel.draw_walk_all(&mut cx2d,&mut Scope::empty(),Walk::fixed(980.0,height));overlay.end(&mut cx2d);cx2d.end_pass_sized_turtle();dl.end(&mut cx2d);cx2d.end_pass(&pass);}
         let members=panel.view.portal_list(&cx,ids!(members_list)).area().rect(&cx);assert!(members.size.y>300.0,"members use remaining space: {members:?}");assert!(members.pos.y+members.size.y<=height,"members stay in panel: {members:?}");
         panel.display_blocked=true;panel.sync_navigation(&mut cx);assert!(!panel.view.view(&cx,ids!(details_scroll)).visible());panel.list_page(&mut cx);panel.sync_navigation(&mut cx);assert!(!panel.view.view(&cx,ids!(lists_pane)).visible(),"account authorization failure hides the new common list pane too");
+    }
+    #[test]
+    fn request_notices_fit_content_and_management_scroll_viewports_reach_the_edge() {
+        use makepad_widgets::makepad_draw::cx_draw::CxDraw;
+        fn draw(cx:&mut Cx,panel:&mut HagencyPanel,width:f64) {
+            cx.redraw_all();let pass=DrawPass::new(cx);pass.set_size(cx,dvec2(width,800.0));
+            let mut list=DrawList2d::new(cx);let overlay=Overlay{draw_list:DrawList::new(cx)};
+            let mut event=DrawEvent::default();event.redraw_all=true;
+            let mut draw=CxDraw::new(cx,&event);let mut cx2d=Cx2d::new(&mut draw);
+            cx2d.begin_pass(&pass,None);list.begin_always(&mut cx2d);overlay.begin(&mut cx2d);
+            cx2d.begin_root_turtle(dvec2(width,800.0),Layout::flow_overlay());
+            panel.draw_walk_all(&mut cx2d,&mut Scope::empty(),Walk::fixed(width,800.0));
+            overlay.end(&mut cx2d);cx2d.end_pass_sized_turtle();list.end(&mut cx2d);cx2d.end_pass(&pass);
+        }
+        let mut cx=Cx::new(Box::new(|_,_|{}));
+        let mut panel=cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm);crate::app::register_widgets(vm);
+            vm.bx.captured_errors=Some(Vec::new());
+            let value=script_eval!(vm,{mod.widgets.HagencyPanel {}});
+            let panel=HagencyPanel::script_from_value(vm,value);assert!(vm.take_errors().is_empty());panel
+        });
+        panel.agents=vec![json!({"id":"agent-a","displayName":"Agent","generation":1,"visibility":"private","state":"active"})];
+        for width in [420.0,1080.0,1440.0] {
+            panel.set_page(&mut cx,Page::Agents);panel.list_page(&mut cx);
+            panel.agent_pending_commands=vec![json!({"id":"request-a","operation":"agent.create","state":"unknown","input":{"displayName":"Pending Agent"}})];
+            draw(&mut cx,&mut panel,width);
+            let requests=panel.view.flat_list(&cx,ids!(agent_request_list));
+            let request_rect=requests.area().rect(&cx);
+            let request=requests.item(&mut cx,LiveId::from_str("request-a"),id!(Request)).unwrap();
+            let row=request.area().rect(&cx);
+            assert!(row.size.y>50.0);
+            assert!((request_rect.size.y-row.size.y).abs()<2.0,"request region must fit its row, without a reserved empty block: {request_rect:?}, {row:?}");
+            let title=request.label(&cx,ids!(title)).area().rect(&cx);
+            let check=request.button(&cx,ids!(check_request)).area().rect(&cx);
+            let retry=request.button(&cx,ids!(retry_request)).area().rect(&cx);
+            let notice=request.widget(&cx,ids!(request_notice)).area().rect(&cx);
+            for button in [check,retry] {
+                assert!(button.size.x>0.0 && button.size.y>0.0);
+                assert!(button.pos.x>=notice.pos.x && button.pos.x+button.size.x<=notice.pos.x+notice.size.x,"request actions stay inside the notice at {width}px: {button:?}, {notice:?}");
+            }
+            if width>=1080.0 {
+                assert!(request_rect.size.y<110.0,"request actions must not reserve a separate row: {request_rect:?}");
+                assert!(check.pos.x>=title.pos.x+title.size.x,"actions follow the title");
+                assert!((check.pos.y+check.size.y/2.0-title.pos.y-title.size.y/2.0).abs()<4.0,"actions align with the title: {title:?}, {check:?}");
+            }
+            let recovery=panel.view.view(&cx,ids!(agent_recovery)).area().rect(&cx);
+            assert!((recovery.size.y-request_rect.size.y).abs()<2.0,"no outer panel padding or repeated headings");
+            let viewport=panel.view.portal_list(&cx,ids!(agent_list)).area().rect(&cx);
+            assert!((viewport.pos.x+viewport.size.x-width).abs()<1.0,"scrolling viewport reaches the panel edge: {viewport:?}");
+            let card=panel.view.portal_list(&cx,ids!(agent_list)).item(&mut cx,0,id!(Card)).area().rect(&cx);
+            assert!((width-card.pos.x-card.size.x-20.0).abs()<1.0,"content keeps its own right gutter: {card:?}");
+            panel.agent_pending_commands.clear();draw(&mut cx,&mut panel,width);
+            assert!(!panel.view.view(&cx,ids!(agent_recovery)).visible());
+            assert!(panel.view.portal_list(&cx,ids!(agent_list)).area().rect(&cx).pos.y<viewport.pos.y-50.0);
+            panel.set_page(&mut cx,Page::Projects);panel.list_page(&mut cx);draw(&mut cx,&mut panel,width);
+            let viewport=panel.view.portal_list(&cx,ids!(project_list)).area().rect(&cx);
+            assert!((viewport.pos.x+viewport.size.x-width).abs()<1.0);
+        }
     }
     #[test]
     fn lease_wait_is_explicit_in_list_room_and_dm_shared_summary() {
@@ -4911,13 +5043,45 @@ mod tests {
         panel.set_busy(&mut cx,false);panel.apply(&mut cx,Target::ModelSaved,&saved);
         assert!(!panel.model_saving);assert!(!panel.busy,"confirmed save must not start a second catalog loading cycle");
         assert!(!panel.view.widget(&cx,ids!(model_save_spinner)).visible());
-        assert_eq!(panel.view.label(&cx,ids!(model_save_feedback)).text(),crate::i18n::tr("Model profile saved."));
+        assert_eq!(panel.view.inline_notice(&cx,ids!(model_save_feedback)).message(),crate::i18n::tr("Model profile saved."));
         assert!(!panel.model_save_failed);
         assert!(panel.view.button(&cx,ids!(save_model)).borrow().unwrap().enabled());
         panel.model_saving=true;panel.finish_model_save(&mut cx,Err("invalid_model_profile"));
         assert!(panel.model_save_failed);assert!(!panel.view.widget(&cx,ids!(model_save_spinner)).visible());
-        assert!(panel.view.label(&cx,ids!(model_save_feedback)).text().contains("model profile or workspace"));
-        panel.clear_model_save_feedback(&mut cx);assert!(!panel.view.widget(&cx,ids!(model_save_feedback)).visible());
+        assert!(panel.view.inline_notice(&cx,ids!(model_save_feedback)).message().contains("model profile or workspace"));
+        panel.clear_model_save_feedback(&mut cx);assert!(!panel.view.inline_notice(&cx,ids!(model_save_feedback)).is_visible());
+    }
+    #[test]
+    fn runtime_badge_click_explains_current_problem_without_starting_or_opening_agent() {
+        let mut cx=Cx::new(Box::new(|_,_|{}));
+        let mut panel=cx.with_vm(|vm|{makepad_widgets::script_mod(vm);crate::app::register_widgets(vm);let value=script_eval!(vm,{mod.widgets.HagencyPanel {}});HagencyPanel::script_from_value(vm,value)});
+        panel.agents=vec![json!({"id":"agent-a","displayName":"Agent A","generation":1,"executionDeviceId":"device-here","state":"active"})];
+        local_device_fixture(&mut panel,"agent-a");
+        panel.set_page(&mut cx,Page::Agents);panel.list_page(&mut cx);panel.sync_navigation(&mut cx);
+        let list=panel.view.portal_list(&cx,ids!(agent_list));let row=list.item(&mut cx,0,id!(Card));
+        panel.agent_card_targets.insert(row.widget_uid(),"agent-a".into());
+        let button=row.button(&cx,ids!(runtime_badge));
+        assert!(button.borrow().is_some(),"runtime status must be an accessible button");
+        button.set_text(&mut cx,crate::i18n::tr("Needs attention"));
+        let click=cx.capture_actions(|cx|{cx.group_widget_actions(list.widget_uid(),row.widget_uid(),|cx|cx.widget_action(button.widget_uid(),ButtonAction::Clicked(KeyModifiers::default())));});
+        for (status,expected) in [
+            (Ok(json!({"service":{"enabled":false,"modelConfigured":false},"runtime":null})),"No model is configured"),
+            (Err("owner_authorization_required".into()),"Sign in again"),
+            (Ok(json!({"service":{"enabled":true,"watcherRunning":true,"problems":[{"error":"room_worker_stopped","retryInSeconds":5}]},"runtime":null})),"Room worker stopped"),
+        ] {
+            panel.runtime_list.insert("agent-a".into(),status);
+            let request=panel.request;
+            let emitted=cx.capture_actions(|cx|assert!(panel.open_card(cx,&click)));
+            let text=emitted.iter().find_map(|action|match action.as_widget_action().cast() {TooltipAction::HoverIn{text,options,..}=>{assert_eq!(options.position,TooltipPosition::Bottom);Some(text)},_=>None}).expect("click opens a callout");
+            assert!(text.contains(expected),"{text}");
+            assert!(!text.contains("Agent A"),"the callout only contains the problem and next steps");
+            assert_eq!(panel.request,request);assert!(!panel.busy);
+            assert!(panel.list_service_pending_agent.is_empty());assert!(panel.wanted_model.is_none());
+            assert!(panel.view.view(&cx,ids!(lists_pane)).visible());
+        }
+        panel.agent_card_targets.insert(row.widget_uid(),"different-agent".into());
+        let stale=cx.capture_actions(|cx|assert!(panel.open_card(cx,&click)));
+        assert!(!stale.iter().any(|action|matches!(action.as_widget_action().cast(),TooltipAction::HoverIn{..})),"a recycled row must not expose another Agent's diagnostics");
     }
     #[test]
     fn unconfigured_agent_card_opens_model_setup_without_starting_service() {
@@ -5339,7 +5503,7 @@ mod tests {
         );
     }
     #[test]
-    fn original_agent_journal_requires_history_but_keeps_other_requests_available() {
+    fn agent_requests_never_block_an_independent_creation() {
         let mut cx = Cx::new(Box::new(|_, _| {}));
         let mut panel = cx.with_vm(|vm| {
             makepad_widgets::script_mod(vm);
@@ -5349,7 +5513,7 @@ mod tests {
         });
         panel.sync_navigation(&mut cx);
         assert!(
-            !panel
+            panel
                 .view
                 .button(&cx, ids!(create_agent))
                 .borrow()
@@ -5656,7 +5820,7 @@ mod tests {
             panel.draw_walk_all(&mut cx2d, &mut Scope::empty(), Walk {width: Size::Fixed(980.0), height: Size::Fixed(860.0), ..Walk::default()});
             overlay.end(&mut cx2d); cx2d.end_pass_sized_turtle(); list.end(&mut cx2d); cx2d.end_pass(&pass);
             drop(cx2d); drop(draw);
-            assert!(!panel.view.view(&cx, ids!(status_holder)).visible());
+            assert!(!panel.view.inline_notice(&cx, ids!(status_holder)).is_visible());
             assert_eq!(panel.view.widget(&cx, ids!(loading_status)).visible(), message == "Loading…");
             positions.push(panel.view.view(&cx, ids!(projects_page)).area().rect(&cx).pos.y);
         }
@@ -5677,6 +5841,55 @@ mod tests {
             assert!(!message.contains("secret"));
             assert!(!message.contains("/Users"));
         }
+    }
+    #[test]
+    fn management_failures_keep_codes_and_explain_creation_failures() {
+        for (code, detail) in [
+            ("invalid_agent_name", "1–64"),
+            ("invalid_arguments", "invalid fields"),
+            ("idempotency_key_reused", "different settings"),
+            ("agent_command_state_unavailable", "local request state"),
+            ("invalid_server_response", "unexpected response"),
+            ("appservice_startup_not_ready", "not ready"),
+            ("storage_unavailable", "database"),
+            ("domain_unavailable", "configuration"),
+        ] {
+            let message = visible_error(code);
+            assert!(message.contains(detail), "{message}");
+            assert!(message.ends_with(&format!("({code})")), "{message}");
+        }
+        // A newer server may return a code this client does not yet explain.
+        assert!(visible_error("future_agent_failure").contains("(future_agent_failure)"));
+        assert!(visible_error("forbidden").contains("(forbidden)"));
+        for detail in ["", "bad\ncode", "code token=secret", "{\"code\":\"secret\"}", "/private/auth.json", "错误", &"x".repeat(81)] {
+            assert_eq!(visible_error(detail), crate::i18n::tr(user_error("unknown_error")));
+        }
+    }
+    #[test]
+    fn fresh_agent_form_clears_previous_failure_and_keeps_other_requests() {
+        let mut cx=Cx::new(Box::new(|_,_|{}));
+        let mut panel=cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm);crate::app::register_widgets(vm);
+            let value=script_eval!(vm,{mod.widgets.HagencyPanel {}});
+            HagencyPanel::script_from_value(vm,value)
+        });
+        panel.page=Page::Agents;
+        panel.agent_pending_commands=vec![json!({"id":"old","operation":"agent.create","state":"unknown","input":{"displayName":"Previous"}})];
+        panel.agent_command=Some((json!({"displayName":"Previous"}),"old-key".into()));
+        panel.show_failure(&mut cx,Target::AgentCreated,"invalid_arguments",&visible_error("invalid_arguments"));
+        let notice=panel.view.inline_notice(&cx,ids!(status_holder));
+        assert!(notice.is_visible());
+        assert!(!notice.message().contains("invalid_arguments"),"diagnostic code belongs in Details");
+        assert!(!notice.message().contains("unconfirmed"),"a rejection is not presented as an unknown result");
+        panel.begin_agent_creation(&mut cx);panel.sync_navigation(&mut cx);
+        assert!(!notice.is_visible());assert!(panel.agent_command.is_none());
+        assert_eq!(panel.agent_pending_commands.len(),1);
+        assert!(panel.view.button(&cx,ids!(create_agent)).borrow().unwrap().enabled());
+        assert!(panel.input(&mut cx,ids!(agent_name)).is_empty());
+        panel.agent_creating=true;panel.set_busy(&mut cx,true);panel.sync_navigation(&mut cx);
+        assert_eq!(panel.view.button(&cx,ids!(create_agent)).text(),crate::i18n::tr("Creating…"));
+        assert!(panel.view.widget(&cx,ids!(agent_create_spinner)).visible());
+        assert!(!panel.view.button(&cx,ids!(create_agent)).borrow().unwrap().enabled());
     }
     #[test]
     fn agent_empty_state_requires_a_successful_list_and_creation_placeholder_tracks_kind() {

@@ -161,6 +161,12 @@ pub enum Command {
         command: Box<Command>,
     },
     AgentCommands,
+    CheckAgentCommand {
+        id: String,
+    },
+    DismissAgentCommand {
+        id: String,
+    },
     ResumeAgentCommand {
         id: String,
     },
@@ -372,6 +378,14 @@ fn request(command: Command) -> Result<(&'static str, String, Option<Value>), Na
         Command::BeginLogin => return Err(failure(400, "login_requires_native_context")),
         Command::Projects => ("GET", format!("{root}/owner-projects")),
         Command::AgentCommands => ("GET", format!("{root}/owned-agents/commands")),
+        Command::CheckAgentCommand { id } => {
+            key(&id)?;
+            ("GET", format!("{root}/owned-agents/commands/{id}"))
+        }
+        Command::DismissAgentCommand { id } => {
+            key(&id)?;
+            ("POST", format!("{root}/owned-agents/commands/{id}/dismiss"))
+        }
         Command::ResumeAgentCommand { id } => {
             key(&id)?;
             ("POST", format!("{root}/owned-agents/commands/{id}/resume"))

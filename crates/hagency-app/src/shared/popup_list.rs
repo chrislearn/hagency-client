@@ -578,25 +578,7 @@ impl RobrixPopupNotificationRef {
 
 /// Recolors an existing popup without restarting its dismissal timer.
 fn style_popup(cx: &mut Cx, view: &mut View, kind: PopupKind, theme: &ThemeSnapshot) {
-    let (fg, bg) = match kind {
-        PopupKind::Error => (
-            theme.role("color.status.danger.foreground"),
-            theme.role("color.status.danger.background"),
-        ),
-        PopupKind::Warning => (
-            theme.role("color.status.warning.foreground"),
-            theme.role("color.status.warning.background"),
-        ),
-        PopupKind::Success => (
-            theme.role("color.status.success.foreground"),
-            theme.role("color.status.success.background"),
-        ),
-        PopupKind::Info => (
-            theme.role("color.status.info.foreground"),
-            theme.role("color.status.info.background"),
-        ),
-        PopupKind::Blank => (theme.ink, theme.surface),
-    };
+    let (fg, bg) = super::feedback::colors(theme,kind);
     view.view(cx, ids!(popup_content.inner.left_side_view))
         .set_visible(cx, kind != PopupKind::Blank);
     let mut icon = view.widget(cx, ids!(popup_content.inner.left_side_view.popup_icon));

@@ -19,6 +19,7 @@ pub mod mention_popup;
 pub mod mentionable_text_input;
 pub mod navigation_bar_button;
 pub mod popup_list;
+pub mod feedback;
 pub mod progress_bar;
 pub mod room_filter_input_bar;
 pub mod room_input_popup_menu;
@@ -51,6 +52,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
     helpers::script_mod(vm);
     navigation_bar_button::script_mod(vm);
     icon_button::script_mod(vm);
+    feedback::script_mod(vm);
     sidebar_resize::script_mod(vm);
     context_menu::script_mod(vm);
     expand_arrow::script_mod(vm);

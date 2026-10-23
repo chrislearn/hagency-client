@@ -22,7 +22,7 @@ pub(super) fn management_read(command: &Command) -> bool {
         | Command::RoomRoster {..} | Command::Agents | Command::DiscoverAgents | Command::Bindings {..}
         | Command::Devices | Command::AgentDetails {..} | Command::AgentConfigurationStatus {..}
         | Command::AgentOwnerDirectStatus {..} | Command::ScopeServiceState {..}
-        | Command::LoginStatus | Command::AgentCommands | Command::Creations | Command::Creation {..}
+        | Command::LoginStatus | Command::AgentCommands | Command::CheckAgentCommand {..} | Command::Creations | Command::Creation {..}
         | Command::Binding {action: BindingAction::Status, ..}
         | Command::Provider {action: ProviderAction::Status | ProviderAction::Models}
         | Command::RuntimeProvider {action: ProviderAction::Status | ProviderAction::Models, ..}

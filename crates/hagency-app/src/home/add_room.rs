@@ -4,6 +4,7 @@
 use makepad_widgets::*;
 use super::{navigation_tab_bar::{NavigationBarAction, SelectedTab}, room_directory::{self, DirectoryRoom, DirectoryPage}};
 use crate::shared::navigation_bar_button::NavigationBarButtonWidgetRefExt;
+use crate::shared::feedback::InlineNoticeWidgetExt;
 use matrix_sdk::RoomState;
 use ruma::{IdParseError, MatrixToUri, MatrixUri, OwnedRoomOrAliasId, OwnedServerName, matrix_uri::MatrixId, room::{JoinRuleSummary, RoomType}};
 
@@ -88,17 +89,7 @@ script_mod! {
             }
         }
 
-        error_view := View {
-            padding: 10
-            error_text := RinxLabel {
-                width: Fill, height: Fit
-                flow: Flow.Right{wrap: true},
-                draw_text +: {
-                    color: (COLOR_FG_DANGER_RED),
-                    text_style: MESSAGE_TEXT_STYLE { font_size: mod.widgets.RINX_BODY_SIZE },
-                }
-            }
-        }
+        error_view := InlineNotice {}
 
         directory_results := View {
             visible: false width: Fill height: Fill flow: Down
@@ -647,7 +638,7 @@ impl Widget for AddRoomScreen {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let loading_room_view = self.view.view(cx, ids!(loading_room_view));
         let fetched_room_summary = self.view.view(cx, ids!(fetched_room_summary));
-        let error_view = self.view.view(cx, ids!(error_view));
+        let error_view = self.view.inline_notice(cx, ids!(error_view));
 
         self.view.view(cx, ids!(directory_results)).set_visible(cx, self.showing_results);
         self.view.view(cx, ids!(preview_scroll)).set_visible(cx, !self.showing_results);
@@ -657,13 +648,12 @@ impl Widget for AddRoomScreen {
             AddRoomState::WaitingOnUserInput => {
                 loading_room_view.set_visible(cx, false);
                 fetched_room_summary.set_visible(cx, false);
-                error_view.set_visible(cx, false);
+                error_view.clear(cx);
             }
             AddRoomState::ParseError(err_str) | AddRoomState::FetchError(err_str) => {
                 loading_room_view.set_visible(cx, false);
                 fetched_room_summary.set_visible(cx, false); 
-                error_view.set_visible(cx, true);
-                error_view.label(cx, ids!(error_text)).set_text(cx, err_str);
+                error_view.show(cx,PopupKind::Error,"Could not open Room",err_str,"",false);
             }
             AddRoomState::Parsed { room_or_alias_id, .. } => {
                 loading_room_view.set_visible(cx, true);
@@ -672,7 +662,7 @@ impl Widget for AddRoomScreen {
                     &crate::i18n::format("Fetching {room_or_alias_id}...", &[("room_or_alias_id", (room_or_alias_id).to_string())]),
                 );
                 fetched_room_summary.set_visible(cx, false); 
-                error_view.set_visible(cx, false);
+                error_view.clear(cx);
             }
             ars @ AddRoomState::FetchedRoomPreview { frp, .. } 
             | ars @ AddRoomState::Knocked { frp }
@@ -680,7 +670,7 @@ impl Widget for AddRoomScreen {
             | ars @ AddRoomState::Loaded { frp, .. } => {
                 loading_room_view.set_visible(cx, false);
                 fetched_room_summary.set_visible(cx, true);
-                error_view.set_visible(cx, false);
+                error_view.clear(cx);
 
                 // Populate the content of the fetched room preview.
                 let room_avatar = fetched_room_summary.avatar(cx, ids!(room_avatar));
