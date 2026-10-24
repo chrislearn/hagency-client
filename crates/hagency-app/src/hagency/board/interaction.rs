@@ -629,7 +629,7 @@ impl Widget for ProjectBoard {
                             script_apply_eval!(cx,marker,{draw_bg +: {color:mod.widgets.RINX_WARNING_FG}});
                         }
                         "in_review" => {
-                            script_apply_eval!(cx,marker,{draw_bg +: {color:#9675bf}});
+                            script_apply_eval!(cx,marker,{draw_bg +: {color:mod.widgets.RINX_INFO_FG}});
                         }
                         "todo" => {
                             script_apply_eval!(cx,marker,{draw_bg +: {color:mod.widgets.RINX_MUTED}});

@@ -314,7 +314,7 @@ makepad_widgets::script_mod! {
         }}
         drag_preview := Tooltip {abs_pos:vec2(0,0) content := RoundedShadowView {width:Fit height:Fit padding:0
             draw_bg +: {color:mod.widgets.RINX_SURFACE border_radius:8.0 shadow_radius:16.0 shadow_offset:vec2(0,4) shadow_color:#0003}
-            tooltip_label := Label {visible:false}
+            tooltip_label := RinxLabel {visible:false}
             floating := mod.widgets.KanbanCard {width:226 margin:0 cursor:MouseCursor.Move
                 draw_bg +: {border_color:mod.widgets.RINX_ACCENT border_size:2.0}
             }
