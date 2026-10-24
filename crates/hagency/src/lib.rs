@@ -1,4 +1,5 @@
 use hagency_core::custody::{Delivery, MAX_DELIVERY_BYTES};
+pub use hagency_core::project_board;
 use hagency_store::{DomainStore, Error, Store};
 mod alerts;
 pub mod bootstrap;

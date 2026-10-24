@@ -5,6 +5,7 @@ use serde_json::{Value, json};
 use super::{backend::Service, model::*, approvals::Notices};
 use std::{collections::HashSet, time::Instant};
 use crate::sliding_sync::spawn_async_task;
+use super::board::ProjectBoardWidgetExt;
 use crate::shared::{feedback::{InlineNoticeWidgetExt,InlineNoticeWidgetRefExt}, popup_list::PopupKind};
 
 #[derive(Clone, Debug)]
@@ -27,6 +28,7 @@ pub enum HagencyAction {
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ProjectDetailSection {
+    Board,
     Overview,
     Rooms,
     Members,
@@ -624,11 +626,13 @@ script_mod! {
                 View {visible: false width: 0 height: 0 projects := Select {labels: [#(crate::i18n::tr("Select a Project"))]}}
                 project_detail := View {visible: false width: Fill height: Fit flow: Down spacing: 10
                     View {width: Fill height: 40 spacing: 8
+                        board_tab := Action {text: #(crate::i18n::tr("Board")) i18n_text: "Board"}
                         overview_tab := Action {text: #(crate::i18n::tr("Overview")) i18n_text: "Overview"}
                         rooms_tab := Action {text: #(crate::i18n::tr("Rooms")) i18n_text: "Rooms"}
                         members_tab := Action {text: #(crate::i18n::tr("Members")) i18n_text: "Members"}
                         permissions_tab := Action {text: #(crate::i18n::tr("Access")) i18n_text: "Access"}
                     }
+                    board_section := View {visible: false width: Fill height: Fill board := ProjectBoard {}}
                     overview_section := Section {width: Fill height: Fit flow: Down spacing: 10
                     project_details := Text {}
                     Text {text: #(crate::i18n::tr("Discussion Rooms have their own members.")) i18n_text: "Discussion Rooms have their own members." draw_text.color: mod.widgets.RINX_MUTED}
@@ -1577,6 +1581,7 @@ impl HagencyPanel {
             .filter(|(project, _)| project == string(&p, "id"))
             .map(|(_, section)| *section);
         self.project_section(cx, match requested {
+            Some(ProjectDetailSection::Board) => ids!(board_section),
             Some(ProjectDetailSection::Rooms) => ids!(rooms_section),
             Some(ProjectDetailSection::Members) => ids!(members_section),
             _ => ids!(overview_section),
@@ -1726,7 +1731,10 @@ impl HagencyPanel {
         self.view.button(cx,ids!(open_owner_direct)).set_enabled(cx,exact && state == "active" && !string(&self.direct_state,"roomId").is_empty() && !self.busy);
     }
     fn project_section(&self, cx: &mut Cx, selected: &[LiveId]) {
+        let project=self.project(cx);
+        self.view.project_board(cx,ids!(board)).bind(cx,&self.identity,project.as_deref(),self.active && selected==[id!(board_section)]);
         for id in [
+            ids!(board_section),
             ids!(overview_section),
             ids!(rooms_section),
             ids!(members_section),
@@ -1735,6 +1743,7 @@ impl HagencyPanel {
             self.view.view(cx, id).set_visible(cx, id == selected);
         }
         for (tab, section) in [
+            (ids!(board_tab), ids!(board_section)),
             (ids!(overview_tab), ids!(overview_section)),
             (ids!(rooms_tab), ids!(rooms_section)),
             (ids!(members_tab), ids!(members_section)),
@@ -2009,7 +2018,7 @@ impl HagencyPanel {
         self.view.view(cx,ids!(details_scroll)).set_visible(cx,detail && !self.display_blocked);
         self.view.view(cx,ids!(project_list_holder)).set_visible(cx,!detail && self.page==Page::Projects);
         self.view.view(cx,ids!(agent_list_holder)).set_visible(cx,!detail && self.page==Page::Agents);
-        let members=self.page==Page::Projects && detail && self.view.view(cx,ids!(members_section)).visible();
+        let members=self.page==Page::Projects && detail && (self.view.view(cx,ids!(members_section)).visible() || self.view.view(cx,ids!(board_section)).visible());
         for id in [ids!(projects_page),ids!(project_detail),ids!(members_section)] {
             let mut view=self.view.view(cx,id);
             let height=if members {Size::fill()} else {Size::fit()};
@@ -2554,6 +2563,7 @@ impl HagencyPanel {
                         && string(&project, "id") == project_id
                     {
                         match section {
+                            ProjectDetailSection::Board => self.project_section(cx,ids!(board_section)),
                             ProjectDetailSection::Overview => {
                                 self.project_section(cx, ids!(overview_section))
                             }
@@ -3272,6 +3282,9 @@ impl HagencyPanel {
 }
 impl Widget for HagencyPanel {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        let board_active=self.active && !self.display_blocked && self.page==Page::Projects && self.view.view(cx,ids!(project_detail)).visible() && self.view.view(cx,ids!(board_section)).visible();
+        let project=self.project(cx);
+        self.view.project_board(cx,ids!(board)).bind(cx,&self.identity,project.as_deref(),board_active);
         self.view.handle_event(cx, event, scope);
         if !self.active {
             return;
@@ -3628,6 +3641,7 @@ impl Widget for HagencyPanel {
             self.run(cx, Target::ScopeChanged, command);
             return;
         }
+        if self.view.button(cx, ids!(board_tab)).clicked(actions) {self.project_section(cx,ids!(board_section));return;}
         if self.view.button(cx, ids!(overview_tab)).clicked(actions) {
             self.project_section(cx, ids!(overview_section));
             return;
@@ -4930,7 +4944,7 @@ mod tests {
         fn draw(cx:&mut Cx,panel:&mut HagencyPanel,width:f64) {
             cx.redraw_all();let pass=DrawPass::new(cx);pass.set_size(cx,dvec2(width,800.0));
             let mut list=DrawList2d::new(cx);let overlay=Overlay{draw_list:DrawList::new(cx)};
-            let mut event=DrawEvent::default();event.redraw_all=true;
+            let event=DrawEvent{redraw_all:true,..Default::default()};
             let mut draw=CxDraw::new(cx,&event);let mut cx2d=Cx2d::new(&mut draw);
             cx2d.begin_pass(&pass,None);list.begin_always(&mut cx2d);overlay.begin(&mut cx2d);
             cx2d.begin_root_turtle(dvec2(width,800.0),Layout::flow_overlay());

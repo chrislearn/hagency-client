@@ -3,6 +3,14 @@
 
 # Repository audit knowledge
 
+- **Project kanban scope review, 2026-10-23:** The proposed shared native board
+  needs Server authority/storage/API and Client UI/typed calls. Cloud's existing
+  database configuration, Server image selection and host/root-prefix routing
+  support this deployment contract. Cloud code changes are not a P0 dependency;
+  image upgrades and consistent recovery verification are deployment acceptance.
+  Cloud plan entitlements, console controls and new self-service recovery require
+  separate scope. Revised report lives in the sibling hagency-cloud/dev-vibe tree.
+
 - **Live two-agent private DMs, 2026-09-17:** After explicit rate-limit recovery,
   root3 PID18059 on19432 physically provisions two local Codex agents and passes
   two task rounds, with exact distinct workspaces, canonical Done, encrypted
@@ -5284,3 +5292,32 @@ Desktop CI repair is verified on main 6e81c157 (2026-10-12): all five desktop ta
 - A fixture observing operation expiry must order that clock before unrelated writer reply timeouts. Prepare any blocking SQLite writer lock before synchronously creating a receive owner and starting its original materialization clock. Do not rearm an existing owner's deadline after an effect, widen production budgets, or accept an unrelated authority-loss outcome as the intended observation.
 
 - A bounded HTTP poll must not stay deliberately parked across unrelated SDK persistence just to prove permit independence. Hold an actual poll, require the SAME collector refresh/intake to reach its authenticated HTTP request before releasing it, and require clean poll completion plus actual message ingestion. Exercise both admission paths independently; restoring the old busy permit must still fail before the peer request. Do not widen HTTP bounds or accept an expired poll as successful concurrency.
+
+
+- Shared Project board is independent of the historical operator/runner projection. Server owns hagency_project_v1; capability project-board-v2; current Space membership and native session authorize access. Cloud code/config additions are not required. The optional Server kill switch defaults enabled and retains data when disabled.
+- Native board must set skip_widget_tree_search on its root: HagencyPanel recursively searches generic control IDs such as workspace, which otherwise collide with encapsulated board Views. Internal board-root lookup still works. Keep explicit makepad_widgets::script_mod! in the split view module to avoid a cyclic wildcard macro reexport.
+- Board async replies are fenced by account, Project, view epoch and detail request. ACK invalidates earlier reads; unknown writes retain the exact original intent in memory across same-account Project changes. NativeOwner operations are not physically cancelled by view changes. No crash-persistent draft or offline-write guarantee exists.
+- Native project_board_http integration uses the real Server/SQL/NativeOwner route with explicit fixture Pasion/Matrix sources. Each run must use unique intent keys for create AND move/update. UI fixtures prove layout/virtualization, not shared operation; real-device acceptance is separately recorded.
+
+
+- Read-only UI must still forward viewport events: active=false at ProjectBoard's early return froze even its scrollbars in the old design preview. Native drawing/API tests do not prove actual UI operation. project_board_interactive now exercises the real NativeOwner -> Server -> SQL path; its debug-only connection override is never a release fallback. Keep explicit fixture identity and loopback checks.
+- PortalList must reset/clamp an old first_id when a filter empties or shrinks a lane. Reset all viewports on filter/Project changes; otherwise a zero-count lane can hide its own empty state or a one-column filter can inherit an offscreen horizontal position. Compute drag autoscroll from actual column geometry after manual scrolling.
+- History pagination needs both detail-generation and per-kind latest-request fences. Old comment/activity pages can finish after Back-to-first or another page; an earlier request must not replace the latest page. Button enabled and disabled animation are separate Makepad states; set both when interactive feedback must match blocked actions.
+- A fresh LaunchServices debug app on this Mac blocked inside mkdir/open of source paths before a useful window. sample identified actual syscalls; optional HAGENCY_BOARD_RESOURCE_DIR selects staged crate/resources paths and the interactive example uses isolated temporary data. Do not change TCC/system permissions or claim a rendering-only fixture proves shared persistence. Only Alice seeds fixed original intents; Bob must not create duplicate actor-scoped seed intents.
+
+
+- Project board v2 replaces hard-coded states with 2–12 ordered column definitions. Preserve stable column IDs through reorders and creating-task drafts; labels are presentation. Keep a completed column. Delete only columns with no active OR archived tasks. Server must enforce WIP under the same board row lock for create, cross-column move and restore; filtered totals are not WIP occupancy.
+- Parent/checklist values are part of versioned Fields. Preserve them through every editor fill/save, conflict draft and original retry; summary cards omit checklist bodies. Parent links are same-Project, one level, at most100children, and independent of parent archive/completion. Existing parent links remain editable after parent archive.
+- Empty newly added Fields serialize with skip_serializing_if to preserve old receipt digests. Board schema_v2 is additive within hagency_project_v1 and preserves v1 receipts/IDs; discovery only advertises project-board-v2 to prevent old five-column clients silently misinterpreting custom workflows.
+- Salvo Request::payload defaults to64KiB even with a larger outer size_limiter. Explicitly set the board parser secure max to128KiB and exercise an actual maximum multilingual checklist over HTTP; only increasing a post-read length check does not increase accepted input.
+
+- **Native kanban drag rendering, 2026-10-23:** PortalList scrollbars overlay their row width; reserve a right margin on row templates. Keep the captured source widget/height alive while lifting its content into an overlay. An HTTP snapshot reply can arrive before the new PortalList Area geometry is drawn: resolve a landing target only at the end of the new draw, not in the next-frame event immediately after acknowledgement. Clear the old mouse focus on drop because virtualized rows are reused for another task.
+
+- Native Markdown composers must wrap TextInput in a View to toggle visibility; generic TextInput set_visible did not remove its drawing/layout in native acceptance. Toolbar transformations should call replace_range(UndoGroup::New) with byte-indexed native selection and skip active IME composition. Source remains the API/storage contract; render independently from it.
+- Full-client local board acceptance can restore an isolated fake OAuth session through the normal SDK (prepare_project_client_fixture example), with explicit loopback identity metadata/whoami/sync from Server's project_board_fixture. Production Service origin/issuer/account guards remain unchanged. This validates full app Projects navigation and actual Server board writes, not real Pasion login or Matrix chat. Do not reuse the production account data directory for fixture sessions.
+
+- 看板 v3：评论草稿是账号内 `(project, task)` 的会话期缓存；详情请求代次和图片请求序号共同隔离旧回包。通知存在 Server，项目内轮询，不是 OS push。附件只经项目成员鉴权 API 读取；预览限额不能替代 Server 单文件/总容量限额。原生测试必须用完整 app；Bob 可通过 `HAGENCY_BOARD_FIXTURE_ACCOUNT=bob` 生成独立会话目录，既有目录拒绝覆盖。
+
+## 看板原生图片链路（2026-10-23）
+
+附件上传必须同时满足 Server 入口和 NativeOwner board-command 的请求预算。2 MiB 二进制需要约 2.8 MiB Base64，NativeOwner 不能沿用普通看板命令的 128 KiB 上限。上传回执使用稳定 attachment ID 插入 attachment: Markdown，回执只修改当前范围的草稿。Makepad TextInput.replace_range 拒绝只读字段，ACK 后先解除临时写锁；Tooltip.hide 即使已关闭仍请求重绘，不能在空闲 draw 中反复调用。刷新同一任务的历史不要先清空，否则滚动区域会收缩；切卡时则必须先清空。

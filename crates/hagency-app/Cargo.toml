@@ -65,7 +65,7 @@ robius-use-makepad = "0.1.1" ## auto-configures all `robius-*` crates to work wi
 
 
 anyhow.workspace = true
-base64 = { version = "0.22.1", optional = true }
+base64 = "0.22.1"
 ed25519-dalek = { version = "2.2.0", optional = true }
 sha2 = { version = "0.10.9", optional = true }
 bitflags = "2.6.0"
@@ -190,7 +190,7 @@ hagency-updater = { path = "../hagency-updater" }
 
 [features]
 # Opt-in, isolated debug-only Sparkle experiment. Never enables production updates.
-macos-sparkle = ["dep:cc", "dep:base64"]
+macos-sparkle = ["dep:cc"]
 # Isolated local accounts exist only in instrument builds.
 palpo-instrument = []
 chat-stress = ["dep:stats_alloc"]
@@ -220,7 +220,7 @@ tsp = ["dep:tsp_sdk", "dep:quinn", "dep:aws-lc-rs", "dep:percent-encoding", "dep
 ## bridge-bot invites, and the workflow slash-commands offered in rooms that
 ## contain a `*_coordinator` agent. Included by default. Approval cards do not require the workflow preference;
 ## only workflow slash-command suggestions use Settings → Preferences.
-agent_chat = ["dep:base64", "dep:ed25519-dalek", "dep:sha2"]
+agent_chat = ["dep:ed25519-dalek", "dep:sha2"]
 ## Opt in to testing the pinned, unreleased Hagency Agent Operations contract.
 ## Production agent_chat builds retain the release gate.
 agent_ops_dev = ["agent_chat"]
