@@ -1,5 +1,5 @@
 use makepad_widgets::*;
-use super::{KanbanCard, ProjectBoard, markdown::BoardMarkdown};
+use super::{KanbanCard, ProjectBoard, markdown::BoardMarkdown, media::BoardInlineImage};
 
 makepad_widgets::script_mod! {
     use mod.prelude.widgets.*
@@ -9,9 +9,17 @@ makepad_widgets::script_mod! {
     let Input = RobrixTextInput {width: Fill height: 36 margin: 0 padding: Inset{left: 10 right: 10 top: 8 bottom: 8}}
     let Select = RobrixSettingsDropDown {width: Fill height: 36 margin: 0}
     let Action = RinxButton {height: 34 padding: Inset{left: 12 right: 12 top: 0 bottom: 0}}
+    mod.widgets.BoardInlineImage = #(BoardInlineImage::register_widget(vm)) {
+        width:Fill height:Fit flow:Down spacing:6 padding:8
+        picture := Image {width:Fill height:200 fit:ImageFit.Smallest}
+        unavailable := Small {width:Fill}
+        caption := Small {width:Fill}
+    }
     mod.widgets.BoardMarkdown = #(BoardMarkdown::register_widget(vm)) {
         width:Fill height:Fit flow:Down
-        body := RinxHtml {width:Fill height:Fit padding:0}
+        body := RinxHtml {width:Fill height:Fit padding:0
+            boardimage := mod.widgets.BoardInlineImage {}
+        }
     }
     let Format = RinxGhostButton {width:26 height:28 padding:0}
     let Composer = RoundedView {width:Fill height:Fit flow:Down spacing:8 padding:10
@@ -32,6 +40,10 @@ makepad_widgets::script_mod! {
             code := Format {text:"`"}
             block := Format {text:"</>"}
             link := Format {text:"↗"}
+        }
+        media_tools := View {width:Fill height:Fit flow:Flow.Right{wrap:true} spacing:8
+            insert_image := RinxGhostButton {height:28 text:#(crate::i18n::tr("Insert image")) i18n_text:"Insert image"}
+            paste_image := RinxGhostButton {height:28 text:#(crate::i18n::tr("Paste image")) i18n_text:"Paste image"}
         }
         source_wrap := View {width:Fill height:Fit
             source := Input {height:160 is_multiline:true empty_text:#(crate::i18n::tr("Write in Markdown…")) i18n_empty_text:"Write in Markdown…"}
@@ -176,7 +188,8 @@ makepad_widgets::script_mod! {
                     detail_tab := RinxGhostButton {height:30 text:#(crate::i18n::tr("Task details")) i18n_text:"Task details"}
                     discussion_tab := RinxGhostButton {height:30 text:#(crate::i18n::tr("Discussion & activity")) i18n_text:"Discussion & activity"}
                 }
-                editor_scroll := ScrollYView {width: Fill height: Fill flow: Down spacing: 10 padding:Inset{right:12}
+                media_drop_hint := Small {visible:false width:Fill draw_text.color:mod.widgets.RINX_ACCENT}
+            editor_scroll := ScrollYView {width: Fill height: Fill flow: Down spacing: 10 padding:Inset{right:12}
                     detail_notice := Small {}
                     details_body := View {width:Fill height:Fit flow:Down spacing:10
                     Text {text: #(crate::i18n::tr("Title")) i18n_text: "Title"}
@@ -212,17 +225,32 @@ makepad_widgets::script_mod! {
                     due_date := Input {empty_text: "YYYY-MM-DD"}
                     Text {text: #(crate::i18n::tr("Description")) i18n_text: "Description"}
                     description_editor := Composer {}
-                    attachments_section := View {width:Fill height:Fit flow:Down spacing:8
+                    attachments_section := RoundedView {width:Fill height:Fit flow:Down spacing:8 padding:8
+                        draw_bg +: {color:mod.widgets.RINX_SURFACE border_color:mod.widgets.RINX_BORDER border_size:1.0 border_radius:8.0}
                         View {width:Fill height:30 align:Align{y:0.5}
                             Text {width:Fill text:#(crate::i18n::tr("Attachments")) i18n_text:"Attachments"}
                             upload_attachment := Action {text:#(crate::i18n::tr("Add file")) i18n_text:"Add file"}
                         }
-                        Small {text:#(crate::i18n::tr("Images and files · up to 2 MB each, 20 per task")) i18n_text:"Images and files · up to 2 MB each, 20 per task"}
+                        Small {text:#(crate::i18n::tr("Drop files here · up to 2 MB each, 20 per task")) i18n_text:"Drop files here · up to 2 MB each, 20 per task"}
                         attachment_list := PortalList {width:Fill height:1 capture_overload:false
                             Filler := View {width:Fill height:12}
-                            Item := View {width:Fill height:42 spacing:6 align:Align{y:0.5}
-                                open := RinxGhostButton {width:Fill height:34 padding:0}
-                                download := RinxGhostButton {height:30 text:#(crate::i18n::tr("Download")) i18n_text:"Download"}
+                            Item := View {width:Fill height:74 flow:Down spacing:4 padding:Inset{top:6 bottom:6}
+                                filename := Text {width:Fill max_lines:1 text_overflow:Ellipsis}
+                                View {width:Fill height:30 spacing:6 align:Align{y:0.5}
+                                    file_size := Small {width:Fill}
+                                    open := RinxGhostButton {height:30 text:#(crate::i18n::tr("Preview")) i18n_text:"Preview"}
+                                    download := RinxGhostButton {height:30 text:#(crate::i18n::tr("Download")) i18n_text:"Download"}
+                                    remove := RinxGhostButton {height:30 text:#(crate::i18n::tr("Delete")) i18n_text:"Delete"}
+                                }
+                            }
+                        }
+                        attachment_delete := RoundedView {visible:false width:Fill height:Fit flow:Down spacing:8 padding:10
+                            draw_bg +: {color:mod.widgets.RINX_PANEL_BG border_color:mod.widgets.RINX_BORDER border_size:1.0 border_radius:8.0}
+                            delete_filename := Text {width:Fill max_lines:2}
+                            Small {text:#(crate::i18n::tr("Delete this attachment? Images in descriptions and comments will become unavailable.")) i18n_text:"Delete this attachment? Images in descriptions and comments will become unavailable."}
+                            View {width:Fill height:32 spacing:8
+                                delete_cancel := RinxGhostButton {text:#(crate::i18n::tr("Cancel")) i18n_text:"Cancel"}
+                                delete_confirm := Action {text:#(crate::i18n::tr("Delete attachment")) i18n_text:"Delete attachment"}
                             }
                         }
                         attachment_preview := Image {visible:false width:Fill height:220 fit:ImageFit.Smallest}

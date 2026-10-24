@@ -9,6 +9,8 @@ impl ProjectBoard {
         self.view.redraw(cx);
     }
     pub(super) fn clear_content(&mut self, cx: &mut Cx) {
+        self.clear_media(cx);
+        self.layout_key.clear();
         self.notifications.clear();
         self.notification_targets.clear();
         self.attachment_targets.clear();
@@ -340,11 +342,18 @@ impl ProjectBoard {
             return;
         }
         self.remember_comment(cx);
+        self.clear_media(cx);
         self.attachments.clear();
         self.view
             .widget(cx, ids!(attachment_preview))
             .set_visible(cx, false);
         self.restore_comment(cx, Some(&task.id));
+        self.comments.clear();
+        self.activity.clear();
+        self.view
+            .widget(cx, ids!(comments))
+            .set_text(cx, tr("Loading…"));
+        self.view.label(cx, ids!(activity)).set_text(cx, "");
         self.creating = false;
         self.discussion = false;
         self.detail_loaded = false;
@@ -494,24 +503,26 @@ impl ProjectBoard {
         }
         self.view
             .button(cx, ids!(discussion_tab))
-            .set_enabled(cx, self.selected.is_some() && !self.creating);
+            .set_board_enabled(cx, self.selected.is_some() && !self.creating);
         self.view
             .button(cx, ids!(archive))
             .set_visible(cx, self.selected.is_some() && !self.creating);
         let mut attachments = self.view.portal_list(cx, ids!(attachment_list));
-        script_apply_eval!(cx, attachments, {height: #(self.attachments.len().max(1) as f64 * 42.0)});
+        script_apply_eval!(cx, attachments, {height: #(self.attachments.len().max(1) as f64 * 74.0)});
         self.view
             .view(cx, ids!(attachments_section))
             .set_visible(cx, self.selected.is_some() && !self.creating);
-        self.view.button(cx, ids!(upload_attachment)).set_enabled(
-            cx,
-            self.detail_loaded
-                && self.pending.is_none()
-                && !self
-                    .selected
-                    .as_ref()
-                    .is_some_and(|t| t.archived_at.is_some()),
-        );
+        self.view
+            .button(cx, ids!(upload_attachment))
+            .set_board_enabled(
+                cx,
+                self.detail_loaded
+                    && self.pending.is_none()
+                    && !self
+                        .selected
+                        .as_ref()
+                        .is_some_and(|t| t.archived_at.is_some()),
+            );
         self.sync_extension_controls(cx);
         self.view
             .view(cx, ids!(create_status))
@@ -527,7 +538,7 @@ impl ProjectBoard {
             .set_visible(cx, filtered);
         self.view
             .button(cx, ids!(clear_filters))
-            .set_enabled(cx, !self.loading);
+            .set_board_enabled(cx, !self.loading);
         for (id, pending) in [
             (
                 ids!(more_comments),
@@ -546,7 +557,7 @@ impl ProjectBoard {
                 self.reads.contains(&self.activity_request),
             ),
         ] {
-            self.view.button(cx, id).set_enabled(cx, !pending);
+            self.view.button(cx, id).set_board_enabled(cx, !pending);
         }
         let archived = self
             .selected
@@ -570,26 +581,26 @@ impl ProjectBoard {
         }
         self.view
             .button(cx, ids!(save))
-            .set_enabled(cx, editing && (self.creating || self.dirty));
+            .set_board_enabled(cx, editing && (self.creating || self.dirty));
         self.view
             .widget(cx, ids!(save))
             .set_disabled(cx, !(editing && (self.creating || self.dirty)));
-        self.view.button(cx, ids!(new_task)).set_enabled(
+        self.view.button(cx, ids!(new_task)).set_board_enabled(
             cx,
             self.snapshot.is_some() && !writing && !self.failed && self.columns_draft.is_none(),
         );
         self.view
             .button(cx, ids!(refresh))
-            .set_enabled(cx, !self.loading);
+            .set_board_enabled(cx, !self.loading);
         self.view
             .button(cx, ids!(apply_filters))
-            .set_enabled(cx, !self.loading);
+            .set_board_enabled(cx, !self.loading);
         self.view
             .button(cx, ids!(retry))
             .set_visible(cx, writing && !self.saving);
         self.view
             .button(cx, ids!(retry))
-            .set_enabled(cx, !self.saving);
+            .set_board_enabled(cx, !self.saving);
         self.view.button(cx, ids!(reload_latest)).set_visible(
             cx,
             self.conflict || self.selected.is_some() && !self.detail_loaded,
@@ -617,12 +628,12 @@ impl ProjectBoard {
                 !writing && !self.conflict && !archived && self.detail_loaded,
             ),
         ] {
-            self.view.button(cx, id).set_enabled(cx, enabled);
+            self.view.button(cx, id).set_board_enabled(cx, enabled);
             self.view.widget(cx, id).set_disabled(cx, !enabled);
         }
         self.view
             .button(cx, ids!(archive))
-            .set_enabled(cx, !writing && !self.dirty && !self.conflict);
+            .set_board_enabled(cx, !writing && !self.dirty && !self.conflict);
         self.view.button(cx, ids!(archive)).set_text(
             cx,
             tr(if archived {
@@ -670,7 +681,7 @@ impl ProjectBoard {
                 .is_some_and(|id| self.members.contains(&id));
         self.view
             .button(cx, ids!(assign_me))
-            .set_enabled(cx, can_assign);
+            .set_board_enabled(cx, can_assign);
         self.view
             .widget(cx, ids!(assign_me))
             .set_disabled(cx, !can_assign);
@@ -682,14 +693,11 @@ impl ProjectBoard {
         self.view.redraw(cx);
     }
     pub(super) fn detail_history(&mut self, cx: &mut Cx, id: &str) {
-        self.comments.clear();
-        self.activity.clear();
+        // Keep same-task history visible during refresh. Clearing it shrinks the
+        // inspector and clamps scroll to the top while an image is uploading.
+        // Task selection clears the old task before requesting its detail.
         self.comments_after = 0;
         self.activity_after = 0;
-        self.view
-            .widget(cx, ids!(comments))
-            .set_text(cx, tr("Loading…"));
-        self.view.label(cx, ids!(activity)).set_text(cx, "");
         self.read(
             cx,
             Read::Comments(id.into(), false),
@@ -751,6 +759,9 @@ impl ProjectBoard {
         }
         match &done.result {
             Err(code) => {
+                if let Read::InlineImage(task, id, scope) = &done.kind {
+                    self.inline_image(cx, task, id, *scope, &Value::Null);
+                }
                 self.offline = uncertain(code);
                 self.retry_delay = (self.retry_delay.max(5.0) * 2.0).min(60.0);
                 self.notice(cx, error_message(code));
@@ -894,10 +905,16 @@ impl ProjectBoard {
                                 value["attachments"].as_array().cloned().unwrap_or_default();
                             self.subtasks = children;
                             self.parent_task = parent;
+                            let keep_modes = self.detail_loaded;
+                            let modes = (self.description_preview, self.comment_preview);
                             self.detail_loaded = true;
                             self.selected = Some(task.clone());
                             if !self.dirty && !self.conflict {
                                 self.fill_editor(cx, task.fields());
+                                if keep_modes {
+                                    (self.description_preview, self.comment_preview) = modes;
+                                    self.sync_markdown_views(cx);
+                                }
                             }
                             self.view.label(cx, ids!(detail_notice)).set_text(
                                 cx,
@@ -919,6 +936,9 @@ impl ProjectBoard {
                             self.detail_history(cx, id);
                         }
                     }
+                    Read::InlineImage(task, id, scope) => {
+                        self.inline_image(cx, task, id, *scope, value)
+                    }
                     Read::Comments(id, append) | Read::Activity(id, append) => {
                         if !self.selected.as_ref().is_some_and(|t| t.id == *id) {
                             return;
@@ -931,6 +951,7 @@ impl ProjectBoard {
                         self.view.button(cx, first_button).set_visible(cx, *append);
                         let items = value["items"].as_array().cloned().unwrap_or_default();
                         let comments = matches!(done.kind, Read::Comments(..));
+                        let media_scope = self.media_scope();
                         let rows = if comments {
                             &mut self.comments
                         } else {
@@ -953,7 +974,10 @@ impl ProjectBoard {
                                     let time = timestamp(&v["createdAt"]);
                                     format!(
                                         "<p><strong>{author}</strong> · {time}</p>{}<hr/>",
-                                        markdown::render_markdown(v["body"].as_str().unwrap_or(""))
+                                        markdown::render_markdown_with_media(
+                                            v["body"].as_str().unwrap_or(""),
+                                            media_scope
+                                        )
                                     )
                                 })
                                 .collect::<Vec<_>>()
@@ -999,6 +1023,7 @@ impl ProjectBoard {
                 }
             }
         }
+        self.sync_inline_images(cx);
         self.sync_controls(cx);
         if !self.loading {
             self.schedule(cx);
@@ -1030,7 +1055,8 @@ impl ProjectBoard {
                 self.epoch = nonce();
                 self.reads.clear();
                 self.loading = false;
-                self.pending = None;
+                let saved_action = self.pending.take();
+                self.media_saved(cx, &saved_action, value);
                 self.retained.remove(&self.project);
                 if !was_comment && !was_attachment {
                     self.dirty = false;
@@ -1078,7 +1104,14 @@ impl ProjectBoard {
                     self.query.state = None;
                     self.reset_viewports(cx);
                 }
-                self.notice(cx, tr("Changes saved"));
+                self.notice(
+                    cx,
+                    if was_attachment {
+                        tr("Attachment updated. Save or post your draft when ready.")
+                    } else {
+                        tr("Changes saved")
+                    },
+                );
                 self.load(cx);
             }
             Err(code) => {
@@ -1090,6 +1123,7 @@ impl ProjectBoard {
                     self.notice(cx, error_message(code));
                 }
                 if !uncertain(code) {
+                    self.cancel_media_uploads();
                     self.pending = None;
                 }
                 if denied(code) {

@@ -84,6 +84,20 @@ async fn parse<T: serde::de::DeserializeOwned>(req: &mut Request) -> Result<T, O
     )
     .map_err(|_| error(400, "invalid_arguments"))
 }
+// A 2 MiB attachment expands to ~2.8 MiB in the closed JSON command.
+// Keep the original budget for all non-upload operations.
+fn board_command(bytes: &[u8]) -> Result<hagency_core::project_board::BoardAction, OwnerError> {
+    use hagency_core::project_board::BoardAction;
+    if bytes.len() > 3 * 1024 * 1024 {
+        return Err(error(400, "invalid_board_attachment"));
+    }
+    let action: BoardAction =
+        serde_json::from_slice(bytes).map_err(|_| error(400, "invalid_board_payload"))?;
+    if bytes.len() > 131072 && !matches!(action, BoardAction::UploadAttachment { .. }) {
+        return Err(error(400, "invalid_board_payload"));
+    }
+    Ok(action)
+}
 async fn call(req: &mut Request, depot: &Depot) -> Result<Value, OwnerError> {
     current(req, depot).map_err(|_| error(401, "sign_in_required"))?;
     let raw = req
@@ -121,11 +135,10 @@ async fn call(req: &mut Request, depot: &Depot) -> Result<Value, OwnerError> {
     let operation = match (req.method().clone(), parts.as_slice()) {
         (Method::POST, [project, "board-command"]) => {
             key(project)?;
-            let bytes = body(req, 131072)
+            let bytes = body(req, 3 * 1024 * 1024)
                 .await
                 .map_err(|_| error(400, "invalid_board_payload"))?;
-            let action = serde_json::from_slice::<hagency_core::project_board::BoardAction>(&bytes)
-                .map_err(|_| error(400, "invalid_board_payload"))?;
+            let action = board_command(&bytes)?;
             OwnerOperation::ProjectBoard {
                 project: (*project).into(),
                 action,
@@ -271,6 +284,32 @@ fn candidate_cursor(query: Option<&str>) -> Result<Option<String>, OwnerError> {
 #[cfg(test)]
 mod candidate_query_tests {
     use super::*;
+    #[test]
+    fn screenshot_upload_can_cross_native_owner_without_expanding_other_commands() {
+        use hagency_core::project_board::{AttachmentUpload, BoardAction};
+        let upload = BoardAction::UploadAttachment {
+            task: "tsk_test".into(),
+            input: AttachmentUpload {
+                idempotency_key: "screenshot_test".into(),
+                filename: "screenshot.png".into(),
+                content_type: "image/png".into(),
+                data: "A".repeat(2_796_204),
+            },
+        };
+        let bytes = serde_json::to_vec(&upload).unwrap();
+        let parsed = board_command(&bytes).unwrap();
+        assert!(super::super::project_board::request("prj_test", parsed).is_ok());
+        let mut other = serde_json::to_vec(&BoardAction::Detail {
+            task: "tsk_test".into(),
+        })
+        .unwrap();
+        other.resize(131073, b' ');
+        assert_eq!(
+            board_command(&other).unwrap_err().code,
+            "invalid_board_payload"
+        );
+        assert!(board_command(&vec![b' '; 3 * 1024 * 1024 + 1]).is_err());
+    }
     #[test]
     fn scope_policy_payload_cannot_claim_owner_or_administration() {
         let valid = serde_json::json!({"expectedRevision":3,"policy":{"mode":"inherit_project","deny":["@blocked:test"]}});

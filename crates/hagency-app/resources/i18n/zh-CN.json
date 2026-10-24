@@ -2351,5 +2351,22 @@
   "Task details": "任务详情",
   "Discussion & activity": "讨论与动态",
   "Choose a file to attach to this task.": "选择要添加到此任务的文件。",
-  "Attachment downloaded": "附件已下载"
+  "Attachment downloaded": "附件已下载",
+  "Paste image": "粘贴图片",
+  "Drop files here · up to 2 MB each, 20 per task": "拖入文件添加附件 · 单个不超过 2 MB，每卡最多 20 个",
+  "Delete this attachment? Images in descriptions and comments will become unavailable.": "删除此附件？描述和评论中的图片引用将无法显示。",
+  "Delete attachment": "删除附件",
+  "Image unavailable · attachment removed or not part of this task": "图片不可用 · 附件已删除或不属于此任务",
+  "Loading image…": "正在加载图片…",
+  "Wait for the current upload, or save this task before adding images.": "请等待当前上传完成；新建任务需先保存再添加图片。",
+  "Copy an image or screenshot first.": "请先复制图片或截图。",
+  "This image is too large to preview.": "图片尺寸过大，无法预览。",
+  "Clipboard images are only available on desktop.": "仅桌面客户端支持粘贴图片。",
+  "Attachment uploaded. This server must be updated to insert image references.": "附件已上传。请更新服务端以插入图片引用。",
+  "Insert a PNG or JPEG image. Add other files in Attachments.": "请选择 PNG 或 JPEG 图片。其他文件请添加到附件区。",
+  "Task changed while preparing the image. Please try again.": "准备图片期间任务已发生变更，请重试。",
+  "Release to add attachments": "释放鼠标，添加附件",
+  "Release to insert images into this draft": "释放鼠标，将图片插入当前草稿",
+  "Image uploaded, but could not be inserted. Please reopen the editor.": "图片已上传，但无法插入，请重新打开编辑器。",
+  "Attachment updated. Save or post your draft when ready.": "附件已更新。描述或评论草稿仍需保存或发布。"
 }

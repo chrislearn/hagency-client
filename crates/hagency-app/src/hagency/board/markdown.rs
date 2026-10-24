@@ -33,6 +33,9 @@ impl Widget for BoardMarkdown {
         self.text.clone()
     }
     fn set_text(&mut self, cx: &mut Cx, text: &str) {
+        if self.text == text {
+            return;
+        }
         self.text = text.to_owned();
         self.view.html(cx, ids!(body)).set_text(cx, text)
     }
@@ -45,15 +48,38 @@ pub(super) fn escape_html(text: &str) -> String {
         .replace('"', "&quot;")
 }
 
+#[cfg(test)]
 pub(super) fn render_markdown(source: &str) -> String {
+    render_markdown_with_media(source, 0)
+}
+
+pub(super) fn render_markdown_with_media(source: &str, scope: u64) -> String {
+    let mut image_end = false;
     let events = Parser::new_ext(
         source,
         Options::ENABLE_TABLES | Options::ENABLE_TASKLISTS | Options::ENABLE_STRIKETHROUGH,
     )
     .map(|event| match event {
         MdEvent::Html(text) | MdEvent::InlineHtml(text) => MdEvent::Text(text),
-        MdEvent::Start(Tag::Image { .. }) => MdEvent::Text("[".into()),
-        MdEvent::End(TagEnd::Image) => MdEvent::Text("]".into()),
+        MdEvent::Start(Tag::Image { dest_url, .. }) => {
+            if let Some(id) = dest_url
+                .strip_prefix("attachment:")
+                .filter(|id| super::media::valid_id(id))
+            {
+                image_end = true;
+                MdEvent::Html(format!("<boardimage src=\"{scope}:{id}\">").into())
+            } else {
+                image_end = false;
+                MdEvent::Text("[".into())
+            }
+        }
+        MdEvent::End(TagEnd::Image) => {
+            if image_end {
+                MdEvent::Html("</boardimage>".into())
+            } else {
+                MdEvent::Text("]".into())
+            }
+        }
         MdEvent::Start(Tag::Link {
             link_type,
             dest_url,
@@ -207,6 +233,7 @@ impl ProjectBoard {
             let editor = self.view.view(cx, path);
             editor.view(cx, ids!(source_wrap)).set_visible(cx, !preview);
             editor.view(cx, ids!(tools)).set_visible(cx, !preview);
+            editor.view(cx, ids!(media_tools)).set_visible(cx, !preview);
             let rendered = editor.widget(cx, ids!(rendered));
             rendered.set_visible(cx, preview);
             if preview {
@@ -216,7 +243,7 @@ impl ProjectBoard {
                     &if source.trim().is_empty() {
                         format!("<em>{}</em>", escape_html(tr("Nothing to preview yet.")))
                     } else {
-                        render_markdown(&source)
+                        self.media_html(&source)
                     },
                 );
             }
@@ -240,8 +267,14 @@ impl ProjectBoard {
             editor
                 .text_input(cx, ids!(source))
                 .set_is_read_only(cx, !enabled);
+            for id in [ids!(insert_image), ids!(paste_image)] {
+                editor.button(cx, id).set_board_enabled(
+                    cx,
+                    enabled && self.detail_loaded && self.selected.is_some(),
+                );
+            }
             for (id, _) in formats() {
-                editor.button(cx, id).set_enabled(cx, enabled);
+                editor.button(cx, id).set_board_enabled(cx, enabled);
             }
         }
     }
@@ -261,7 +294,7 @@ impl ProjectBoard {
                 } else {
                     self.comment_preview = preview;
                 }
-                self.sync_markdown_views(cx);
+                self.sync_inline_images(cx);
                 self.view.redraw(cx);
             }
             let input = editor.text_input(cx, ids!(source));

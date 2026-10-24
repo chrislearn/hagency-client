@@ -99,14 +99,6 @@ struct AttachmentSaved {
     project: String,
     result: Result<(), String>,
 }
-#[derive(Debug)]
-struct PickedAttachment {
-    identity: String,
-    project: String,
-    task: String,
-    generation: u64,
-    result: Result<AttachmentUpload, String>,
-}
 impl ProjectBoard {
     pub(super) fn refresh_notifications(&mut self, cx: &mut Cx) {
         if !self.reads.contains(&self.notification_request) {
@@ -207,76 +199,6 @@ impl ProjectBoard {
         }
         self.view.redraw(cx);
     }
-    fn pick_attachment(&mut self, cx: &mut Cx) {
-        let Some(task) = &self.selected else {
-            return;
-        };
-        if self.pending.is_some() || !self.detail_loaded || task.archived_at.is_some() {
-            return;
-        }
-        let (identity, project, task, generation) = (
-            self.identity.clone(),
-            self.project.clone(),
-            task.id.clone(),
-            self.detail_request,
-        );
-        self.notice(cx, tr("Choose a file to attach to this task."));
-        let result = robius_file_picker::FileDialog::new().pick_file(move |picked| {
-            if matches!(picked, Ok(None)) {
-                return;
-            }
-            std::thread::spawn(move || {
-                let result = (|| {
-                    use std::io::Read;
-                    let file = picked
-                        .map_err(|e| e.to_string())?
-                        .ok_or("No file")?
-                        .into_local_file()
-                        .map_err(|e| e.to_string())?;
-                    let filename = file
-                        .path()
-                        .file_name()
-                        .ok_or("Invalid filename")?
-                        .to_string_lossy()
-                        .into_owned();
-                    let mut bytes = Vec::new();
-                    std::fs::File::open(file.path())
-                        .map_err(|e| e.to_string())?
-                        .take(2 * 1024 * 1024 + 1)
-                        .read_to_end(&mut bytes)
-                        .map_err(|e| e.to_string())?;
-                    if bytes.is_empty() || bytes.len() > 2 * 1024 * 1024 {
-                        return Err(tr("Choose a non-empty file smaller than 2 MB.").to_owned());
-                    }
-                    let content_type = if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
-                        "image/png"
-                    } else if bytes.starts_with(b"\xff\xd8\xff") {
-                        "image/jpeg"
-                    } else if bytes.starts_with(b"%PDF-") {
-                        "application/pdf"
-                    } else {
-                        "application/octet-stream"
-                    };
-                    Ok(AttachmentUpload {
-                        idempotency_key: uuid::Uuid::new_v4().to_string(),
-                        filename,
-                        content_type: content_type.into(),
-                        data: STANDARD.encode(bytes),
-                    })
-                })();
-                Cx::post_action(PickedAttachment {
-                    identity,
-                    project,
-                    task,
-                    generation,
-                    result,
-                });
-            });
-        });
-        if let Err(e) = result {
-            self.notice(cx, &e.to_string());
-        }
-    }
     fn collaboration_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         if self.view.button(cx, ids!(detail_tab)).clicked(actions)
             || self.view.button(cx, ids!(discussion_tab)).clicked(actions)
@@ -351,7 +273,7 @@ impl ProjectBoard {
             .button(cx, ids!(upload_attachment))
             .clicked(actions)
         {
-            self.pick_attachment(cx);
+            self.pick_media(cx, media::Target::Attachment);
         }
         for action in actions {
             if let Some(saved) = action.downcast_ref::<AttachmentSaved>()
@@ -360,24 +282,6 @@ impl ProjectBoard {
             {
                 match &saved.result {
                     Ok(()) => self.notice(cx, tr("Attachment downloaded")),
-                    Err(error) => self.notice(cx, error),
-                }
-            }
-            if let Some(picked) = action.downcast_ref::<PickedAttachment>()
-                && picked.identity == self.identity
-                && picked.project == self.project
-                && picked.generation == self.detail_request
-                && self.selected.as_ref().is_some_and(|t| t.id == picked.task)
-                && self.pending.is_none()
-            {
-                match &picked.result {
-                    Ok(input) => self.write(
-                        cx,
-                        BoardAction::UploadAttachment {
-                            task: picked.task.clone(),
-                            input: input.clone(),
-                        },
-                    ),
                     Err(error) => self.notice(cx, error),
                 }
             }
@@ -454,9 +358,9 @@ impl ProjectBoard {
             return true;
         };
         let rows = if notifications {
-            &self.notifications
+            self.notifications.clone()
         } else {
-            &self.attachments
+            self.attachments.clone()
         };
         if notifications {
             self.notification_targets.clear();
@@ -491,15 +395,17 @@ impl ProjectBoard {
                 } else {
                     let name = value["filename"].as_str().unwrap_or("");
                     let mime = value["contentType"].as_str().unwrap_or("");
-                    row.button(cx, ids!(open)).set_text(
+                    row.label(cx, ids!(filename)).set_text(cx, name);
+                    row.label(cx, ids!(file_size)).set_text(
                         cx,
-                        &format!(
-                            "{} · {} KB",
-                            name,
-                            value["size"].as_u64().unwrap_or(0).div_ceil(1024)
-                        ),
+                        &format!("{} KB", value["size"].as_u64().unwrap_or(0).div_ceil(1024)),
                     );
+                    if row.widget(cx, ids!(open)).visible() != mime.starts_with("image/") {
+                        row.button(cx, ids!(open))
+                            .set_board_visible(cx, mime.starts_with("image/"));
+                    }
                     if let Some(id) = value["id"].as_str() {
+                        self.media_row(cx, &row, id);
                         self.attachment_targets.insert(
                             row.button(cx, ids!(open)).widget_uid(),
                             (id.into(), !mime.starts_with("image/")),

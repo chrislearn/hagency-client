@@ -57,7 +57,14 @@ impl ProjectBoard {
         }
     }
 
-    pub(super) fn draw_drag_preview(&self, cx: &mut Cx2d) {
+    pub(super) fn draw_drag_preview(&mut self, cx: &mut Cx2d) {
+        let active = self.drag.as_ref().is_some_and(|d| d.moved) || self.landing.is_some();
+        // Tooltip::hide schedules a redraw even when already closed. Only clear
+        // the overlay on the active-to-idle transition, never on every frame.
+        if !active && !self.drag_preview_active {
+            return;
+        }
+        self.drag_preview_active = active;
         let marker = self.view.tooltip(cx, ids!(drop_marker));
         marker.hide(cx);
         if let Some(drag) = self.drag.as_ref().filter(|d| d.moved) {

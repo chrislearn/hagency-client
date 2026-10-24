@@ -2351,5 +2351,22 @@
   "Task details": "Task details",
   "Discussion & activity": "Discussion & activity",
   "Choose a file to attach to this task.": "Choose a file to attach to this task.",
-  "Attachment downloaded": "Attachment downloaded"
+  "Attachment downloaded": "Attachment downloaded",
+  "Paste image": "Paste image",
+  "Drop files here · up to 2 MB each, 20 per task": "Drop files here · up to 2 MB each, 20 per task",
+  "Delete this attachment? Images in descriptions and comments will become unavailable.": "Delete this attachment? Images in descriptions and comments will become unavailable.",
+  "Delete attachment": "Delete attachment",
+  "Image unavailable · attachment removed or not part of this task": "Image unavailable · attachment removed or not part of this task",
+  "Loading image…": "Loading image…",
+  "Wait for the current upload, or save this task before adding images.": "Wait for the current upload, or save this task before adding images.",
+  "Copy an image or screenshot first.": "Copy an image or screenshot first.",
+  "This image is too large to preview.": "This image is too large to preview.",
+  "Clipboard images are only available on desktop.": "Clipboard images are only available on desktop.",
+  "Attachment uploaded. This server must be updated to insert image references.": "Attachment uploaded. This server must be updated to insert image references.",
+  "Insert a PNG or JPEG image. Add other files in Attachments.": "Insert a PNG or JPEG image. Add other files in Attachments.",
+  "Task changed while preparing the image. Please try again.": "Task changed while preparing the image. Please try again.",
+  "Release to add attachments": "Release to add attachments",
+  "Release to insert images into this draft": "Release to insert images into this draft",
+  "Image uploaded, but could not be inserted. Please reopen the editor.": "Image uploaded, but could not be inserted. Please reopen the editor.",
+  "Attachment updated. Save or post your draft when ready.": "Attachment updated. Save or post your draft when ready."
 }

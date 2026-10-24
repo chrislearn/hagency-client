@@ -366,10 +366,12 @@ impl ProjectBoard {
                 .selected
                 .as_ref()
                 .is_some_and(|t| t.archived_at.is_some());
-        self.view.button(cx, ids!(manage_columns)).set_enabled(
-            cx,
-            self.snapshot.is_some() && !writing && !self.dirty && self.columns_draft.is_none(),
-        );
+        self.view
+            .button(cx, ids!(manage_columns))
+            .set_board_enabled(
+                cx,
+                self.snapshot.is_some() && !writing && !self.dirty && self.columns_draft.is_none(),
+            );
         self.view.button(cx, ids!(rebase_columns)).set_visible(
             cx,
             self.columns_draft.is_some()
@@ -380,7 +382,7 @@ impl ProjectBoard {
         );
         self.view
             .button(cx, ids!(rebase_columns))
-            .set_enabled(cx, !writing);
+            .set_board_enabled(cx, !writing);
         for id in [
             ids!(save_columns),
             ids!(cancel_columns),
@@ -389,7 +391,7 @@ impl ProjectBoard {
             ids!(column_left),
             ids!(column_right),
         ] {
-            self.view.button(cx, id).set_enabled(cx, !writing);
+            self.view.button(cx, id).set_board_enabled(cx, !writing);
         }
         for id in [
             ids!(edit_column),
@@ -408,16 +410,16 @@ impl ProjectBoard {
         }
         self.view
             .button(cx, ids!(checklist_add))
-            .set_enabled(cx, editable);
+            .set_board_enabled(cx, editable);
         self.view
             .button(cx, ids!(unlink_parent))
-            .set_enabled(cx, editable);
+            .set_board_enabled(cx, editable);
         self.view
             .button(cx, ids!(add_subtask))
-            .set_enabled(cx, editable && !self.dirty && self.subtasks.len() < 100);
+            .set_board_enabled(cx, editable && !self.dirty && self.subtasks.len() < 100);
         self.view
             .button(cx, ids!(open_parent))
-            .set_enabled(cx, !writing && !self.dirty);
+            .set_board_enabled(cx, !writing && !self.dirty);
     }
     pub(super) fn prepare_extension_draw(&mut self, cx: &mut Cx) {
         let count = self.draft_checklist.len();
@@ -518,15 +520,16 @@ impl ProjectBoard {
                         row.widget(cx, id).set_disabled(cx, !editable);
                     }
                     row.button(cx, ids!(item_up))
-                        .set_enabled(cx, editable && i > 0);
-                    row.button(cx, ids!(item_remove)).set_enabled(cx, editable);
+                        .set_board_enabled(cx, editable && i > 0);
+                    row.button(cx, ids!(item_remove))
+                        .set_board_enabled(cx, editable);
                     self.checklist_rows.insert(i, row.clone());
                 }
             } else if let Some(task) = self.subtasks.get(i) {
                 row.button(cx, ids!(open_child))
                     .set_text(cx, &format!("#{} {}", task.number, task.title));
                 row.button(cx, ids!(open_child))
-                    .set_enabled(cx, self.pending.is_none() && !self.dirty);
+                    .set_board_enabled(cx, self.pending.is_none() && !self.dirty);
                 let state = self
                     .snapshot
                     .as_ref()

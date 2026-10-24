@@ -114,6 +114,7 @@ impl Widget for ProjectBoard {
             self.drag_frame = cx.new_next_frame();
             self.view.redraw(cx);
         }
+        self.media_event(cx, event);
         self.view.handle_event(cx, event, scope);
         let Event::Actions(actions) = event else {
             return;
@@ -121,6 +122,7 @@ impl Widget for ProjectBoard {
         self.handle_extensions(cx, actions);
         self.handle_markdown(cx, actions);
         self.handle_collaboration(cx, actions);
+        self.media_actions(cx, actions);
         for action in actions {
             if let Some(done) = action.downcast_ref::<Completed>() {
                 self.apply_read(cx, done);
@@ -399,6 +401,7 @@ impl Widget for ProjectBoard {
                 );
             } else {
                 self.remember_comment(cx);
+                self.clear_media(cx);
                 self.selected = None;
                 self.creating = false;
                 self.dirty = false;
@@ -558,88 +561,119 @@ impl Widget for ProjectBoard {
 
         let width = cx.turtle().rect().size.x;
         let inspector = self.view.view(cx, ids!(inspector)).visible();
-        self.view
-            .view(cx, ids!(board_scroll))
-            .set_visible(cx, !inspector || width >= 950.0);
-        let mut panel = self.view.view(cx, ids!(inspector));
-        let size = if width < 950.0 {
-            Size::fill()
-        } else {
-            Size::Fixed(420.0)
-        };
-        script_apply_eval!(cx,panel,{width:#(size)});
-        self.prepare_extension_draw(cx);
-        for index in 0..12 {
-            let lane = self.snapshot.as_ref().and_then(|s| s.lanes.get(index));
-            let state = lane.map(|l| l.state.as_str()).unwrap_or("");
-            let column = self.view.view(cx, column_path(index));
-            column.set_visible(
-                cx,
-                self.query
-                    .state
-                    .as_ref()
-                    .is_none_or(|filter| filter == state)
-                    && lane.is_some(),
-            );
-            column.label(cx, ids!(heading)).set_text(
-                cx,
-                &lane.map(|l| column_title(&l.title)).unwrap_or_default(),
-            );
-            let mut marker = column.view(cx, ids!(marker));
-            if lane.is_some_and(|l| l.is_done) {
-                script_apply_eval!(cx,marker,{draw_bg +: {color:mod.widgets.RINX_SUCCESS_FG}});
+        let layout_key = format!(
+            "{:?}",
+            (
+                (
+                    &self.snapshot,
+                    &self.query,
+                    width,
+                    inspector,
+                    self.dirty,
+                    self.pending.is_some(),
+                    self.creating
+                ),
+                (
+                    &self.draft_checklist,
+                    &self.subtasks,
+                    &self.draft_parent,
+                    &self.parent_task,
+                    self.selected.as_ref().map(|t| (
+                        t.id.as_str(),
+                        t.subtask_done,
+                        t.subtask_total
+                    )),
+                    self.drag.as_ref().map(|d| (d.at.x, d.at.y, d.moved)),
+                    crate::i18n::language()
+                )
+            )
+        );
+        if self.layout_key != layout_key {
+            self.layout_key = layout_key;
+            self.view
+                .view(cx, ids!(board_scroll))
+                .set_visible(cx, !inspector || width >= 950.0);
+            let mut panel = self.view.view(cx, ids!(inspector));
+            let size = if width < 950.0 {
+                Size::fill()
             } else {
-                match state {
-                    "in_progress" => {
-                        script_apply_eval!(cx,marker,{draw_bg +: {color:mod.widgets.RINX_ACCENT}});
-                    }
-                    "blocked" => {
-                        script_apply_eval!(cx,marker,{draw_bg +: {color:mod.widgets.RINX_WARNING_FG}});
-                    }
-                    "in_review" => {
-                        script_apply_eval!(cx,marker,{draw_bg +: {color:#9675bf}});
-                    }
-                    "todo" => {
-                        script_apply_eval!(cx,marker,{draw_bg +: {color:mod.widgets.RINX_MUTED}});
-                    }
-                    _ => {
-                        script_apply_eval!(cx,marker,{draw_bg +: {color:mod.widgets.RINX_ACCENT}});
+                Size::Fixed(420.0)
+            };
+            script_apply_eval!(cx,panel,{width:#(size)});
+            self.prepare_extension_draw(cx);
+            for index in 0..12 {
+                let lane = self.snapshot.as_ref().and_then(|s| s.lanes.get(index));
+                let state = lane.map(|l| l.state.as_str()).unwrap_or("");
+                let column = self.view.view(cx, column_path(index));
+                column.set_visible(
+                    cx,
+                    self.query
+                        .state
+                        .as_ref()
+                        .is_none_or(|filter| filter == state)
+                        && lane.is_some(),
+                );
+                column.label(cx, ids!(heading)).set_text(
+                    cx,
+                    &lane.map(|l| column_title(&l.title)).unwrap_or_default(),
+                );
+                let mut marker = column.view(cx, ids!(marker));
+                if lane.is_some_and(|l| l.is_done) {
+                    script_apply_eval!(cx,marker,{draw_bg +: {color:mod.widgets.RINX_SUCCESS_FG}});
+                } else {
+                    match state {
+                        "in_progress" => {
+                            script_apply_eval!(cx,marker,{draw_bg +: {color:mod.widgets.RINX_ACCENT}});
+                        }
+                        "blocked" => {
+                            script_apply_eval!(cx,marker,{draw_bg +: {color:mod.widgets.RINX_WARNING_FG}});
+                        }
+                        "in_review" => {
+                            script_apply_eval!(cx,marker,{draw_bg +: {color:#9675bf}});
+                        }
+                        "todo" => {
+                            script_apply_eval!(cx,marker,{draw_bg +: {color:mod.widgets.RINX_MUTED}});
+                        }
+                        _ => {
+                            script_apply_eval!(cx,marker,{draw_bg +: {color:mod.widgets.RINX_ACCENT}});
+                        }
                     }
                 }
-            }
 
-            column.button(cx, ids!(add)).set_enabled(
-                cx,
-                self.snapshot.is_some()
-                    && self.pending.is_none()
-                    && !self.dirty
-                    && !self.query.archived,
-            );
-            let lane = self.snapshot.as_ref().and_then(|s| s.lanes.get(index));
-            column.label(cx, ids!(count)).set_text(
-                cx,
-                &lane
-                    .map(|l| {
-                        l.wip_limit.map_or_else(
-                            || l.total.to_string(),
-                            |limit| format!("WIP {}/{}", l.task_count, limit),
-                        )
-                    })
-                    .unwrap_or_else(|| "—".into()),
-            );
-            let full = lane.is_some_and(|l| l.wip_limit.is_some_and(|limit| l.task_count >= limit));
-            let mut count = column.label(cx, ids!(count));
-            if full {
-                script_apply_eval!(cx,count,{draw_text.color:mod.widgets.RINX_WARNING_FG});
-            } else {
-                script_apply_eval!(cx,count,{draw_text.color:mod.widgets.RINX_MUTED});
+                column.button(cx, ids!(add)).set_board_enabled(
+                    cx,
+                    self.snapshot.is_some()
+                        && self.pending.is_none()
+                        && !self.dirty
+                        && !self.query.archived,
+                );
+                let lane = self.snapshot.as_ref().and_then(|s| s.lanes.get(index));
+                column.label(cx, ids!(count)).set_text(
+                    cx,
+                    &lane
+                        .map(|l| {
+                            l.wip_limit.map_or_else(
+                                || l.total.to_string(),
+                                |limit| format!("WIP {}/{}", l.task_count, limit),
+                            )
+                        })
+                        .unwrap_or_else(|| "—".into()),
+                );
+                let full =
+                    lane.is_some_and(|l| l.wip_limit.is_some_and(|limit| l.task_count >= limit));
+                let mut count = column.label(cx, ids!(count));
+                if full {
+                    script_apply_eval!(cx,count,{draw_text.color:mod.widgets.RINX_WARNING_FG});
+                } else {
+                    script_apply_eval!(cx,count,{draw_text.color:mod.widgets.RINX_MUTED});
+                }
+                let mut column = column;
+                let highlighted = self
+                    .drag
+                    .as_ref()
+                    .is_some_and(|d| d.moved && column.area().rect(cx).contains(d.at));
+                script_apply_eval!(cx,column,{draw_bg +: {border_size:#(if highlighted{2.0}else{0.0}) border_color:mod.widgets.RINX_ACCENT}});
             }
-            let mut column = column;
-            let highlighted = self
-                .drag
-                .as_ref()
-                .is_some_and(|d| d.moved && column.area().rect(cx).contains(d.at));
-            script_apply_eval!(cx,column,{draw_bg +: {border_size:#(if highlighted{2.0}else{0.0}) border_color:mod.widgets.RINX_ACCENT}});
         }
         while let Some(step) = self.view.draw_walk(cx, scope, walk).step() {
             if self.draw_collaboration(cx, scope, &step) {
@@ -695,7 +729,8 @@ impl Widget for ProjectBoard {
                     let row = list.item(cx, row_index, id!(More));
                     self.more_targets
                         .insert(row.button(cx, ids!(more)).widget_uid(), index);
-                    row.button(cx, ids!(more)).set_enabled(cx, !self.loading);
+                    row.button(cx, ids!(more))
+                        .set_board_enabled(cx, !self.loading);
                     row.draw_all(cx, scope);
                 } else {
                     list.item(
@@ -786,6 +821,18 @@ pub(super) fn fill_card(
     selected: bool,
     lifted: bool,
 ) {
+    if let Some(mut inner) = card.borrow_mut::<KanbanCard>() {
+        let key = format!(
+            "{task:?}:{is_done}:{selected}:{lifted}:{}:{:?}:{}",
+            inner.focused,
+            crate::i18n::language(),
+            chrono::Utc::now().date_naive()
+        );
+        if inner.paint_key == key {
+            return;
+        }
+        inner.paint_key = key;
+    }
     for id in [
         ids!(number),
         ids!(priority),
@@ -832,8 +879,6 @@ pub(super) fn fill_card(
             .map(member_label)
             .unwrap_or_else(|| tr("Unassigned")),
     );
-    card.label(cx, ids!(due))
-        .set_text(cx, task.due_date.as_deref().unwrap_or(""));
     let overdue = task
         .due_date
         .as_deref()
@@ -852,6 +897,7 @@ pub(super) fn fill_card(
             ),
         );
     } else {
+        due.set_text(cx, task.due_date.as_deref().unwrap_or(""));
         script_apply_eval!(cx,due,{draw_text.color:mod.widgets.RINX_MUTED});
     }
     let mut priority = card.label(cx, ids!(priority));

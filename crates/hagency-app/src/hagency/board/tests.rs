@@ -2,14 +2,14 @@ use super::*;
 use makepad_widgets::event::{ScrollEvent, ScrollPhase};
 use serde_json::json;
 use makepad_widgets::makepad_draw::cx_draw::CxDraw;
-fn task(id: &str, state: &str) -> BoardTask {
+pub(super) fn task(id: &str, state: &str) -> BoardTask {
     serde_json::from_value(task_value(id, state)).unwrap()
 }
 fn task_value(id: &str, state: &str) -> Value {
     json!({"id":id,"projectId":"p1","number":1,"title":"Design a clear, shared project board","description":"Acceptance criteria and context.","state":state,"rank":1024,"priority":"high","assigneeMxid":"@alice:test","labels":["design","desktop"],"dueDate":"2026-11-01","version":1,"createdBy":"@alice:test","createdAt":1,"updatedAt":1,"archivedAt":null})
 }
 
-fn panel() -> (Cx, ProjectBoard) {
+pub(super) fn panel() -> (Cx, ProjectBoard) {
     let mut cx = Cx::new(Box::new(|_, _| {}));
     let board = cx.with_vm(|vm| {
         makepad_widgets::script_mod(vm);
@@ -49,7 +49,7 @@ fn populate(board: &mut ProjectBoard) {
             .collect(),
     });
 }
-fn draw(cx: &mut Cx, board: &mut ProjectBoard, width: f64, height: f64) {
+pub(super) fn draw(cx: &mut Cx, board: &mut ProjectBoard, width: f64, height: f64) {
     cx.redraw_all();
     let pass = DrawPass::new(cx);
     pass.set_size(cx, dvec2(width, height));
@@ -849,5 +849,81 @@ fn late_attachment_and_notification_navigation_cannot_reopen_another_task() {
             &["@alice:test".into(), "@alice:elsewhere".into()]
         ),
         "@alice:test"
+    );
+}
+
+#[test]
+fn unchanged_overdue_card_does_not_schedule_another_frame() {
+    let (mut cx, mut board) = panel();
+    populate(&mut board);
+    let task = &mut board.snapshot.as_mut().unwrap().lanes[0].tasks[0];
+    task.due_date = Some("2000-01-01".into());
+    let task = task.clone();
+    draw(&mut cx, &mut board, 1500.0, 760.0);
+    let card = board
+        .view
+        .view(&cx, column_path(0))
+        .portal_list(&cx, ids!(cards))
+        .item(&mut cx, 0, id!(Card));
+    interaction::fill_card(&mut cx, &card, &task, false, false, false);
+    cx.new_draw_event = DrawEvent::default();
+    interaction::fill_card(&mut cx, &card, &task, false, false, false);
+    assert!(
+        !cx.new_draw_event.redraw_all && cx.new_draw_event.draw_lists.is_empty(),
+        "An unchanged card must not redraw itself forever"
+    );
+}
+
+#[test]
+fn idle_board_has_no_drag_overlay_redraw_loop() {
+    let (mut cx, mut board) = panel();
+    populate(&mut board);
+    draw(&mut cx, &mut board, 1500.0, 760.0);
+    cx.new_draw_event = DrawEvent::default();
+    let event = DrawEvent::default();
+    let mut draw = CxDraw::new(&mut cx, &event);
+    let mut cx2d = Cx2d::new(&mut draw);
+    board.draw_drag_preview(&mut cx2d);
+    assert!(!cx2d.new_draw_event.redraw_all && cx2d.new_draw_event.draw_lists.is_empty());
+}
+
+#[test]
+fn same_task_history_refresh_preserves_content_and_selected_preview() {
+    let (mut cx, mut board) = panel();
+    populate(&mut board);
+    let current = task("a", "todo");
+    board.selected = Some(current.clone());
+    board.detail_loaded = true;
+    board.detail_request = 7;
+    board.reads.insert(7);
+    board.comment_preview = true;
+    board.comments = vec![json!({"body":"Keep this visible"})];
+    board
+        .view
+        .widget(&cx, ids!(comments))
+        .set_text(&mut cx, "Keep this visible");
+    board.apply_read(
+        &mut cx,
+        &Completed {
+            identity: "account".into(),
+            project: "p1".into(),
+            epoch: 1,
+            request: 7,
+            kind: Read::Detail("a".into()),
+            detail_generation: 7,
+            result: Ok(json!({"task":task_value("a", "todo"),"subtasks":[],"parent":null,"attachments":[]})),
+        },
+    );
+    assert!(board.comment_preview);
+    assert_eq!(board.comments[0]["body"], "Keep this visible");
+    assert_eq!(
+        board.view.widget(&cx, ids!(comments)).text(),
+        "Keep this visible"
+    );
+    board.select(&mut cx, &task("b", "todo"));
+    assert!(board.comments.is_empty());
+    assert_ne!(
+        board.view.widget(&cx, ids!(comments)).text(),
+        "Keep this visible"
     );
 }

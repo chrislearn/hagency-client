@@ -15,6 +15,8 @@ mod interaction;
 mod drag;
 mod markdown;
 mod collaboration;
+mod media;
+use media::MediaState;
 mod extensions;
 use extensions::column_title;
 pub use view::script_mod;
@@ -38,6 +40,10 @@ pub struct KanbanCard {
     dragging: bool,
     #[rust]
     focused: bool,
+    #[rust]
+    painted_focus: Option<bool>,
+    #[rust]
+    paint_key: String,
 }
 impl Widget for KanbanCard {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
@@ -84,10 +90,13 @@ impl Widget for KanbanCard {
         self.view.handle_event(cx, event, scope);
     }
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        let border_size = if self.focused { 2.0 } else { 1.0 };
-        script_apply_eval!(cx,self.view,{draw_bg.border_size:#(border_size)});
-        if self.focused {
-            script_apply_eval!(cx,self.view,{draw_bg.border_color:mod.widgets.RINX_ACCENT});
+        if self.painted_focus != Some(self.focused) {
+            self.painted_focus = Some(self.focused);
+            let border_size = if self.focused { 2.0 } else { 1.0 };
+            script_apply_eval!(cx,self.view,{draw_bg.border_size:#(border_size)});
+            if self.focused {
+                script_apply_eval!(cx,self.view,{draw_bg.border_color:mod.widgets.RINX_ACCENT});
+            }
         }
         let result = self.view.draw_walk(cx, scope, walk);
         if result.is_done() {
@@ -102,6 +111,7 @@ enum Read {
     NotificationAck,
     OpenTask(String),
     Attachment(String, bool),
+    InlineImage(String, String, u64),
     Snapshot,
     Changes,
     Page(usize),
@@ -273,6 +283,12 @@ pub struct ProjectBoard {
     attachments: Vec<Value>,
     #[rust]
     attachment_targets: HashMap<WidgetUid, (String, bool)>,
+    #[rust]
+    media: MediaState,
+    #[rust]
+    layout_key: String,
+    #[rust]
+    drag_preview_active: bool,
     #[rust]
     draft_parent: Option<String>,
     #[rust]
@@ -477,6 +493,28 @@ impl ProjectBoardRef {
                     .set_text(cx, tr("Created task"));
             }
             board.sync_controls(cx);
+        }
+    }
+}
+
+// Makepad ButtonRef setters redraw even when the value is unchanged. Board
+// PortalList rows are configured during drawing, so only write real changes.
+trait BoardButtonState {
+    fn set_board_enabled(&self, cx: &mut Cx, enabled: bool);
+    fn set_board_visible(&self, cx: &mut Cx, visible: bool);
+}
+impl BoardButtonState for ButtonRef {
+    fn set_board_enabled(&self, cx: &mut Cx, enabled: bool) {
+        let changed = self
+            .borrow()
+            .is_some_and(|button| button.enabled() != enabled);
+        if changed {
+            self.set_enabled(cx, enabled);
+        }
+    }
+    fn set_board_visible(&self, cx: &mut Cx, visible: bool) {
+        if self.visible() != visible {
+            self.set_visible(cx, visible);
         }
     }
 }

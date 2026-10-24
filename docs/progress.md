@@ -14160,3 +14160,7 @@ PR #1 is merged by chrislearn as 6e81c157d660d1d0eaa5c0190bf8930b5bf06a17; the m
 ## 2026-10-23 项目看板协作改进
 
 在 `codex/project-kanban` 完成按任务隔离评论草稿、详情/讨论页签、快捷分配、项目通知箱、结构化变更记录及图片附件上传/预览/下载。完整 Alice/Bob 原生客户端 + 本地真实 Server/PostgreSQL 已实测切卡、改派通知、已读跳转、Markdown 评论、PNG 上传预览和下载字节一致性。具体证据、验证结果与范围见 `dev-vibe/project-kanban-collaboration-validation-2026-10-23.zh.md`。未部署/推送。
+
+## 2026-10-23 看板图片编辑
+
+实现剪贴板图片粘贴、描述/评论图片插入及原生内嵌预览、外部文件拖放处理、附件删除确认与失效引用占位。完整原生客户端验证了选择文件、剪贴板/截图 Cmd+V、保存重开、取消/删除；修复 NativeOwner 128 KiB 阻断截图及上传刷新滚动跳动。Finder 跨窗口拖放工具未产生系统 Drag/Drop 事件，实测待人工复核。验证和证据见 `dev-vibe/project-kanban-media-validation-2026-10-23.zh.md`。
