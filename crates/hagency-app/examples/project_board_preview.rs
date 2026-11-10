@@ -53,7 +53,7 @@ mod preview {
                 }
                 if std::env::args().any(|a| a == "--narrow") {
                     let mut window = self.ui.window(cx, ids!(window));
-                    script_apply_eval!(cx,window,{window.inner_size:vec2(660,820)});
+                    script_apply_eval!(cx,window,{window.inner_size:#(dvec2(660.0,820.0))});
                 }
                 let titles = [
                     "Define the shared board experience",

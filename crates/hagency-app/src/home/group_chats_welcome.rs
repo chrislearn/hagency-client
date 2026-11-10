@@ -14,16 +14,17 @@ script_mod! {
         draw_bg.color: mod.widgets.RINX_CONTENT_BG
         title := RinxLabel {
             width: Fill height: Fit
-            text: #(crate::i18n::tr("Group Chats")) i18n_text: "Group Chats"
+            text: #(crate::i18n::tr("Chats")) i18n_text: "Chats"
             draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_bold {font_size: mod.widgets.RINX_DISPLAY_SIZE}}
         }
         description := RinxLabel {
             width: Fill height: Fit flow: Flow.Right{wrap: true}
-            text: #(crate::i18n::tr("Choose a group chat in the sidebar, create a group, or explore rooms on your server."))
-            i18n_text: "Choose a group chat in the sidebar, create a group, or explore rooms on your server."
+            text: #(crate::i18n::tr("Choose a private or group chat in the sidebar, or start a new conversation."))
+            i18n_text: "Choose a private or group chat in the sidebar, or start a new conversation."
             draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: mod.widgets.RINX_BODY_SIZE}}
         }
-        View {width: Fill height: Fit flow: Right spacing: 12
+        RinxToolbar {width: Fill height: Fit
+            new_private_chat := RinxPrimaryButton {text:#(crate::i18n::tr("New private chat")) i18n_text:"New private chat"}
             new_group_chat := RinxButton {text: #(crate::i18n::tr("New group chat")) i18n_text: "New group chat"}
             explore := RinxButton {text: #(crate::i18n::tr("Explore rooms")) i18n_text: "Explore rooms"}
         }
@@ -39,6 +40,7 @@ impl Widget for GroupChatsWelcome {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
         if let Event::Actions(actions) = event {
+            if self.view.button(cx,ids!(new_private_chat)).clicked(actions) {cx.action(NavigationBarAction::NewChat);}
             if self.view.button(cx, ids!(new_group_chat)).clicked(actions) {
                 cx.action(super::space_management::SpaceManagementAction::Open {parent:None});
             }
@@ -65,7 +67,11 @@ mod tests {
             let screen = GroupChatsWelcome::script_from_value(vm, value);
             assert!(vm.take_errors().is_empty()); screen
         });
-        assert_eq!(screen.view.label(&cx, ids!(title)).text(), crate::i18n::tr("Group Chats"));
+        assert_eq!(screen.view.label(&cx, ids!(title)).text(), crate::i18n::tr("Chats"));
+        let private=screen.view.button(&cx,ids!(new_private_chat)).widget_uid();
+        let actions=cx.capture_actions(|cx|cx.widget_action(private,ButtonAction::Clicked(KeyModifiers::default())));
+        let emitted=cx.capture_actions(|cx|screen.handle_event(cx,&Event::Actions(actions),&mut Scope::empty()));
+        assert!(emitted.iter().any(|a|matches!(a.downcast_ref(),Some(NavigationBarAction::NewChat))));
         for (button, contacts) in [(id!(new_group_chat), true), (id!(explore), false)] {
             let uid = screen.view.button(&cx, &[button]).widget_uid();
             let actions = cx.capture_actions(|cx| cx.widget_action(uid, ButtonAction::Clicked(KeyModifiers::default())));

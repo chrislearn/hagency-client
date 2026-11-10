@@ -43,7 +43,8 @@ impl HagencyPanel {
     pub(super) fn ledger_actions(&mut self,cx:&mut Cx,actions:&Actions)->bool {
         if self.page!=Page::Agents {return false;}
         if self.view.button(cx,ids!(ledger_toggle)).clicked(actions) {
-            self.ledger_open = !self.ledger_open;self.sync_navigation(cx);return true;
+            let open=!self.ledger_open;
+            self.list_page(cx);self.ledger_open=open;self.sync_navigation(cx);self.view.redraw(cx);return true;
         }
         if !self.view.view(cx,ids!(ledger_panel)).visible() {return false;}
         if self.view.text_input(cx,ids!(ledger_path)).changed(actions).is_some() {

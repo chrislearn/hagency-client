@@ -33,7 +33,7 @@ script_mod! {
     let DesktopNavButton = NavigationBarButton {
         width: Fill height: 40 flow: Right spacing: 10
         align: Align{x: 0 y: 0.5} padding: Inset{left: 12 right: 8}
-        draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_NAV_SELECTED border_radius: 5}
+        draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_NAV_SELECTED border_radius: mod.widgets.RINX_CONTROL_RADIUS}
         nav_icon := Icon {icon_walk: Walk{width: 18 height: 18} draw_icon.color: mod.widgets.RINX_INK}
         label := RinxLabel {width: Fill max_lines: 1 text_overflow: Ellipsis
             draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular{font_size: mod.widgets.RINX_UI_SIZE}}
@@ -81,10 +81,10 @@ script_mod! {
                 agents_action_slot := View {width:32 height:32 agents_actions := RowActions {}}
             }
             group_chats_row := View {show_bg:true draw_bg.color:#0000 width: Fill height: 40 flow: Right align: Align{y: 0.5}
-                open_group_chats := DesktopNavButton {nav_icon.draw_icon.svg: ICON_THREADS tooltip_text: #(crate::i18n::tr("Group Chats")) label.text: #(crate::i18n::tr("Group Chats")) label.i18n_text: "Group Chats"}
+                open_group_chats := DesktopNavButton {unread := UnreadBadge {} nav_icon.draw_icon.svg: ICON_THREADS tooltip_text: #(crate::i18n::tr("Chats")) label.text: #(crate::i18n::tr("Chats")) label.i18n_text: "Chats"}
                 group_chats_action_slot := View {width:32 height:32 group_chats_actions := RowActions {}}
             }
-            open_contacts := DesktopNavButton {unread := UnreadBadge {} nav_icon.draw_icon.svg: ICON_PEOPLE tooltip_text: #(crate::i18n::tr("Contacts")) label.text: #(crate::i18n::tr("Contacts")) label.i18n_text: "Contacts"}
+            open_contacts := DesktopNavButton { nav_icon.draw_icon.svg: ICON_PEOPLE tooltip_text: #(crate::i18n::tr("Contacts")) label.text: #(crate::i18n::tr("Contacts")) label.i18n_text: "Contacts"}
             open_miniapps := DesktopNavButton {nav_icon.draw_icon.svg: ICON_SQUARES tooltip_text: #(crate::i18n::tr("Mini apps")) label.text: #(crate::i18n::tr("Mini apps")) label.i18n_text: "Mini apps"}
             }
             more := DesktopNavButton {margin: Inset{left: 10 right: 10} nav_icon.draw_icon.svg: ICON_MORE_VERT tooltip_text: #(crate::i18n::tr("More")) label.text: #(crate::i18n::tr("More")) label.i18n_text: "More"}
@@ -104,7 +104,7 @@ script_mod! {
             width: Fill height: Fill flow: Down
             draw_bg.color: mod.widgets.RINX_SURFACE
             title_bar := MobileTitle {
-                title.text: #(crate::i18n::tr("Group Chats")) title.i18n_text: "Group Chats"
+                title.text: #(crate::i18n::tr("Chats")) title.i18n_text: "Chats"
                 controls.right.visible: true
             }
             SolidView {
@@ -310,7 +310,7 @@ impl Widget for RoomsSideBar {
                     && navigation.current() {
                     self.selected_primary = Some(id!(open_projects));
                 }
-                if matches!(action.downcast_ref::<crate::home::main_desktop_ui::MainDesktopUiAction>(), Some(crate::home::main_desktop_ui::MainDesktopUiAction::ShowGroupChats)) {
+                if matches!(action.downcast_ref::<crate::home::main_desktop_ui::MainDesktopUiAction>(), Some(crate::home::main_desktop_ui::MainDesktopUiAction::ShowGroupChats | crate::home::main_desktop_ui::MainDesktopUiAction::ActivateChats)) {
                     self.selected_primary = Some(id!(open_group_chats));
                 }
                 // Mini apps are hosted separately; opening or closing one
@@ -413,7 +413,7 @@ impl Widget for RoomsSideBar {
         }
         let (unread,marked)=super::mobile::direct_unread(cx);
         use crate::shared::unread_badge::UnreadBadgeWidgetExt;
-        self.view.unread_badge(cx,ids!(open_contacts.unread)).update_counts(marked,0,unread);
+        self.view.unread_badge(cx,ids!(open_group_chats.unread)).update_counts(marked,0,unread);
         // The desktop Project tree replaces the mobile Space list.
         let spaces = cx.global::<GroupChatsViewState>().spaces
             && !crate::home::home_screen::effective_is_desktop(cx);

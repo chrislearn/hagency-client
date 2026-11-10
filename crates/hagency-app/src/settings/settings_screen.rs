@@ -93,9 +93,8 @@ script_mod! {
                 settings_header := View {
                     width: Fill height: 64 flow: Right spacing: 12
                     padding: Inset{left: 24 right: 16} align: Align{y: 0.5}
-                    settings_header_title := RinxLabel {
+                    settings_header_title := RinxPageTitle {
                         width: Fill text: #(crate::i18n::tr("Account"))
-                        draw_text.text_style: theme.font_bold {font_size: mod.widgets.RINX_TITLE_SIZE}
                     }
                     close_button := RinxIconButton {draw_icon.svg: ICON_CLOSE}
                 }
@@ -346,7 +345,10 @@ impl Widget for SettingsScreen {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        let compact = cx.peek_walk_turtle(walk).size.x < 600.0;
+        let width = cx.peek_walk_turtle(walk).size.x;
+        let compact = width < 600.0;
+        let theme = crate::theme::snapshot(cx);
+        let layout = crate::theme::layout::PageLayout::from_theme(width, &theme);
         if let Some(mut navigation) = self.view.view(cx, ids!(settings_navigation)).borrow_mut() {
             navigation.walk.width = Size::Fixed(if compact {64.0} else {184.0});
         }
@@ -357,8 +359,8 @@ impl Widget for SettingsScreen {
         }
         for id in [id!(settings_header), id!(account_settings_page), id!(general_settings_page), id!(interface_settings_page), id!(messages_settings_page), id!(agents_settings_page), id!(speech_settings_page), id!(privacy_settings_page), id!(about_settings_page)] {
             if let Some(mut view) = self.view.view(cx, &[id]).borrow_mut() {
-                view.layout.padding.left = if compact {12.0} else {24.0};
-                view.layout.padding.right = if compact {12.0} else {24.0};
+                view.layout.padding.left = layout.gutter;
+                view.layout.padding.right = layout.gutter;
             }
         }
         self.view.draw_walk(cx, scope, walk)
@@ -713,7 +715,7 @@ mod layout_tests {
         let mut cx = Cx::new(Box::new(|_, _| {}));
         let mut screen = screen(&mut cx);
         screen.set_selected_category(&mut cx, SettingsCategory::Speech);
-        for (width, gutter) in [(1100.0, 24.0), (375.0, 12.0)] {
+        for (width, gutter) in [(1100.0, 24.0), (375.0, 16.0)] {
             draw(&mut cx, &mut screen, width);
             let detail = screen.view.view(&cx, ids!(settings_detail)).area().rect(&cx);
             let page = screen.view.view(&cx, ids!(speech_settings_page)).area().rect(&cx);

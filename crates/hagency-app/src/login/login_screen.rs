@@ -21,7 +21,7 @@ script_mod! {
         align: Align{x: 0.5, y: 0.5}
         show_bg: true,
         draw_bg +: {
-            color: COLOR_SECONDARY
+            color: mod.widgets.RINX_PAGE
         }
 
         ScrollYView {
@@ -29,7 +29,7 @@ script_mod! {
             flow: Down, // Required for vertical scrolling to work.
             align: Align{x: 0.5, y: 0.5}
             show_bg: true,
-            draw_bg.color: (COLOR_SECONDARY)
+            draw_bg.color: mod.widgets.RINX_PAGE
 
             // allow the view to be scrollable but hide the actual scroll bar
             scroll_bars: {
@@ -41,29 +41,25 @@ script_mod! {
                 }
             }
 
-            RoundedView {
-                margin: Inset{left: 16, right: 16, top: 50, bottom: 50}
-                width: Fill
-                height: Fit
+            RinxSection {
+                margin: Inset{left: 16, right: 16, top: 32, bottom: 32}
+                width: Fill{max: 480}
+                padding: RINX_SPACE_6
                 align: Align{x: 0.5, y: 0.5}
                 flow: Overlay,
 
                 show_bg: true,
-                draw_bg +: {
-                    color: (COLOR_SECONDARY)
-                    border_radius: 6.0
-                }
 
                 View {
                     width: Fill
                     height: Fit
                     flow: Down
                     align: Align{x: 0.5, y: 0.5}
-                    spacing: 15.0
+                    spacing: RINX_SPACE_4
 
                     logo_image := Image {
                         fit: ImageFit.Smallest,
-                        width: 80
+                        width: 64 height: 64
                         src: (mod.widgets.IMG_APP_LOGO),
                     }
 
@@ -73,7 +69,7 @@ script_mod! {
                         padding: 0,
                         draw_text +: {
                             color: (COLOR_TEXT)
-                            text_style: TITLE_TEXT {font_size: mod.widgets.RINX_TITLE_SIZE}
+                            text_style: TITLE_TEXT {font_size: mod.widgets.RINX_PAGE_TITLE_SIZE}
                         }
                         text: #(crate::i18n::tr("Sign in to Hagency")) i18n_text: "Sign in to Hagency"
                     }

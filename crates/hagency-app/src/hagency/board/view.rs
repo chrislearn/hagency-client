@@ -7,9 +7,9 @@ makepad_widgets::script_mod! {
     let Text = RinxLabel {width: Fill height: Fit draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular{font_size: mod.widgets.RINX_BODY_SIZE}}}
     let Small = Text {draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: mod.widgets.RINX_META_SIZE}}}
     let Hint = Small {flow:Flow.Right{wrap:true}}
-    let Input = RobrixTextInput {width: Fill height: 38 margin: 0 padding: Inset{left: 12 right: 12 top: 9 bottom: 9}}
-    let Select = RobrixSettingsDropDown {width: Fill height: 38 margin: 0}
-    let Action = RinxButton {height: 36 padding: Inset{left: 14 right: 14 top: 0 bottom: 0}}
+    let Input = RobrixTextInput {width: Fill height: RINX_CONTROL_HEIGHT margin: 0}
+    let Select = RobrixSettingsDropDown {width: Fill height: RINX_CONTROL_HEIGHT margin: 0}
+    let Action = RinxButton {}
     mod.widgets.BoardInlineImage = #(BoardInlineImage::register_widget(vm)) {
         width:Fill height:Fit flow:Down spacing:6 padding:8
         picture := Image {width:Fill height:200 fit:ImageFit.Smallest}
@@ -23,8 +23,7 @@ makepad_widgets::script_mod! {
         }
     }
     let Format = RinxGhostButton {width:28 height:30 padding:0}
-    let Composer = RoundedView {width:Fill height:Fit flow:Down spacing:10 padding:12
-        draw_bg +: {color:mod.widgets.RINX_SURFACE border_color:mod.widgets.RINX_BORDER border_size:1.0 border_radius:10.0}
+    let Composer = RinxSection {padding:RINX_SPACE_3
         View {width:Fill height:30 spacing:4 align:Align{y:0.5}
             edit := RinxGhostButton {height:30 text:#(crate::i18n::tr("Edit Markdown")) i18n_text:"Edit Markdown"}
             preview := RinxGhostButton {height:30 text:#(crate::i18n::tr("Preview")) i18n_text:"Preview"}
@@ -54,13 +53,13 @@ makepad_widgets::script_mod! {
         rendered := mod.widgets.BoardMarkdown {visible:false width:Fill height:Fit padding:2}
     }
     mod.widgets.KanbanCard = #(KanbanCard::register_widget(vm)) {
-        width: Fill height: Fit margin: Inset{bottom: 10} padding: 14 flow: Down spacing: 10
+        width: Fill height: Fit margin: Inset{bottom: RINX_SPACE_3} padding: RINX_SPACE_4 flow: Down spacing: RINX_SPACE_3
         show_bg: true cursor: MouseCursor.Hand
         draw_bg +: {
             color: mod.widgets.RINX_SURFACE
             hover: instance(0.0)
             lifted: instance(0.0)
-            border_radius: uniform(12.0) border_size: instance(1.0) border_color: instance(mod.widgets.RINX_BORDER)
+            border_radius: uniform(mod.widgets.RINX_CARD_RADIUS) border_size: instance(1.0) border_color: instance(mod.widgets.RINX_BORDER)
             pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size)
                 sdf.box(1.0, 1.0, self.rect_size.x - 2.0, self.rect_size.y - 2.0, self.border_radius)
@@ -86,9 +85,9 @@ makepad_widgets::script_mod! {
             due := Small {width: Fit}
         }
     }
-    let Column = RoundedView {width: 280 height: Fill padding: 12 flow: Down spacing: 12
-        draw_bg +: {color: mod.widgets.RINX_PANEL_BG border_radius: 12.0 border_size:0.0 border_color:mod.widgets.RINX_BORDER}
-        View {width: Fill height: 32 spacing: 8 align: Align{y: 0.5}
+    let Column = RoundedView {width: 280 height: Fill padding: RINX_SPACE_3 flow: Down spacing: RINX_SPACE_3
+        draw_bg +: {color: mod.widgets.RINX_PANEL_BG border_radius: mod.widgets.RINX_CARD_RADIUS border_size:0.0 border_color:mod.widgets.RINX_BORDER}
+        View {width: Fill height: 36 spacing: RINX_SPACE_2 align: Align{y: 0.5}
             column_grip := View {width:20 height:32 cursor:MouseCursor.Hand align:Align{x:0.5 y:0.5}
                 Small {width:Fit text:"≡"}
             }
@@ -101,7 +100,7 @@ makepad_widgets::script_mod! {
             add := RinxGhostButton {width:28 height:28 padding:0 text:"+"}
         }
         cards := PortalList {width: Fill height: Fill capture_overload: false
-            Card := mod.widgets.KanbanCard {margin: Inset{right:14 bottom:10}}
+            Card := mod.widgets.KanbanCard {margin: Inset{right:14 bottom:RINX_SPACE_3}}
             Empty := RoundedView {width: Fill height: 104 margin:Inset{right:14} padding: 16 align:Align{x:0.5 y:0.5}
                 draw_bg +: {color:mod.widgets.RINX_SURFACE border_color:mod.widgets.RINX_BORDER border_size:1.0 border_radius:10.0}
                 Small {width:Fit text: #(crate::i18n::tr("No tasks here yet")) i18n_text: "No tasks here yet"}
@@ -132,14 +131,14 @@ makepad_widgets::script_mod! {
                 hide: AnimatorState {redraw:true from:{all:Snap} apply:{notification_slide:1.0}}
             }
         }
-        width: Fill height: Fill flow: Down spacing: 8
-        toolbar := View {width: Fill height: Fit flow: Down spacing: 6
-            toolbar_row := View {width:Fill height:Fit flow:Right spacing:6 align:Align{y:0.5}
+        width: Fill height: Fill flow: Down spacing: RINX_SPACE_4
+        toolbar := View {width: Fill height: Fit flow: Down spacing: RINX_SPACE_3
+            toolbar_row := View {width:Fill height:Fit flow:Right spacing:RINX_SPACE_2 align:Align{y:0.5}
                 board_navigation := View {visible:false width:Fit height:32 spacing:6 align:Align{y:0.5}
                     boards := Select {width:220 height:32 labels:[#(crate::i18n::tr("Main Board"))]}
                     toggle_board_creation := RinxIconButton {width:32 height:32 draw_icon.svg:ICON_ADD}
                 }
-            toolbar_actions := View {width: Fill{min:270} height: Fit flow: Flow.Right{wrap: true} spacing: 6 align: Align{x:1.0 y: 0.5}
+            toolbar_actions := RinxToolbar {width: Fill{min:270} align: Align{x:1.0 y: 0.5}
                 default_badge := mod.widgets.RinxDefaultBadge {visible:false label +: {i18n_text:"default"}}
                 set_default := RinxGhostButton {visible:false height:32 text:#(crate::i18n::tr("Set as default")) i18n_text:"Set as default"}
                 filters_toggle := RinxIconButton {width:32 height:32 draw_icon.svg:crate_resource("self://resources/icons/filter.svg")}
@@ -158,8 +157,7 @@ makepad_widgets::script_mod! {
                 board_name := Input {width:200 height:32 empty_text:#(crate::i18n::tr("Board name")) i18n_empty_text:"Board name"}
                 create_board := Action {height:32 text:#(crate::i18n::tr("New Board")) i18n_text:"New Board"}
             }
-            filters_panel := RoundedView {visible:false width:Fill height:Fit padding:10 spacing:8 flow:Flow.Right{wrap:true} align:Align{y:0.5}
-                draw_bg +: {color:mod.widgets.RINX_SURFACE border_color:mod.widgets.RINX_BORDER border_size:1 border_radius:8}
+            filters_panel := RinxSection {visible:false padding:RINX_SPACE_3 spacing:RINX_SPACE_2 flow:Flow.Right{wrap:true} align:Align{y:0.5}
                 search := Input {width:220 height:32 empty_text:#(crate::i18n::tr("Search tasks…")) i18n_empty_text:"Search tasks…"}
                 filter_state := Select {width:150 height:32 labels:[#(crate::i18n::tr("All statuses"))]}
                 filter_assignee := Select {width:160 height:32 labels:[#(crate::i18n::tr("All members"))]}
@@ -178,8 +176,8 @@ makepad_widgets::script_mod! {
         }
         notice := Text {visible: false draw_text.color: mod.widgets.RINX_MUTED}
         retry := Action {visible: false text: #(crate::i18n::tr("Retry original save")) i18n_text: "Retry original save"}
-        workspace := View {width: Fill height: Fill spacing: 14
-            board_scroll := ScrollXView {width: Fill height: Fill flow: Right spacing: 12
+        workspace := View {width: Fill height: Fill spacing: RINX_SPACE_4
+            board_scroll := ScrollXView {width: Fill height: Fill flow: Right spacing: RINX_SPACE_4
                 todo := Column {}
                 in_progress := Column {}
                 blocked := Column {}

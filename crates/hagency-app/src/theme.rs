@@ -9,6 +9,7 @@ use std::collections::HashMap;
 pub mod packages;
 pub mod system;
 pub mod host;
+pub mod layout;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -96,6 +97,22 @@ impl Selection {
     pub fn stylesheet(self, family: DesktopStyle) -> StyleSheet {
         let dark = self.appearance == Appearance::Dark;
         let mut sheet = StyleSheet::load_with_appearance(family, dark);
+        // Give the standalone app a complete surface hierarchy. The framework's
+        // light sheet uses the same gray for the page and its containers.
+        // Custom packages override these roles afterwards; hosted apps retain
+        // their host's sheet and never install this standalone palette.
+        let (page, surface, field, ink, border) = if dark {
+            ("151d27", "202b38", "18222e", "e8eef5", "354353")
+        } else {
+            ("f3f6f9", "ffffff", "f5f7fa", "243244", "dce3eb")
+        };
+        for (role, value) in [
+            ("bg_app", page), ("bg_container", surface), ("inset", field),
+            ("text", ink), ("bevel_outset_2", border),
+        ] {
+            sheet.theme.push_str(&format!("\nmod.theme.color_{role} = #x{value}\n"));
+        }
+        sheet.theme.push_str("\nmod.theme.corner_radius = 8.0\n");
         let (accent, on_accent) = match (self.accent, dark) {
             (Accent::Teal, false) => ("09616f", "ffffff"),
             (Accent::Teal, true) => ("72d3df", "103239"),
@@ -421,6 +438,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
         mod.widgets.RINX_HEADING_SIZE = #(11.25 * s.text_scale) // 15 px pane headings
         mod.widgets.RINX_SECTION_SIZE = #(12. * s.text_scale) // 16 px sections
         mod.widgets.RINX_TITLE_SIZE = #(13.5 * s.text_scale) // 18 px page titles
+        mod.widgets.RINX_PAGE_TITLE_SIZE = #(18. * s.text_scale) // 24 px workspace titles
         mod.widgets.RINX_BRAND_SIZE = #(13.5 * s.text_scale)
         mod.widgets.RINX_DISPLAY_SIZE = #(21. * s.text_scale) // 28 px welcome / result headings
         mod.widgets.RINX_DOCUMENT_SIZE = #(13.5 * s.text_scale) // 18 px article reading / editing
@@ -435,6 +453,13 @@ pub fn script_mod(vm: &mut ScriptVm) {
         mod.widgets.RINX_READING_WIDTH = #(s.reading_width)
         mod.widgets.RINX_GUTTER = #(s.page_gutter)
         mod.widgets.RINX_MOTION = #(s.motion_ms / 1000.)
+        mod.widgets.RINX_SPACE_1 = #(4. * s.spacing_scale)
+        mod.widgets.RINX_SPACE_2 = #(8. * s.spacing_scale)
+        mod.widgets.RINX_SPACE_3 = #(12. * s.spacing_scale)
+        mod.widgets.RINX_SPACE_4 = #(16. * s.spacing_scale)
+        mod.widgets.RINX_SPACE_5 = #(20. * s.spacing_scale)
+        mod.widgets.RINX_SPACE_6 = #(24. * s.spacing_scale)
+        mod.widgets.RINX_SPACE_8 = #(32. * s.spacing_scale)
     });
     controls::script_mod(vm);
 }
@@ -486,8 +511,11 @@ mod controls {
         mod.widgets.Window.caption_bar.windows_buttons.max.draw_bg.bg_color_hover = uniform(RINX_CAPTION_HOVER)
         mod.widgets.Window.caption_bar.windows_buttons.max.draw_bg.bg_color_down = uniform(RINX_CAPTION_PRESSED)
         mod.widgets.Window.caption_bar.windows_buttons.close.draw_bg.color = uniform(RINX_INK)
-        mod.widgets.RinxLabel = Label {draw_text +: {color: RINX_INK text_style: theme.font_regular{font_size: RINX_BODY_SIZE}}}
-        mod.widgets.RinxPageTitle = mod.widgets.RinxLabel {draw_text.text_style: theme.font_bold{font_size: RINX_TITLE_SIZE}}
+        // Containers own spacing. Label's framework padding would otherwise add
+        // an invisible inset to every heading, caption and card row.
+        mod.widgets.RinxLabel = Label {padding: 0 draw_text +: {color: RINX_INK text_style: theme.font_regular{font_size: RINX_BODY_SIZE line_spacing: 1.4}}}
+        mod.widgets.RinxPageTitle = mod.widgets.RinxLabel {padding: 0 draw_text.text_style: theme.font_bold{font_size: RINX_PAGE_TITLE_SIZE}}
+        mod.widgets.RinxSectionTitle = mod.widgets.RinxLabel {padding: 0 draw_text.text_style: theme.font_bold{font_size: RINX_SECTION_SIZE}}
         mod.widgets.RinxHint = mod.widgets.RinxLabel {draw_text +: {color: RINX_MUTED text_style.font_size: RINX_META_SIZE}}
         mod.widgets.RinxHtml = Html {
             font_size: RINX_BODY_SIZE font_color: RINX_INK
@@ -559,6 +587,18 @@ mod controls {
         }
         mod.widgets.RinxCard = RoundedView {
             draw_bg +: {color: RINX_SURFACE border_color: RINX_BORDER border_size: 1 border_radius: RINX_CARD_RADIUS}
+        }
+        mod.widgets.RinxSection = mod.widgets.RinxCard {
+            width: Fill height: Fit flow: Down
+            padding: RINX_SPACE_5 spacing: RINX_SPACE_3
+        }
+        mod.widgets.RinxListRow = mod.widgets.RinxSection {
+            flow: Right align: Align{y: 0.5} spacing: RINX_SPACE_4
+            padding: Inset{left:RINX_SPACE_5 right:RINX_SPACE_5 top:RINX_SPACE_3 bottom:RINX_SPACE_3}
+        }
+        mod.widgets.RinxToolbar = View {
+            width: Fill height: Fit flow: Flow.Right{wrap: true}
+            align: Align{y: 0.5} spacing: RINX_SPACE_2
         }
         mod.widgets.RinxInput = TextInput {
             height: RINX_CONTROL_HEIGHT padding: Inset{left: 10 * RINX_SPACING right: 10 * RINX_SPACING top: 7 bottom: 7}

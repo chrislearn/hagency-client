@@ -62,6 +62,10 @@ Project 详情 tab 为 **Overview / Rooms / Members / Access**；Agent 详情为
 Transfer、Article editor、Browser、Settings。Project 条目的 **⋯** 可打开概览、
 讨论 Room、成员、邀请成员以及绑定 Space；邀请按钮遵循真实 Matrix 权限。
 
+**Chats（聊天）** 内分 **私聊／群聊**。点击 **Contacts（联系人）** 中的联系人
+显示资料详情，点击 **Message（消息）** 后进入 Chats 中的聊天界面；已有会话
+继续使用原来的房间和消息记录。
+
 聊天、联系人、搜索、附件、普通用户加密聊天、朋友圈、原生文章编辑器以及
 小程序导入／权限审阅／运行均保留。默认小程序目录不再提供 Palpo 应用。
 Hagency 管理由原生 Projects/Agents 页面承担，旧资源与协调者审批流程已移除。

@@ -99,7 +99,7 @@ async fn load(client:&Client, service:&Service, current:&OwnedRoomId)->Result<Na
         (Some(RoomNameId::from_room(&parent).await),children,can_add)
     }else {(None,client.joined_rooms().into_iter().filter(|r|!r.is_space() && r.direct_targets().is_empty()).map(|r|r.room_id().to_string()).collect(),true)};
     let rooms=room_names(client,candidates.into_iter().filter(|id|!project_rooms.contains(id)),None).await;
-    Ok(Navigation {title:parent.as_ref().map_or_else(||crate::i18n::tr("Group Chats").into(),|p|p.display().into_owned()),project:None,parent,rooms,can_add,can_manage:false,default_room:None,revision:-1,archived:false})
+    Ok(Navigation {title:parent.as_ref().map_or_else(||crate::i18n::tr("Chats").into(),|p|p.display().into_owned()),project:None,parent,rooms,can_add,can_manage:false,default_room:None,revision:-1,archived:false})
 }
 fn project_room_names(records:&[serde_json::Value],default_room:Option<&OwnedRoomId>)->Vec<RoomNameId> {
     let mut seen=HashSet::new();let mut rooms=Vec::new();
@@ -164,7 +164,7 @@ impl RoomNavigation {
             .map(|(r,c)|Pin {room:r.room_id().clone(),owner:c.user_id().unwrap().to_owned(),origin:c.homeserver().to_string(),epoch:crate::account_session::epoch()});
         if pin!=self.pin {
             self.pin=pin;self.announced=false;self.data=None;self.identity.clear();self.busy=false;
-            self.view.label(cx,ids!(heading)).set_text(cx,&room.map_or_else(||crate::i18n::tr("Group Chats").into(),|r|r.display().into_owned()));
+            self.view.label(cx,ids!(heading)).set_text(cx,&room.map_or_else(||crate::i18n::tr("Chats").into(),|r|r.display().into_owned()));
             self.view.drop_down(cx,ids!(rooms)).set_labels(cx,vec![room.map_or_else(||crate::i18n::tr("Select a Room").into(),|r|r.display().into_owned())]);
             self.view.drop_down(cx,ids!(rooms)).set_selected_item(cx,0);
             self.view.label(cx,ids!(status)).set_visible(cx,false);self.request(cx,None);

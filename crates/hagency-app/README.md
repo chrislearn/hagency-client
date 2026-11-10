@@ -61,6 +61,10 @@ Explore rooms, Moments, File Transfer, Article editor, Browser and Settings.
 Project entries have their own **⋯** menu for details, Rooms, members, invitations
 and opening the Space. Invitation controls follow actual Matrix permissions.
 
+**Chats** contains separate **Private chats** and **Group chats** sections. Selecting
+someone in **Contacts** opens their profile; **Message** opens the conversation in
+Chats. Existing conversations retain their original room and message history.
+
 Matrix chat, contacts, room search and attachments, encrypted human conversations,
 Moments, the native article editor and scoped mini-app import/consent/run remain.
 The default mini-app catalog has no Palpo app. Hagency management uses the native

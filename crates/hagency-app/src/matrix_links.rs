@@ -201,7 +201,6 @@ pub(crate) enum LinkAction {
     Dismiss(Ticket),
     Finished(Ticket, Result<Outcome, String>),
     EnterHome(Navigation),
-    EnterContacts(Ticket),
     Navigate(Navigation),
 }
 

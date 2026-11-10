@@ -1,7 +1,9 @@
 //! Presentation only: retain the original Matrix body for copy/forward/retry.
 //! Recognize only the exact native completion suffix from an Appservice puppet.
+//! A known Agent can still expose the usage entry when no accounting was sent.
 use std::collections::HashSet;
 use makepad_widgets::*;
+use matrix_sdk::ruma::{events::room::message::FormattedBody, html::{HtmlSanitizerMode, RemoveReplyFallback}};
 use super::navigation_bar_button::NavigationBarButtonWidgetExt;
 
 #[derive(Debug, PartialEq)]
@@ -24,8 +26,10 @@ fn number_before<'a>(text: &'a str, delimiter: &str) -> Option<(u64, &'a str)> {
     }
     Some((number.parse().ok()?, rest))
 }
-pub fn parse_usage<'a>(sender: &str, body: &'a str, formatted: bool) -> Option<UsageInfo<'a>> {
-    if !sender.starts_with("_hagency_agt_") || formatted {
+pub fn parse_usage<'a>(sender: &str, body: &'a str, _formatted: bool) -> Option<UsageInfo<'a>> {
+    // The server now adds a formatted representation to the same canonical body.
+    // Its presence does not invalidate the exact accounting suffix in `body`.
+    if !sender.starts_with("_hagency_agt_") {
         return None;
     }
     let (answer, suffix) = body.rsplit_once("\n\n✅ 本轮处理已结束 · 已运行 ")?;
@@ -79,6 +83,13 @@ pub fn parse_usage<'a>(sender: &str, body: &'a str, formatted: bool) -> Option<U
     })
 }
 impl UsageInfo<'_> {
+    pub fn formatted_answer(&self, original: Option<&FormattedBody>) -> Option<FormattedBody> {
+        original?;
+        let mut formatted = FormattedBody::markdown(self.answer)?;
+        formatted.sanitize_html(HtmlSanitizerMode::Strict, RemoveReplyFallback::No);
+        Some(formatted)
+    }
+
     fn details(&self) -> String {
         let mut text = crate::i18n::format(
             "{seconds}s · {tokens} tokens · tools {returned}/{requests}",
@@ -215,16 +226,27 @@ impl Widget for AgentUsage {
     }
 }
 impl AgentUsageRef {
-    pub fn populate(&self, cx: &mut Cx, identity: String, usage: Option<&UsageInfo<'_>>) {
+    /// A collapsed footer is skipped by View's draw/event traversal. Its owning
+    /// Message must refresh it after the separate header handles an action.
+    pub fn refresh_expansion(&self, cx: &mut Cx) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.render(cx);
+        }
+    }
+
+    pub fn populate(&self, cx: &mut Cx, identity: String, usage: Option<&UsageInfo<'_>>, is_agent_reply: bool) {
         let Some(mut inner) = self.borrow_mut() else {
             return;
         };
         inner.identity = identity;
-        inner.present = usage.is_some();
+        inner.present = is_agent_reply || usage.is_some();
         inner
             .view
             .label(cx, ids!(details))
-            .set_text(cx, &usage.map_or_else(String::new, UsageInfo::details));
+            .set_text(cx, &usage.map_or_else(
+                || crate::i18n::tr("Usage was not reported for this reply.").to_owned(),
+                UsageInfo::details,
+            ));
         inner.render(cx);
     }
 }
@@ -239,7 +261,7 @@ mod tests {
         assert_eq!(usage.answer, "Answer");
         assert_eq!(usage.total, 50);
         assert!(parse_usage("alice", BODY, false).is_none());
-        assert!(parse_usage("_hagency_agt_01abc", BODY, true).is_none());
+        assert_eq!(parse_usage("_hagency_agt_01abc", BODY, true), Some(usage));
         assert!(
             parse_usage(
                 "_hagency_agt_01abc",
@@ -346,5 +368,35 @@ mod tests {
         header.present = false;
         header.render(&mut cx);
         assert!(!header.view.visible());
+    }
+
+    #[test]
+    fn answer_only_agent_retains_entry_and_click_does_not_reuse_previous_usage() {
+        use super::super::navigation_bar_button::NavigationBarButtonAction;
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let widget = cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm);
+            crate::app::register_widgets(vm);
+            vm.bx.captured_errors = Some(Vec::new());
+            let value = script_eval!(vm, {mod.widgets.AgentUsage {}});
+            let widget = WidgetRef::script_from_value(vm, value).as_agent_usage();
+            assert!(vm.take_errors().is_empty());
+            widget
+        });
+        let usage = parse_usage("_hagency_agt_test", BODY, true).unwrap();
+        widget.populate(&mut cx, "owner|room|measured".into(), Some(&usage), true);
+        widget.populate(&mut cx, "owner|room|answer-only".into(), None, true);
+        let button = widget.borrow().unwrap().view.navigation_bar_button(&cx, ids!(toggle));
+        assert!(widget.borrow().unwrap().view.visible());
+        let actions = cx.capture_actions(|cx| cx.widget_action(button.widget_uid(), NavigationBarButtonAction::Clicked));
+        widget.handle_event(&mut cx, &Event::Actions(actions), &mut Scope::empty());
+        let details = widget.borrow().unwrap().view.label(&cx, ids!(details));
+        assert!(details.visible());
+        assert_eq!(details.text(), crate::i18n::tr("Usage was not reported for this reply."));
+        assert!(!details.text().contains("50"));
+        widget.populate(&mut cx, "owner|room|human".into(), None, false);
+        assert!(!widget.borrow().unwrap().view.visible());
+        widget.populate(&mut cx, "other-owner|room|answer-only".into(), None, true);
+        assert!(!widget.borrow().unwrap().view.label(&cx, ids!(details)).visible());
     }
 }

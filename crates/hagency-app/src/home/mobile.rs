@@ -3,7 +3,7 @@
 
 use makepad_widgets::*;
 use std::collections::HashSet;
-use matrix_sdk::ruma::{api::client::profile::{AvatarUrl, DisplayName}, OwnedEventId, OwnedRoomId, OwnedUserId, UserId};
+use matrix_sdk::ruma::{api::client::profile::{AvatarUrl, DisplayName}, OwnedEventId, OwnedUserId, UserId};
 
 use crate::{
     home::navigation_tab_bar::{get_own_profile, NavigationBarAction, SelectedTab},
@@ -15,8 +15,6 @@ use crate::{
     shared::{avatar::{AvatarState, AvatarWidgetRefExt}, navigation_bar_button::{NavigationBarButtonWidgetExt, NavigationBarButtonWidgetRefExt}},
     sliding_sync::{current_user_id, get_client, spawn_async_task, submit_async_request, MatrixRequest},
     utils,
-    home::room_screen::RoomScreenWidgetExt,
-    home::invite_screen::InviteScreenWidgetExt,
     shared::unread_badge::UnreadBadgeWidgetRefExt,
 };
 
@@ -255,23 +253,6 @@ script_mod! {
                 visible: false
                 title.text: #(crate::i18n::tr("Contact Info")) title.i18n_text: "Contact Info"
             }
-            conversations := View {visible: false width: Fill height: Fill flow: Right
-                conversation_list_holder := View {visible: false width: 180 height: Fill
-                conversation_list := PortalList {width: Fill height: Fill
-                    Conversation := NavigationBarButton {width: Fill height: 64 flow: Down padding: 10 spacing: 4
-                        name := RinxLabel {width: Fill max_lines: 1 text_overflow: Ellipsis}
-                        identity := RinxLabel {width: Fill max_lines: 1 text_overflow: Ellipsis draw_text.color: mod.widgets.RINX_MUTED}
-                        unread := UnreadBadge {}
-                    }
-                    Filler := View {width: Fill height: 64}
-                }}
-                contact_chat_holder := View {width: Fill height: Fill
-                    contact_chat := RoomScreen {width: Fill height: Fill desktop_chat_header +: {visible: true}}
-                }
-                contact_invite_holder := View {visible: false width: Fill height: Fill
-                    contact_invite := InviteScreen {width: Fill height: Fill}
-                }
-            }
             contact_profile := ScrollYView {
                 visible: false
                 width: Fill height: Fill flow: Down
@@ -283,7 +264,7 @@ script_mod! {
                     contact_copy := DetailRow {title.text: #(crate::i18n::tr("Copy Profile Link")) title.i18n_text: "Copy Profile Link"}
                 }
                 DetailGap {}
-                DetailSection {message := DetailAction {title.text: #(crate::i18n::tr("Messages")) title.i18n_text: "Messages"}}
+                DetailSection {message := DetailAction {title.text: #(crate::i18n::tr("Message")) title.i18n_text: "Message"}}
                 DetailGap {}
                 DetailSection {contact_block := DetailAction {title +: {text: #(crate::i18n::tr("Block")) i18n_text: "Block" draw_text.color: mod.widgets.RINX_DANGER_FG}}}
             }
@@ -353,26 +334,51 @@ struct GroupsLoaded {
     groups: Vec<MobileGroup>,
 }
 
-#[derive(Clone)]
-struct DirectNavigation {epoch:u64,room:utils::RoomNameId,started:std::time::Instant,thread:Option<OwnedEventId>,jump:Option<OwnedEventId>,ticket:Option<crate::matrix_links::Ticket>}
+#[derive(Clone, Debug)]
+pub(crate) struct DirectNavigation {epoch:u64,pub room:utils::RoomNameId,started:std::time::Instant,pub thread:Option<OwnedEventId>,pub jump:Option<OwnedEventId>,pub ticket:Option<crate::matrix_links::Ticket>}
+impl DirectNavigation {
+    pub(crate) fn selection(&self,cx:&mut Cx)->Option<SelectedRoom> {
+        if self.epoch!=crate::account_session::epoch() || crate::sliding_sync::account_changing()
+            || self.ticket.as_ref().is_some_and(|t|!t.is_current()) {return None;}
+        let room=get_client()?.get_room(self.room.room_id())?;
+        if room.state()==matrix_sdk::RoomState::Invited && super::rooms_list::get_invited_rooms(cx).borrow().get(room.room_id()).is_some_and(|r|r.is_direct && !r.is_space) {
+            return Some(SelectedRoom::InvitedRoom {room_name_id:self.room.clone()});
+        }
+        if room.state()!=matrix_sdk::RoomState::Joined || room.is_space() || room.direct_targets().is_empty() {return None;}
+        Some(if let Some(thread)=&self.thread {SelectedRoom::Thread {room_name_id:self.room.clone(),thread_root_event_id:thread.clone()}}else{SelectedRoom::JoinedRoom {room_name_id:self.room.clone()}})
+    }
+}
 #[derive(Default)]
 struct PendingDirectChat(Option<DirectNavigation>);
 pub(crate) fn navigate_direct(cx:&mut Cx,room:utils::RoomNameId) {navigate_direct_view(cx,room,None,None);}
 pub(crate) fn navigate_direct_view(cx:&mut Cx,room:utils::RoomNameId,thread:Option<OwnedEventId>,jump:Option<OwnedEventId>) {
     cx.global::<PendingDirectChat>().0=Some(DirectNavigation {epoch:crate::account_session::epoch(),room,started:std::time::Instant::now(),thread,jump,ticket:None});
-    cx.action(NavigationBarAction::GoToTab(SelectedTab::Contacts));
+    cx.action(NavigationBarAction::GoToHome);
+    cx.action(super::main_desktop_ui::MainDesktopUiAction::ActivateChats);
     cx.redraw_all();
 }
 
+#[cfg(test)]
 pub(crate) fn navigate_matrix_direct(cx: &mut Cx, navigation: crate::matrix_links::Navigation) {
     if !navigation.is_current() {return;}
-    let thread = match &navigation.selected {
-        SelectedRoom::Thread {thread_root_event_id, ..} => Some(thread_root_event_id.clone()),
-        _ => None,
-    };
-    cx.global::<PendingDirectChat>().0=Some(DirectNavigation {epoch:crate::account_session::epoch(),room:navigation.selected.room_name().clone(),started:std::time::Instant::now(),thread,jump:navigation.event,ticket:Some(navigation.ticket.clone())});
-    cx.action(crate::matrix_links::LinkAction::EnterContacts(navigation.ticket));
+    cx.action(super::main_desktop_ui::MainDesktopUiAction::ActivateChats);
+    cx.action(crate::matrix_links::LinkAction::EnterHome(navigation));
     cx.redraw_all();
+}
+
+pub(crate) fn dispatch_pending_direct(cx:&mut Cx) {
+    let Some(pending)=cx.global::<PendingDirectChat>().0.clone() else {return;};
+    if pending.epoch!=crate::account_session::epoch() || crate::sliding_sync::account_changing()
+        || pending.ticket.as_ref().is_some_and(|t|!t.is_current()) {
+        cx.global::<PendingDirectChat>().0=None;return;
+    }
+    if pending.selection(cx).is_some() {
+        cx.global::<PendingDirectChat>().0=None;
+        cx.action(pending);
+    } else if pending.started.elapsed()>std::time::Duration::from_secs(30) {
+        cx.global::<PendingDirectChat>().0=None;
+        crate::shared::popup_list::enqueue_popup_notification(crate::i18n::tr("Could not open this private chat. Reopen Chats and retry."),crate::shared::popup_list::PopupKind::Warning,Some(4.0));
+    }
 }
 
 #[derive(Debug)]
@@ -392,10 +398,6 @@ pub struct MobileHub {
     #[rust] owner_epoch: u64,
     #[rust] contacts: Vec<UserProfile>,
     #[rust] conversations: Vec<DirectConversation>,
-    #[rust] visible_conversations: Vec<utils::RoomNameId>,
-    #[rust] selected_conversation: Option<OwnedRoomId>,
-    #[rust] selected_thread: Option<OwnedEventId>,
-    #[rust] suspended_conversation: Option<utils::RoomNameId>,
     #[rust] unread_only: bool,
     #[rust] contacts_pending: bool,
     #[rust] unread_counts: (u64,bool),
@@ -415,8 +417,6 @@ impl MobileHub {
     fn begin_new_chat(&mut self, cx: &mut Cx) {
         if self.kind != 0 { return; }
         self.groups_open = false;
-        self.suspend_chat(cx);
-        self.suspended_conversation=None;
         self.selected_profile = None;
         if !self.adding_friend {
             self.request = Self::next_request();
@@ -437,14 +437,8 @@ impl MobileHub {
         self.owner_epoch=crate::account_session::epoch();
         self.contacts.clear();
         self.conversations.clear();
-        self.visible_conversations.clear();
-        self.selected_conversation = None;
-        self.selected_thread=None;
-        self.suspended_conversation=None;
         self.contacts_pending = false;
         self.unread_only = false;
-        self.view.room_screen(cx, ids!(contact_chat)).hide_displayed_room(cx);
-        self.view.invite_screen(cx,ids!(contact_invite)).hide_displayed_invite(cx);
         self.contact_agents.clear();
         self.visible_contacts.clear();
         self.selected_profile = None;
@@ -581,57 +575,16 @@ impl MobileHub {
             cx.widget_action(self.widget_uid(),RoomsListAction::OpenRoomContextMenu {details,pos:dvec2(rect.pos.x+rect.size.x,rect.pos.y+rect.size.y)});
         }
     }
-    fn open_direct(&mut self,cx:&mut Cx,room:utils::RoomNameId)->bool {self.open_direct_view(cx,room,None,None)}
-    fn suspend_chat(&mut self,cx:&mut Cx) {
-        if let Some(id)=self.selected_conversation.take() {
-            self.suspended_conversation=self.conversations.iter().find(|c|c.room.room_id()==&id).map(|c|c.room.clone());
-            self.selected_thread=None;
-            self.view.room_screen(cx,ids!(contact_chat)).hide_displayed_room(cx);
-            self.view.invite_screen(cx,ids!(contact_invite)).hide_displayed_invite(cx);
+    fn message_profile(&self,cx:&mut Cx) {
+        let Some(profile)=self.selected_profile.clone() else {return;};
+        let mut rooms=self.conversations.iter().filter(|c|c.target==profile.user_id);
+        if let Some(room)=rooms.next() && rooms.next().is_none() {
+            navigate_direct(cx,room.room.clone());
+        } else {
+            submit_async_request(MatrixRequest::OpenOrCreateDirectMessage {user_profile:profile,allow_create:false});
         }
-    }
-    fn open_direct_view(&mut self, cx: &mut Cx, room: utils::RoomNameId,thread:Option<OwnedEventId>,jump:Option<OwnedEventId>) -> bool {
-        self.adding_friend=false;
-        self.query.clear();
-        self.view.text_input(cx,ids!(search)).set_text(cx,"");
-        let Some(sdk_room) = get_client().and_then(|c| c.get_room(room.room_id())) else {return false;};
-        let invited=sdk_room.state()==matrix_sdk::RoomState::Invited && super::rooms_list::get_invited_rooms(cx).borrow().get(room.room_id()).is_some_and(|r|r.is_direct);
-        if !invited && (sdk_room.state() != matrix_sdk::RoomState::Joined || sdk_room.direct_targets().is_empty()) {return false;}
-        if invited {
-            self.view.room_screen(cx,ids!(contact_chat)).hide_displayed_room(cx);
-            if self.selected_conversation.as_ref()!=Some(room.room_id()) {
-                self.view.invite_screen(cx,ids!(contact_invite)).hide_displayed_invite(cx);
-                self.view.invite_screen(cx,ids!(contact_invite)).set_displayed_invite(cx,&room);
-            }
-            self.selected_conversation=Some(room.room_id().clone());
-            self.selected_thread=None;
-            if let Some(target)=self.conversations.iter().find(|c|c.room.room_id()==room.room_id()).map(|c|&c.target) {
-                self.selected_profile=self.contacts.iter().find(|p|&p.user_id==target).cloned();
-            }
-            cx.action(crate::app::AppStateAction::RoomFocused(SelectedRoom::InvitedRoom {room_name_id:room}));
-            self.view.redraw(cx);
-            return true;
-        }
-        self.view.invite_screen(cx,ids!(contact_invite)).hide_displayed_invite(cx);
-        if self.selected_conversation.as_ref() != Some(room.room_id()) || self.selected_thread!=thread {
-            super::main_desktop_ui::release_legacy_direct_timeline(cx,&room);
-            self.view.room_screen(cx, ids!(contact_chat)).set_displayed_room(cx,&room,thread.clone());
-            self.selected_conversation = Some(room.room_id().clone());
-            self.selected_thread=thread.clone();
-        }
-        if let Some(event)=jump {self.view.room_screen(cx,ids!(contact_chat)).jump_to_history_event(cx,event);}
-        if let Some(target) = sdk_room.direct_targets().iter().find_map(|t| UserId::parse(t.as_str()).ok()) {
-            self.selected_profile = self.contacts.iter().find(|p|p.user_id==target).cloned().or_else(||Some(UserProfile {user_id:target,username:Some(room.display().into_owned()),avatar_state:AvatarState::Unknown}));
-        }
-        cx.action(crate::app::AppStateAction::RoomFocused(if let Some(thread_root_event_id)=thread {SelectedRoom::Thread {room_name_id:room,thread_root_event_id}}else{SelectedRoom::JoinedRoom {room_name_id:room}}));
-        self.view.redraw(cx);
-        true
     }
     fn back(&mut self, cx: &mut Cx) {
-        self.view.room_screen(cx,ids!(contact_chat)).hide_displayed_room(cx);
-        self.view.invite_screen(cx,ids!(contact_invite)).hide_displayed_invite(cx);
-        self.selected_conversation=None;
-        self.suspended_conversation=None;
         if self.selected_profile.take().is_none() {
             self.adding_friend = false;
             self.groups_open = false;
@@ -667,7 +620,6 @@ impl Widget for MobileHub {
                 let known:HashSet<_>=self.conversations.iter().map(|c|c.room.room_id().clone()).collect();
                 let mut current:HashSet<_>=get_client().map(|c|c.joined_rooms().iter().filter(|r|!r.direct_targets().is_empty() && !crate::moments::is_moments(r)).map(|r|r.room_id().to_owned()).collect()).unwrap_or_default();
                 current.extend(super::rooms_list::get_invited_rooms(cx).borrow().values().filter(|r|r.is_direct && !r.is_space).map(|r|r.room_name_id.room_id().clone()));
-                if self.selected_conversation.as_ref().is_some_and(|id|!current.contains(id)) {self.suspend_chat(cx);self.suspended_conversation=None;}
                 let changed=current!=known;
                 if changed && !self.contacts_pending && !self.adding_friend {self.refresh_contacts(cx,false);}
             }
@@ -678,22 +630,11 @@ impl Widget for MobileHub {
             self.back(cx);
             return;
         }
-        // Hidden contact timelines must not consume room input or send read receipts.
-        if self.kind == 0 && scope.data.get::<crate::app::AppState>().is_some_and(|a| a.selected_tab != SelectedTab::Contacts) {
-            self.suspend_chat(cx);
-        }
         self.view.handle_event(cx, event, scope);
         if let Event::Actions(actions) = event {
             for action in actions {
-                if let RoomsListAction::InviteAccepted {room_name_id,..}=action.as_widget_action().cast()
-                    && self.kind==0 && self.selected_conversation.as_ref()==Some(room_name_id.room_id()) {
-                    self.selected_conversation=None;
-                    self.view.invite_screen(cx,ids!(contact_invite)).hide_displayed_invite(cx);
-                    self.refresh_contacts(cx,false);
-                    navigate_direct(cx,room_name_id);
-                }
                 if let Some(MobileNavigationAction::OpenDirect(room)) = action.downcast_ref() {
-                    if self.kind == 0 {self.open_direct(cx, room.clone());}
+                    if self.kind == 0 {navigate_direct(cx, room.clone());}
                 }
                 if let Some(loaded) = action.downcast_ref::<ContactAgentsLoaded>() {
                     if loaded.request == self.request && loaded.epoch == crate::account_session::epoch()
@@ -731,7 +672,6 @@ impl Widget for MobileHub {
                 }
                 if let Some(NavigationBarAction::TabSelected(SelectedTab::Contacts)) = action.downcast_ref() {
                     if self.kind == 0 {
-                        if let Some(room)=self.suspended_conversation.take() {self.open_direct(cx,room);}
                         if self.groups_open { self.refresh_groups(cx); }
                         else if !self.adding_friend { self.refresh_contacts(cx, false); }
                     }
@@ -744,13 +684,6 @@ impl Widget for MobileHub {
                 }
             }
             if let Some(active) = self.view.check_box(cx, ids!(unread_only)).changed(actions) {self.unread_only = active; self.view.redraw(cx);}
-            let conversations = self.view.portal_list(cx, ids!(conversation_list));
-            for (index, widget) in conversations.items_with_actions(actions) {
-                if widget.as_navigation_bar_button().secondary_clicked(actions)
-                    && let Some(room)=self.visible_conversations.get(index) {self.conversation_menu(cx,room,widget.area().rect(cx));continue;}
-                if !conversations.was_scrolling() && widget.as_navigation_bar_button().clicked(actions)
-                    && let Some(room) = self.visible_conversations.get(index).cloned() {self.open_direct(cx, room);}
-            }
             let search = self.view.text_input(cx, ids!(search));
             if let Some(query) = search.changed(actions) {
                 self.query = query;
@@ -768,17 +701,12 @@ impl Widget for MobileHub {
                 if widget.navigation_bar_button(cx,ids!(row)).secondary_clicked(actions)
                     && let Some(profile)=self.visible_contacts.get(index).and_then(|i|self.contacts.get(*i)) {
                     let rooms:Vec<_>=self.conversations.iter().filter(|c|c.target==profile.user_id).collect();
-                    let room=rooms.iter().find(|c|Some(c.room.room_id())==self.selected_conversation.as_ref()).or_else(||if rooms.len()==1 {rooms.first()}else{None});
+                    let room=if rooms.len()==1 {rooms.first()}else{None};
                     if let Some(room)=room {self.conversation_menu(cx,&room.room,widget.area().rect(cx));}
                     continue;
                 }
                 if !list.was_scrolling() && widget.navigation_bar_button(cx, ids!(row)).clicked(actions) {
                     self.selected_profile = self.visible_contacts.get(index).and_then(|i| self.contacts.get(*i)).cloned();
-                    if !self.adding_friend && let Some(profile) = self.selected_profile.clone() {
-                        let mut rooms: Vec<_> = self.conversations.iter().filter(|c| c.target == profile.user_id).map(|c| c.room.clone()).collect();
-                        rooms.sort_by_key(|r| std::cmp::Reverse(get_client().and_then(|c| c.get_room(r.room_id())).map_or(0,|r| r.num_unread_messages().max(r.num_unread_mentions()))));
-                        if let Some(room) = rooms.first() {self.open_direct(cx, room.clone());}
-                    }
                     let mobile_detail = self.selected_profile.is_some() && !super::home_screen::effective_is_desktop(cx);
                     cx.action(MobileNavigationAction::DetailVisibility(mobile_detail));
                     self.view.redraw(cx);
@@ -803,9 +731,7 @@ impl Widget for MobileHub {
                 }
             }
             if self.view.navigation_bar_button(cx, ids!(message)).clicked(actions) {
-                if let Some(profile) = self.selected_profile.clone() {
-                    submit_async_request(MatrixRequest::OpenOrCreateDirectMessage {user_profile: profile, allow_create: false});
-                }
+                self.message_profile(cx);
             }
             let group_list = self.view.portal_list(cx, ids!(group_list));
             for (index, widget) in group_list.items_with_actions(actions) {
@@ -851,43 +777,23 @@ impl Widget for MobileHub {
             let invites = get_client().map(|c|c.invited_rooms().into_iter().filter(crate::moments::is_moments).count()).unwrap_or(0);
             self.view.label(cx, ids!(discover_moments.title)).set_text(cx, &if invites == 0 {crate::i18n::tr("Moments").into()} else {crate::i18n::format("Moments · {invites} invitation{0}", &[("invites", (invites).to_string()), ("0", (crate::i18n::plural_suffix(invites)).to_string())])});
         }
-        if self.kind==0 && scope.data.get::<crate::app::AppState>().is_some_and(|a|a.selected_tab==SelectedTab::Contacts)
-            && let Some(pending)=cx.global::<PendingDirectChat>().0.clone() {
-            if pending.epoch!=crate::account_session::epoch() || pending.ticket.as_ref().is_some_and(|ticket|!ticket.is_current()) {
-                cx.global::<PendingDirectChat>().0=None;
-            } else if self.open_direct_view(cx,pending.room,pending.thread,pending.jump) {
-                if let Some(ticket)=pending.ticket {self.view.room_screen(cx,ids!(contact_chat)).attach_matrix_link_ticket(ticket);}
-                cx.global::<PendingDirectChat>().0=None;
-            }
-            else if pending.started.elapsed()>std::time::Duration::from_secs(30) {
-                cx.global::<PendingDirectChat>().0=None;
-                self.status=crate::i18n::tr("Could not open this private chat. Reopen Contacts and retry.").into();
-            }
-        }
-        let invite_open=self.selected_conversation.as_ref().is_some_and(|id|get_client().and_then(|c|c.get_room(id)).is_some_and(|r|r.state()==matrix_sdk::RoomState::Invited));
-        let chat_open = self.selected_conversation.is_some();
-        self.view.view(cx,ids!(contact_chat_holder)).set_visible(cx,!invite_open);
-        self.view.view(cx,ids!(contact_invite_holder)).set_visible(cx,invite_open);
-        let profile_open = self.selected_profile.is_some() && !chat_open;
+        let profile_open = self.selected_profile.is_some();
         let agent_details = self.view.agent_profile_details(cx, ids!(agent_details));
         agent_details.set_user(cx,
             self.selected_profile.as_ref().map(|profile| profile.user_id.as_ref()));
         self.view.navigation_bar_button(cx, ids!(contact_moments)).set_visible(cx, agent_details.allows_moments());
         let split = self.kind == 0 && super::home_screen::effective_is_desktop(cx);
         let mut master = self.view.view(cx, ids!(master_pane));
-        master.set_visible(cx, split || !(profile_open || chat_open));
+        master.set_visible(cx, split || !profile_open);
         script_apply_eval!(cx, master, {width: #(if split {Size::Fixed(300.0)} else {Size::fill()})});
         self.view.view(cx, ids!(detail_divider)).set_visible(cx, split);
-        self.view.view(cx, ids!(detail_pane)).set_visible(cx, split || profile_open || chat_open);
+        self.view.view(cx, ids!(detail_pane)).set_visible(cx, split || profile_open);
         self.view.view(cx, ids!(detail_title_bar)).set_visible(cx, profile_open);
         self.view.button(cx, ids!(detail_title_bar.controls.left)).set_visible(cx, !split);
         self.view.view(cx, ids!(detail_pane.contact_profile)).set_visible(cx, profile_open);
-        self.view.view(cx, ids!(conversations)).set_visible(cx, chat_open);
-        self.visible_conversations = self.selected_profile.as_ref().map(|p| self.conversations.iter().filter(|c| c.target == p.user_id).map(|c| c.room.clone()).collect()).unwrap_or_default();
-        self.view.view(cx, ids!(conversation_list_holder)).set_visible(cx, self.visible_conversations.len() > 1);
         self.view.check_box(cx, ids!(unread_only)).set_visible(cx, !self.adding_friend);
         let (page, title) = if self.groups_open {
-            (id!(joined_groups), crate::i18n::tr("Group Chats"))
+            (id!(joined_groups), crate::i18n::tr("Group chats"))
         } else if self.adding_friend {
             (id!(contacts), crate::i18n::tr("New Friends"))
         } else {
@@ -915,22 +821,6 @@ impl Widget for MobileHub {
         self.view.label(cx, ids!(group_status)).set_visible(cx, !self.status.is_empty());
         self.visible_contacts=contact_order(&self.contacts,&self.query,self.unread_only,|id|contact_unread(&self.conversations,id));
         while let Some(item) = self.view.draw_walk(cx, scope, walk).step() {
-            if item.widget_uid() == self.view.portal_list(cx, ids!(conversation_list)).widget_uid() {
-                if let Some(mut list) = item.borrow_mut::<PortalList>() {
-                    list.set_item_range(cx,0,self.visible_conversations.len());
-                    while let Some(index) = list.next_visible_item(cx) {
-                        let Some(room) = self.visible_conversations.get(index) else {list.item(cx,index,id!(Filler)).draw_all(cx,scope);continue;};
-                        let row = list.item(cx,index,id!(Conversation));
-                        row.label(cx,ids!(name)).set_text(cx,&room.display());
-                        row.label(cx,ids!(identity)).set_text(cx,room.room_id().as_str());
-                        row.as_navigation_bar_button().set_selected(cx,self.selected_conversation.as_ref()==Some(room.room_id()));
-                        let counts = get_client().and_then(|c|c.get_room(room.room_id())).map(|r|(r.num_unread_messages().max(r.num_unread_mentions()),r.is_marked_unread() || r.state()==matrix_sdk::RoomState::Invited)).unwrap_or_default();
-                        row.unread_badge(cx,ids!(unread)).update_counts(counts.1,0,counts.0);
-                        row.draw_all(cx,scope);
-                    }
-                }
-                continue;
-            }
             if let Some(mut list) = item.borrow_mut::<PortalList>() {
                 if self.groups_open {
                     list.set_item_range(cx, 0, self.groups.len());
@@ -976,7 +866,20 @@ impl Widget for MobileHub {
 }
 
 impl MobileHubRef {
-    pub(crate) fn suspend_chat(&self,cx:&mut Cx) {if let Some(mut hub)=self.borrow_mut() {hub.suspend_chat(cx);}}
+    /// Fictional contacts for the isolated, signed-out native review executable.
+    #[cfg(debug_assertions)]
+    pub fn show_contacts_design_preview(&self, cx:&mut Cx) {
+        assert!(current_user_id().is_none(), "Review fixtures require a signed-out account");
+        let Some(mut inner)=self.borrow_mut() else {return;};
+        inner.owner=None;
+        inner.owner_epoch=crate::account_session::epoch();
+        inner.status.clear();
+        inner.contacts=[("alice","Alice Chen"),("bob","Bob Wang")].into_iter().map(|(id,name)|UserProfile {
+            user_id:format!("@{id}:review.invalid").try_into().unwrap(),username:Some(name.into()),avatar_state:AvatarState::Known(None),
+        }).collect();
+        inner.selected_profile=inner.contacts.first().cloned();
+        inner.view.redraw(cx);
+    }
 }
 
 #[cfg(test)]
@@ -984,46 +887,19 @@ pub(crate) mod new_chat_tests {
     use super::*;
     use makepad_widgets::makepad_draw::cx_draw::CxDraw;
 
-    pub(crate) fn assert_matrix_link_in_contacts(hub:&MobileHubRef,cx:&Cx,navigation:&crate::matrix_links::Navigation) {
-        let inner=hub.borrow().expect("actual Contacts widget");
-        assert_eq!(inner.selected_conversation.as_ref(),Some(navigation.selected.room_id()));
-        inner.view.room_screen(cx,ids!(contact_chat)).assert_matrix_link_target(cx,navigation);
-    }
     pub(crate) async fn matrix_link_navigation(navigation: crate::matrix_links::Navigation, cancel: bool) {
         let ticket=navigation.ticket.clone();
         matrix_link_navigation_after_queue(navigation,move |_| {if cancel {ticket.cancel();}}).await;
     }
     pub(crate) async fn matrix_link_navigation_after_queue(navigation: crate::matrix_links::Navigation, replace: impl FnOnce(&mut Cx)) {
-        let completed=std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let expected=std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
-        let observer=completed.clone();let request=expected.clone();
-        let mut cx=Cx::new(Box::new(move |_,event| {
-            if let Event::Actions(actions)=event
-                && actions.iter().filter_map(|action|action.downcast_ref::<ContactAgentsLoaded>())
-                    .any(|loaded|loaded.request==request.load(std::sync::atomic::Ordering::Acquire)) {
-                observer.store(true,std::sync::atomic::Ordering::Release);
-            }
-        }));
-        let mut hub=hub(&mut cx);
-        let mut state=crate::app::AppState {selected_tab:SelectedTab::Contacts,..Default::default()};
-        navigate_matrix_direct(&mut cx,navigation.clone());
+        let mut cx=Cx::new(Box::new(|_,_|{}));
+        let actions=cx.capture_actions(|cx|navigate_matrix_direct(cx,navigation.clone()));
+        assert!(actions.iter().any(|a|matches!(a.downcast_ref(),Some(crate::matrix_links::LinkAction::EnterHome(_)))));
         replace(&mut cx);
-        let cancel=!navigation.is_current();
-        hub.handle_event(&mut cx,&Event::Signal,&mut Scope::with_data(&mut state));
-        draw_with_state(&mut cx,&mut hub,375.0,&mut state);
-        expected.store(hub.request,std::sync::atomic::Ordering::Release);
-        tokio::time::timeout(std::time::Duration::from_secs(5),async {
-            loop {
-                cx.handle_action_receiver();
-                if completed.load(std::sync::atomic::Ordering::Acquire) {break;}
-                tokio::time::sleep(std::time::Duration::from_millis(2)).await;
-            }
-        }).await.expect("original contact badge lookup must actually complete before asserting no bootstrap");
-        assert!(cx.global::<PendingDirectChat>().0.is_none());
-        if cancel {assert!(hub.selected_conversation.is_none());}
-        else {
-            assert_eq!(hub.selected_conversation.as_ref(),Some(navigation.selected.room_id()));
-            hub.view.room_screen(&cx,ids!(contact_chat)).assert_matrix_link_target(&cx,&navigation);
+        if !navigation.is_current() {
+            super::super::home_screen::responsive_layout_tests::matrix_link_cancelled_root(navigation);
+        } else {
+            super::super::home_screen::responsive_layout_tests::matrix_link_root_delivery(navigation,true,375.0,&mut |_|{});
         }
     }
     fn hub(cx: &mut Cx) -> MobileHub {
@@ -1099,6 +975,7 @@ pub(crate) mod new_chat_tests {
         let mut cx = Cx::new(Box::new(|_, _| {}));
         let mut hub = hub(&mut cx);
         hub.contacts = profiles();
+        hub.conversations=vec![DirectConversation {target:hub.contacts[0].user_id.clone(),room:utils::RoomNameId::empty(matrix_sdk::ruma::room_id!("!alice:server").to_owned())}];
         hub.contact_agents.insert(hub.contacts[0].user_id.clone());
         draw(&mut cx, &mut hub, 900.0);
         let title = hub.view.label(&cx, ids!(title_bar.title)).area().rect(&cx);
@@ -1124,6 +1001,8 @@ pub(crate) mod new_chat_tests {
             assert_eq!(hub.selected_profile.as_ref().unwrap().user_id, hub.contacts[index].user_id);
             assert_eq!(hub.view.label(&cx, ids!(detail_pane.contact_profile.contact_card.name)).text(), hub.contacts[index].displayable_name());
             assert_eq!(hub.visible_contacts, vec![0, 1]);
+            assert!(hub.view.widget(&cx,ids!(contact_chat)).is_empty(),"Contacts never instantiates a chat timeline");
+            assert!(cx.global::<PendingDirectChat>().0.is_none(),"Selecting a profile must not navigate to its conversation");
         }
         hub.query = "bob".into();
         draw(&mut cx, &mut hub, 900.0);
@@ -1136,6 +1015,25 @@ pub(crate) mod new_chat_tests {
         hub.clear_account_state(&mut cx);
         draw(&mut cx, &mut hub, 900.0);
         assert!(!hub.view.view(&cx, ids!(detail_pane.contact_profile)).visible());
+    }
+
+    #[test]
+    fn profile_message_opens_the_original_chat_in_chats_without_losing_the_profile() {
+        let mut cx=Cx::new(Box::new(|_,_|{}));let mut hub=hub(&mut cx);
+        hub.contacts=profiles();let profile=hub.contacts[0].clone();
+        let room=utils::RoomNameId::empty(matrix_sdk::ruma::room_id!("!original-private:server").to_owned());
+        hub.conversations=vec![DirectConversation {target:profile.user_id.clone(),room:room.clone()}];
+        hub.selected_profile=Some(profile.clone());
+        let button=hub.view.navigation_bar_button(&cx,ids!(message));
+        let actions=cx.capture_actions(|cx|cx.widget_action(button.widget_uid(),crate::shared::navigation_bar_button::NavigationBarButtonAction::Clicked));
+        let emitted=cx.capture_actions(|cx|hub.handle_event(cx,&Event::Actions(actions),&mut Scope::empty()));
+        assert!(emitted.iter().any(|a|matches!(a.downcast_ref(),Some(NavigationBarAction::GoToHome))));
+        assert!(emitted.iter().any(|a|matches!(a.downcast_ref(),Some(super::super::main_desktop_ui::MainDesktopUiAction::ActivateChats))));
+        assert_eq!(cx.global::<PendingDirectChat>().0.as_ref().unwrap().room.room_id(),room.room_id());
+        assert_eq!(hub.selected_profile.as_ref().unwrap().user_id,profile.user_id);
+        cx.global::<PendingDirectChat>().0.as_mut().unwrap().epoch=crate::account_session::epoch().wrapping_add(1);
+        let stale=cx.capture_actions(dispatch_pending_direct);
+        assert!(stale.is_empty());assert!(cx.global::<PendingDirectChat>().0.is_none(),"a late chat open cannot cross accounts");
     }
 
     #[test]

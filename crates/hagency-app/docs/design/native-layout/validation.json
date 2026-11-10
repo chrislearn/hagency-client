@@ -1,0 +1,213 @@
+{
+  "date": "2026-11-09",
+  "platform": "Darwin arm64",
+  "base_commit": "da50f4387985cd92030b39e74977eed82a5951d9",
+  "state": "uncommitted UI changes",
+  "unit_tests": {
+    "command": "HAGENCY_NATIVE_CREDENTIAL_IO=deny cargo test --locked -p hagency-app --lib -- --test-threads=4",
+    "passed": 886,
+    "failed": 0,
+    "ignored": 2
+  },
+  "native_cases": [
+    {
+      "case": "projects-1280-light-text1.0",
+      "passed": true,
+      "viewport": [
+        1280,
+        860
+      ],
+      "binary_sha256": "c24fd45b51a732b318f9cb9964bdb6b43f77ce76fb370272f2683a582fdadb02"
+    },
+    {
+      "case": "agents-1280-light-text1.0",
+      "passed": true,
+      "viewport": [
+        1280,
+        860
+      ],
+      "binary_sha256": "c24fd45b51a732b318f9cb9964bdb6b43f77ce76fb370272f2683a582fdadb02"
+    },
+    {
+      "case": "overview-1280-light-text1.0",
+      "passed": true,
+      "viewport": [
+        1280,
+        860
+      ],
+      "binary_sha256": "c24fd45b51a732b318f9cb9964bdb6b43f77ce76fb370272f2683a582fdadb02"
+    },
+    {
+      "case": "create-960-light-text1.0",
+      "passed": true,
+      "viewport": [
+        960,
+        860
+      ],
+      "binary_sha256": "c24fd45b51a732b318f9cb9964bdb6b43f77ce76fb370272f2683a582fdadb02"
+    },
+    {
+      "case": "settings-1100-light-text1.0",
+      "passed": true,
+      "viewport": [
+        1100,
+        860
+      ],
+      "binary_sha256": "c24fd45b51a732b318f9cb9964bdb6b43f77ce76fb370272f2683a582fdadb02"
+    },
+    {
+      "case": "settings-430-light-text1.0",
+      "passed": true,
+      "viewport": [
+        430,
+        860
+      ],
+      "binary_sha256": "c24fd45b51a732b318f9cb9964bdb6b43f77ce76fb370272f2683a582fdadb02"
+    },
+    {
+      "case": "login-1280-light-text1.0",
+      "passed": true,
+      "viewport": [
+        1280,
+        860
+      ],
+      "binary_sha256": "c24fd45b51a732b318f9cb9964bdb6b43f77ce76fb370272f2683a582fdadb02"
+    },
+    {
+      "case": "projects-430-light-text1.0",
+      "passed": true,
+      "viewport": [
+        430,
+        860
+      ],
+      "binary_sha256": "c24fd45b51a732b318f9cb9964bdb6b43f77ce76fb370272f2683a582fdadb02"
+    },
+    {
+      "case": "agents-430-light-text1.0",
+      "passed": true,
+      "viewport": [
+        430,
+        860
+      ],
+      "binary_sha256": "c24fd45b51a732b318f9cb9964bdb6b43f77ce76fb370272f2683a582fdadb02"
+    },
+    {
+      "case": "create-430-light-text1.0",
+      "passed": true,
+      "viewport": [
+        430,
+        860
+      ],
+      "binary_sha256": "c24fd45b51a732b318f9cb9964bdb6b43f77ce76fb370272f2683a582fdadb02"
+    },
+    {
+      "case": "overview-430-light-text1.0",
+      "passed": true,
+      "viewport": [
+        430,
+        860
+      ],
+      "binary_sha256": "c24fd45b51a732b318f9cb9964bdb6b43f77ce76fb370272f2683a582fdadb02"
+    },
+    {
+      "case": "login-430-light-text1.0",
+      "passed": true,
+      "viewport": [
+        430,
+        860
+      ],
+      "binary_sha256": "c24fd45b51a732b318f9cb9964bdb6b43f77ce76fb370272f2683a582fdadb02"
+    },
+    {
+      "case": "projects-1280-dark-text1.0",
+      "passed": true,
+      "viewport": [
+        1280,
+        860
+      ],
+      "binary_sha256": "c24fd45b51a732b318f9cb9964bdb6b43f77ce76fb370272f2683a582fdadb02"
+    },
+    {
+      "case": "overview-1280-dark-text1.0",
+      "passed": true,
+      "viewport": [
+        1280,
+        860
+      ],
+      "binary_sha256": "c24fd45b51a732b318f9cb9964bdb6b43f77ce76fb370272f2683a582fdadb02"
+    },
+    {
+      "case": "projects-430-light-text1.3-zh",
+      "passed": true,
+      "viewport": [
+        430,
+        860
+      ],
+      "binary_sha256": "c24fd45b51a732b318f9cb9964bdb6b43f77ce76fb370272f2683a582fdadb02"
+    },
+    {
+      "case": "board-1360-light-text1.0",
+      "passed": true,
+      "viewport": [
+        1360,
+        860
+      ],
+      "binary_sha256": "451c2cf7033b0282c313f7614ceb9ec6b6769e4c71c6e697954a44e2d79ced9c"
+    },
+    {
+      "case": "board-1360-dark-text1.0",
+      "passed": true,
+      "viewport": [
+        1360,
+        860
+      ],
+      "binary_sha256": "451c2cf7033b0282c313f7614ceb9ec6b6769e4c71c6e697954a44e2d79ced9c"
+    },
+    {
+      "case": "board-660-light-text1.0",
+      "passed": true,
+      "viewport": [
+        660,
+        820
+      ],
+      "binary_sha256": "451c2cf7033b0282c313f7614ceb9ec6b6769e4c71c6e697954a44e2d79ced9c"
+    }
+  ],
+  "production_smoke": {
+    "passed": true,
+    "signed_out_startup": true,
+    "viewport": [
+      1280,
+      800
+    ],
+    "binary_sha256": "cb16166fdf7761345a7c50a28ef33843c1f74d7402c9e10505fa4377337e012a",
+    "clean_shutdown": true
+  },
+  "theme_literal_guard": true,
+  "diff_whitespace_check": true,
+  "source_sha256": {
+    "src/theme.rs": "d78876a9fd0beeae62a3224c4dde37f1cb3a2d6eef4ad294ed6dba7ab5ad42c2",
+    "src/theme/layout.rs": "7a633cc576ee3c99caac3b2637eea57ffd6356211ee29986fbd3969a8d526420",
+    "src/hagency/ui.rs": "42dc5431a9d57189cfa9aa5f519e1235ba664c163253e00f21643eb96ba10fca",
+    "src/hagency/ui/preview.rs": "4882944ab1d90cc7c17ad6c6f22a307092eaa7f157d28d62d4bd8db38c780ef9",
+    "src/hagency/board/view.rs": "acdcde79f147a2645508fda05e3332f52cb0addcd37449eb6e3c981f05e852d0",
+    "src/home/rooms_sidebar.rs": "4b313f709d54e5559790fbb4cbb66d5f2975c8c660a8f576798575009df9475a",
+    "src/login/login_screen.rs": "cbcfb4464615c8eeec9067619b29a95211e3a2342eb998fe0593e96b5eb1270f",
+    "src/settings/settings_screen.rs": "0703c50be98156370454bf56a3b19b7d68adaffe5a15f5579844fb8469907e78",
+    "examples/project_board_preview.rs": "973446fde4f0ee2afc908d7a92f81c693fffbd78318e15dfc72e983a40217e66",
+    "examples/workspace_preview.rs": "89a6e2ea5e13694255703d389aeabab1a472ab1f091c210f26baf16e480f739d",
+    "tools/check-native-layout.py": "485b2ab6ee4fb6690e937aa3baf34d1b2a2c0ca2a1c5487445f3ce8251d18c47"
+  },
+  "images_sha256": {
+    "login.png": "35aa10adde1588d664fcc514b78d43afbd11bfc34c51927e9ecd3f1d4eb8a965",
+    "before-board.png": "2df70aa0d3bcc486faef0f2f6478de60bb12bb4e166aaa51ab7e95aa7c98927b",
+    "overview-light.png": "5e2eebdb18a68591862f4fe70a43ba601e841f7bcb9952751dbc033b920821e1",
+    "projects-dark.png": "1f0825db9c221e88d9e31a6e982a63978ca3d88f7b55e2b4c7f1e0ebd853bd2d",
+    "after-board.png": "a012f3c9bfff3c6cfd35fd0b4c2066519a1378c8f4df63a5b3eca32d720a5111"
+  },
+  "limits": [
+    "Native layout fixtures use fictional data; backend authentication and physical-device UX were not qualified.",
+    "A parallel suite run observed one chat-cache test failure. Its isolated rerun and the final complete suite with four test threads passed.",
+    "The pinned SDK does not provide the native-input activity endpoint. Checks used owned hidden processes with disposable profiles."
+  ]
+}

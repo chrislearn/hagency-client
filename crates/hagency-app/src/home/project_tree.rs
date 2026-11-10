@@ -26,14 +26,20 @@ script_mod! {
     mod.widgets.ProjectTree = #(ProjectTree::register_widget(vm)) {
         width: Fill height: Fill flow: Down
         archived_projects := RinxCheckBox {text: #(crate::i18n::tr("Archived projects")) i18n_text: "Archived projects" margin: 8}
-        status := RinxLabel {
-            width: Fill height: Fit padding: 18
-            flow: Flow.Right{wrap: true}
-            draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: mod.widgets.RINX_BODY_SIZE}}
-            text: #(crate::i18n::tr("Loading projects…")) i18n_text: "Loading projects…"
+        notice := View {
+            width:Fill height:Fit flow:Right spacing:8 padding:12 align:Align{y:0.5}
+            loading := LoadingSpinner {visible:false width:14 height:14 draw_bg.color:mod.widgets.RINX_MUTED}
+            status := RinxLabel {
+                width:Fill height:Fit flow:Flow.Right{wrap:true}
+                draw_text +: {color:mod.widgets.RINX_MUTED text_style:theme.font_regular{font_size:mod.widgets.RINX_META_SIZE}}
+            }
+            retry := RinxGhostButton {visible:false width:Fit height:28 text:#(crate::i18n::tr("Retry")) i18n_text:"Retry"}
         }
         list := PortalList {
             width: Fill height: Fill flow: Down auto_tail: false
+            Section := View {width:Fill height:32 padding:Inset{left:12 top:10 bottom:4}
+                name := RinxLabel {width:Fill draw_text +: {color:mod.widgets.RINX_MUTED text_style:theme.font_bold{font_size:mod.widgets.RINX_META_SIZE}}}
+            }
             Row := View {
                 width: Fill height: 37 flow: Down
                 row_surface := RoundedView {width: Fill height: 36 flow: Right align: Align{y: 0.5}
@@ -80,12 +86,13 @@ pub enum ProjectTreeMode {
 
 /// A refresh error is a non-blocking notice alongside the retained list.
 fn tree_notice(mode: ProjectTreeMode, error: Option<&str>, loading: bool, empty: bool, query: bool) -> (&'static str, bool) {
-    if error == Some("local_service_not_running") {
-        return ("The local service is not running for this account.", true);
-    }
     if mode == ProjectTreeMode::GroupChats {
-        if error.is_some() || loading {return ("Loading group chat classification…",true);}
-        return (if !empty {""} else if query {"No matching group chats"} else {"No group chats yet. Use the Group Chats menu to create a group."}, empty);
+        if error.is_some() {return ("Could not load group chats. Try again.",true);}
+        if loading {return ("Loading group chats…",true);}
+        return (if !empty {""} else if query {"No matching chats"} else {"No chats yet. Use the Chats menu to start a conversation."}, empty);
+    }
+    if error == Some("local_service_not_running") {
+        return ("The local service is not running for this account.",true);
     }
     if let Some(error) = error {
         return (if error == "owner_authorization_required" {"Sign in again to restore Projects for this account"} else {"Hagency Projects could not be loaded. Retrying…"}, true);
@@ -249,9 +256,7 @@ fn workspace_rows(
     query: &str,
 ) -> Vec<Row> {
     if mode == ProjectTreeMode::GroupChats {
-        let assigned:HashSet<_>=projects.iter().flat_map(|p|p.rooms.iter()).collect();
-        return rooms.iter().filter(|r|!r.is_direct && !r.is_space && !assigned.contains(r.name.room_id()) && r.name.display().to_lowercase().contains(query))
-            .map(|r|if r.invited {Row::Invite(r.name.room_id().clone())} else {Row::Room(r.name.room_id().clone())}).collect();
+        return chat_rows(projects,rooms,&HashMap::new(),expanded,query).into_iter().map(|(row,_)|row).collect();
     }
     let assigned: HashSet<_> = projects.iter().flat_map(|p| p.rooms.iter()).collect();
     tree_rows(projects, rooms, expanded, "")
@@ -277,7 +282,7 @@ impl ProjectSelectionChanged {
     }}
 }
 
-/// The Group Chats graph contains only non-project, non-direct accessible rooms.
+/// The group section contains only non-project, non-direct accessible rooms.
 /// Space links organize navigation and never grant access to an unjoined room.
 fn group_rows(projects:&[TreeProject],rooms:&[TreeRoom],spaces:&HashMap<OwnedRoomId,Vec<OwnedRoomId>>,expanded:&HashSet<String>,query:&str)->Vec<(Row,usize)> {
     let assigned:HashSet<_>=projects.iter().flat_map(|p|p.rooms.iter().chain(std::iter::once(&p.space))).collect();
@@ -308,6 +313,21 @@ fn group_rows(projects:&[TreeProject],rooms:&[TreeRoom],spaces:&HashMap<OwnedRoo
     result
 }
 
+/// Direct conversations retain their original Room IDs, including invitations
+/// and multiple conversations with one person. Group topology is unchanged.
+fn chat_rows(projects:&[TreeProject],rooms:&[TreeRoom],spaces:&HashMap<OwnedRoomId,Vec<OwnedRoomId>>,expanded:&HashSet<String>,query:&str)->Vec<(Row,usize)> {
+    let mut direct:Vec<_>=rooms.iter().filter(|r|r.is_direct && !r.is_space && r.name.display().to_lowercase().contains(query)).collect();
+    direct.sort_by_key(|r|(r.name.display().to_lowercase(),r.name.room_id().clone()));
+    let mut result=Vec::new();
+    if !direct.is_empty() {
+        result.push((Row::Direct,0));
+        result.extend(direct.into_iter().map(|r|(if r.invited {Row::Invite(r.name.room_id().clone())}else{Row::Room(r.name.room_id().clone())},0)));
+    }
+    let groups=group_rows(projects,rooms,spaces,expanded,query);
+    if !groups.is_empty() {result.push((Row::Other,0));result.extend(groups);}
+    result
+}
+
 fn group_unread(projects:&[TreeProject],rooms:&[TreeRoom],spaces:&HashMap<OwnedRoomId,Vec<OwnedRoomId>>,root:&OwnedRoomId)->(u64,bool) {
     let blocked:HashSet<_>=projects.iter().flat_map(|p|p.rooms.iter().chain(std::iter::once(&p.space))).collect();
     let mut seen=HashSet::new();let mut todo=vec![root.clone()];let mut result=(0u64,false);
@@ -334,6 +354,16 @@ struct LoadedProjects {
     request: u64,
     identity: String,
     result: Result<ProjectTreeSnapshot, String>,
+}
+
+// The UI deadline must not cancel a backend read that may still own native
+// initialization/cleanup. Dropping the JoinHandle detaches that original work.
+async fn bounded_tree_read<T:Send+'static>(read:tokio::task::JoinHandle<Result<T,String>>,deadline:std::time::Duration)->Result<T,String> {
+    match tokio::time::timeout(deadline,read).await {
+        Ok(Ok(result))=>result,
+        Ok(Err(_))=>Err("project_service_unavailable".into()),
+        Err(_)=>Err("project_directory_timeout".into()),
+    }
 }
 
 use crate::theme::Snapshot as TreeAppearance;
@@ -551,6 +581,14 @@ impl ProjectTree {
         }
     }
 
+    fn retry(&mut self,cx:&mut Cx,actions:&Actions) {
+        if self.view.button(cx,ids!(retry)).clicked(actions) && !self.pending {
+            self.error=None;
+            self.refresh(cx);
+            self.redraw(cx);
+        }
+    }
+
     fn refresh(&mut self, cx: &mut Cx) {
         if !self.active {
             return;
@@ -584,9 +622,11 @@ impl ProjectTree {
         let request = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.request = request;
         self.pending = true;
+        self.redraw(cx);
         spawn_async_task(async move {
             use crate::hagency::model::Command;
-            let result = async {
+            let original_identity=identity.clone();
+            let read=tokio::spawn(async move {
                 let value = service.execute(Command::Projects).await?;
                 let values = active_records(&value, "projects")?;
                 let mut projects = Vec::new();
@@ -657,11 +697,11 @@ impl ProjectTree {
                     projects,
                     spaces,
                 })
-            }
-            .await;
+            });
+            let result=bounded_tree_read(read,std::time::Duration::from_secs(45)).await;
             Cx::post_action(LoadedProjects {
                 request,
-                identity,
+                identity:original_identity,
                 result,
             });
         });
@@ -697,10 +737,9 @@ impl ProjectTree {
         self.depths=vec![0;rows.len()];
         if self.mode==ProjectTreeMode::GroupChats {
             rows.clear();self.depths.clear();
-            if let Some(snapshot)=&self.snapshot {
-                let classified:Vec<_>=rooms.iter().filter(|r|!self.unclassified_rooms.contains(r.name.room_id())).cloned().collect();
-                for (row,depth) in group_rows(&projects,&classified,&snapshot.spaces,&self.expanded,&self.query) {rows.push(row);self.depths.push(depth);}
-            }
+            let classified:Vec<_>=rooms.iter().filter(|r|r.is_direct || self.snapshot.is_some() && !self.unclassified_rooms.contains(r.name.room_id())).cloned().collect();
+            let spaces=self.snapshot.as_ref().map(|s|s.spaces.clone()).unwrap_or_default();
+            for (row,depth) in chat_rows(&projects,&classified,&spaces,&self.expanded,&self.query) {rows.push(row);self.depths.push(depth);}
         }
         let changed = rows != self.rows || rooms.len() != self.rooms.len()
             || rooms.iter().zip(&self.rooms).any(|(a, b)| a.name.room_id() != b.name.room_id()
@@ -708,7 +747,7 @@ impl ProjectTree {
                 || a.invited != b.invited || a.is_space!=b.is_space || a.is_direct != b.is_direct || a.is_favorite != b.is_favorite);
         self.rooms = rooms;
         self.rows = rows;
-        if topology_changed {self.refresh(cx);}
+        if topology_changed && self.error.as_deref()!=Some("project_directory_timeout") {self.refresh(cx);}
         if changed { self.redraw(cx); }
     }
 }
@@ -730,12 +769,14 @@ impl Widget for ProjectTree {
         }
         let captured = cx.capture_actions(|cx| self.view.handle_event(cx, event, scope));
         self.handle_row_actions(cx, &captured);
+        self.retry(cx,&captured);
         if let Some(show)=self.view.check_box(cx,ids!(archived_projects)).changed(&captured) {
             self.show_archived=show;
             cx.action(ArchivedProjectsVisibility(show));
             self.rebuild(cx);
         }
         if let Event::Actions(actions) = event {
+            self.retry(cx,actions);
             for action in actions {
                 if action.downcast_ref::<crate::hagency::ui::HagencyAction>().is_some() {self.legacy_selection_checked=true;}
                 if let Some(ArchivedProjectsVisibility(show))=action.downcast_ref() {
@@ -803,6 +844,8 @@ impl Widget for ProjectTree {
                                         | "sign_in_required"
                                 ) {
                                     "owner_authorization_required".into()
+                                } else if code=="project_directory_timeout" {
+                                    code.clone()
                                 } else {
                                     "project_service_unavailable".into()
                                 },
@@ -812,7 +855,7 @@ impl Widget for ProjectTree {
                     self.rebuild(cx);
                     if self.refresh_again {
                         self.refresh_again = false;
-                        self.refresh(cx);
+                        if self.error.as_deref()!=Some("project_directory_timeout") {self.refresh(cx);}
                     }
                 }
                 if let Some(LogoutAction::ClearAppState { .. }) = action.downcast_ref() {
@@ -834,7 +877,9 @@ impl Widget for ProjectTree {
         if self.active && (self.timer.is_event(event).is_some() || matches!(event, Event::Signal)) {
             self.rebuild_if_changed(cx);
             self.refresh_ready_account(cx);
-            if self.timer.is_event(event).is_some() {
+            if self.timer.is_event(event).is_some() && self.error.as_deref()!=Some("project_directory_timeout") {
+                // A timed-out original read may still be cleaning up. Only an
+                // explicit Retry may admit another read after that UI deadline.
                 self.refresh(cx);
             }
         }
@@ -844,9 +889,13 @@ impl Widget for ProjectTree {
             self.clear(cx);
         }
         self.view.check_box(cx,ids!(archived_projects)).set_visible(cx,self.mode==ProjectTreeMode::Projects);
-        let (notice, visible) = tree_notice(self.mode, self.error.as_deref(), self.snapshot.is_none(), self.rows.is_empty(), !self.query.is_empty());
-        self.view.label(cx, ids!(status)).set_text(cx, crate::i18n::tr(notice));
-        self.view.label(cx, ids!(status)).set_visible(cx, visible);
+        let loading=self.pending && self.snapshot.is_none();
+        let (notice, visible) = tree_notice(self.mode,self.error.as_deref(),loading,self.rows.is_empty(),!self.query.is_empty());
+        self.view.view(cx,ids!(notice)).set_visible(cx,visible);
+        self.view.label(cx,ids!(status)).set_text(cx,crate::i18n::tr(notice));
+        self.view.widget(cx,ids!(loading)).set_visible(cx,visible && loading && self.error.is_none());
+        self.view.button(cx,ids!(retry)).set_visible(cx,visible && self.error.is_some());
+        self.view.button(cx,ids!(retry)).set_enabled(cx,!self.pending);
         let selected = scope
             .data
             .get_mut::<crate::app::AppState>()
@@ -869,6 +918,12 @@ impl Widget for ProjectTree {
                 let Some(row) = self.rows.get(index) else {
                     continue;
                 };
+                if matches!(row,Row::Direct|Row::Other) && self.mode==ProjectTreeMode::GroupChats {
+                    let item=list.item(cx,index,id!(Section));
+                    item.label(cx,ids!(name)).set_text(cx,crate::i18n::tr(if matches!(row,Row::Direct) {"Private chats"}else{"Group chats"}));
+                    item.draw_all(cx,scope);
+                    continue;
+                }
                 let item = list.item(cx, index, id!(Row));
                 if let Some(mut view)=item.borrow_mut::<View>() {
                     let project_row=self.mode==ProjectTreeMode::Projects && matches!(row,Row::Project(_));
@@ -960,6 +1015,32 @@ impl Widget for ProjectTree {
     }
 }
 impl ProjectTreeRef {
+    pub fn refresh(&self,cx:&mut Cx) {
+        if let Some(mut inner)=self.borrow_mut() && !inner.pending {
+            inner.error=None;inner.refresh(cx);inner.redraw(cx);
+        }
+    }
+    /// Fictional, read-only data for the isolated native review executable.
+    #[cfg(debug_assertions)]
+    pub fn show_chats_design_preview(&self, cx: &mut Cx, state:&str) {
+        assert!(current_user_id().is_none(), "Review fixtures require a signed-out account");
+        let Some(mut inner)=self.borrow_mut() else {return;};
+        inner.active=false;
+        inner.mode=ProjectTreeMode::GroupChats;
+        inner.snapshot=None;
+        inner.error=if state=="error" {Some("project_service_unavailable".into())}else{None};
+        inner.pending=state=="loading";
+        inner.rooms=[("alice", "Alice Chen", true, 2), ("bob", "Bob Wang", true, 0), ("design", "Design circle", false, 4), ("weekend", "Weekend plans", false, 0)]
+            .into_iter().map(|(id,name,direct,unread)|TreeRoom {
+                name:RoomNameId::new(matrix_sdk::RoomDisplayName::Named(name.into()),format!("!{id}:review.invalid").try_into().unwrap()),
+                unread,marked:false,invited:false,is_direct:direct,is_space:false,is_favorite:false,
+            }).collect();
+        let rooms:Vec<_>=inner.rooms.iter().filter(|r|state=="ready" || r.is_direct).cloned().collect();
+        let rows=chat_rows(&[],&rooms,&HashMap::new(),&HashSet::new(),"");
+        inner.rows=rows.iter().map(|(row,_)|row.clone()).collect();
+        inner.depths=rows.into_iter().map(|(_,depth)|depth).collect();
+        inner.redraw(cx);
+    }
     pub fn set_mode(&self, cx: &mut Cx, mode: ProjectTreeMode) {
         if let Some(mut inner) = self.borrow_mut() {
             if inner.mode == mode {return;}
@@ -1031,6 +1112,17 @@ mod tests {
         }
     }
     #[test]
+    fn chats_separates_private_and_group_rooms_without_merging_conversations_or_project_rooms() {
+        let mut alice=room("alice");alice.is_direct=true;
+        let mut other=room("alice-other");other.is_direct=true;
+        let mut invited=room("private-invite");invited.is_direct=true;invited.invited=true;
+        let rooms=vec![room("project-room"),room("team"),alice,other,invited];
+        let rows=chat_rows(&[project("work",&["project-room"])],&rooms,&HashMap::new(),&HashSet::new(),"");
+        assert_eq!(rows,vec![(Row::Direct,0),(Row::Room(id("alice")),0),(Row::Room(id("alice-other")),0),(Row::Invite(id("private-invite")),0),(Row::Other,0),(Row::Room(id("team")),0)]);
+        let filtered=chat_rows(&[],&rooms,&HashMap::new(),&HashSet::new(),"alice");
+        assert_eq!(filtered,vec![(Row::Direct,0),(Row::Room(id("alice")),0),(Row::Room(id("alice-other")),0)]);
+    }
+    #[test]
     fn default_children_are_first_and_navigation_selects_exactly_one_matching_row() {
         let mut p=project("Work",&["Aroom","Zroom"]);p.boards=vec![("a".into(),"A board".into()),("z".into(),"Z board".into())];p.default_board=Some("z".into());p.default_room=Some(id("Zroom"));
         let rows=tree_rows(&[p],&[room("Aroom"),room("Zroom")],&HashSet::from(["Work".into()]),"");
@@ -1053,11 +1145,61 @@ mod tests {
         assert_eq!(tree_notice(ProjectTreeMode::Projects,Some("temporary"),false,false,false),("Hagency Projects could not be loaded. Retrying…",true));
         assert_eq!(tree_notice(ProjectTreeMode::Projects,Some("owner_authorization_required"),false,false,false),("Sign in again to restore Projects for this account",true));
         assert_eq!(tree_notice(ProjectTreeMode::Projects,None,false,false,false),("",false));
-        for mode in [ProjectTreeMode::Projects,ProjectTreeMode::GroupChats] {
-            assert_eq!(tree_notice(mode,Some("local_service_not_running"),false,false,false),("The local service is not running for this account.",true));
+        assert_eq!(tree_notice(ProjectTreeMode::Projects,Some("local_service_not_running"),false,false,false),("The local service is not running for this account.",true));
+        for error in ["temporary","local_service_not_running","owner_authorization_required","project_directory_timeout"] {
+            assert_eq!(tree_notice(ProjectTreeMode::GroupChats,Some(error),false,false,false),("Could not load group chats. Try again.",true));
         }
-        assert_eq!(tree_notice(ProjectTreeMode::GroupChats,Some("temporary"),false,false,false),("Loading group chat classification…",true),"Group classification fails closed until Project discovery recovers");
+        assert_eq!(tree_notice(ProjectTreeMode::GroupChats,None,true,false,false),("Loading group chats…",true));
+        assert_eq!(tree_notice(ProjectTreeMode::GroupChats,None,false,false,false),("",false),"ready private chats do not imply an outstanding group read");
     }
+    #[tokio::test]
+    async fn directory_deadline_keeps_original_read_alive_for_cleanup() {
+        let (release,waiting)=tokio::sync::oneshot::channel();
+        let (entered,started)=tokio::sync::oneshot::channel();
+        let (done,finished)=tokio::sync::oneshot::channel();
+        let read=tokio::spawn(async move {
+            entered.send(()).unwrap();
+            waiting.await.unwrap();
+            done.send(()).unwrap();
+            Ok::<_,String>(())
+        });
+        started.await.unwrap();
+        assert_eq!(bounded_tree_read(read,std::time::Duration::from_millis(1)).await.unwrap_err(),"project_directory_timeout");
+        release.send(()).expect("UI timeout must not abort original native work");
+        finished.await.unwrap();
+    }
+
+    #[test]
+    fn chat_error_keeps_private_rows_visible_and_retry_does_not_duplicate_an_inflight_read() {
+        let mut cx=Cx::new(Box::new(|_,_|{}));
+        let mut tree=cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm);crate::app::register_widgets(vm);
+            let value=script_eval!(vm,{mod.widgets.ProjectTree {}});
+            ProjectTree::script_from_value(vm,value)
+        });
+        tree.mode=ProjectTreeMode::GroupChats;
+        tree.error=Some("project_service_unavailable".into());
+        let mut private=room("Alice");private.is_direct=true;
+        tree.rooms=vec![private];tree.rows=vec![Row::Direct,Row::Room(id("Alice"))];
+        super::super::mobile::new_chat_tests::draw_with_state(&mut cx,&mut tree,280.0,&mut crate::app::AppState::default());
+        assert!(tree.view.view(&cx,ids!(notice)).visible());
+        assert!(!tree.view.widget(&cx,ids!(loading)).visible());
+        assert!(tree.view.button(&cx,ids!(retry)).visible());
+        assert_eq!(tree.view.label(&cx,ids!(status)).text(),crate::i18n::tr("Could not load group chats. Try again."));
+        let row=tree.view.portal_list(&cx,ids!(list)).item(&mut cx,1,id!(Row));
+        assert_eq!(row.label(&cx,ids!(name)).text(),"Alice");
+        let button=tree.view.button(&cx,ids!(retry));
+        let actions=cx.capture_actions(|cx|cx.widget_action(button.widget_uid(),ButtonAction::Clicked(KeyModifiers::default())));
+        tree.pending=true;tree.request=42;tree.active=true;
+        tree.handle_event(&mut cx,&Event::Actions(actions),&mut Scope::empty());
+        assert_eq!(tree.request,42);assert!(tree.pending);assert_eq!(tree.rows.len(),2);
+        tree.pending=false;
+        let actions=cx.capture_actions(|cx|cx.widget_action(button.widget_uid(),ButtonAction::Clicked(KeyModifiers::default())));
+        tree.handle_event(&mut cx,&Event::Actions(actions),&mut Scope::empty());
+        assert_eq!(tree.error.as_deref(),Some("owner_authorization_required"),"Retry rechecks the current account rather than remaining in false Loading");
+        assert!(!tree.pending);
+    }
+
     #[test]
     fn first_project_navigation_initializes_identity_without_late_expansion_override() {
         let mut cx = Cx::new(Box::new(|_, _| {}));
@@ -1213,10 +1355,10 @@ mod tests {
         assert_eq!(workspace_rows(ProjectTreeMode::Projects, &projects, &rooms, &expanded, "alice"), vec![Row::Project("Work".into()), Row::Room(id("Design"))]);
         let chats = workspace_rows(ProjectTreeMode::GroupChats, &projects, &rooms, &expanded, "");
         assert!(!chats.iter().any(|row| matches!(row, Row::Project(_))));
-        assert_eq!(chats,vec![Row::Room(id("General")),Row::Invite(id("Invite"))]);
+        assert_eq!(chats,vec![Row::Direct,Row::Room(id("Alice")),Row::Other,Row::Room(id("General")),Row::Invite(id("Invite"))]);
         assert!(chats.contains(&Row::Invite(id("Invite"))));
         assert!(!chats.contains(&Row::Room(id("Secret"))));
-        assert_eq!(workspace_rows(ProjectTreeMode::GroupChats, &projects, &rooms, &expanded, "alice"), Vec::<Row>::new());
+        assert_eq!(workspace_rows(ProjectTreeMode::GroupChats, &projects, &rooms, &expanded, "alice"), vec![Row::Direct,Row::Room(id("Alice"))]);
     }
     #[test]
     fn only_registered_projects_form_two_level_tree_and_unjoined_rooms_never_appear() {
@@ -1346,7 +1488,7 @@ mod tests {
         let mut other=room("Social");other.invited=true;
         let rooms=vec![space,private,other];
         assert_eq!(workspace_rows(ProjectTreeMode::Projects,&projects,&rooms,&expanded,""),vec![Row::Invitations,Row::Invite(id("New Project")),Row::Project("Work".into()),Row::Invite(id("Private"))]);
-        assert_eq!(workspace_rows(ProjectTreeMode::GroupChats,&projects,&rooms,&expanded,""),vec![Row::Invite(id("Social"))]);
+        assert_eq!(workspace_rows(ProjectTreeMode::GroupChats,&projects,&rooms,&expanded,""),vec![Row::Other,Row::Invite(id("Social"))]);
     }
     #[test]
     fn removing_room_mapping_returns_chat_to_other_and_project_identity_not_space_name() {

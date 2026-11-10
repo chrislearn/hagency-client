@@ -6,6 +6,7 @@ use super::{backend::Service, model::*, approvals::Notices};
 use std::{cell::Cell, collections::HashSet, time::Instant};
 use crate::sliding_sync::spawn_async_task;
 use super::board::ProjectBoardWidgetExt;
+use crate::shared::navigation_bar_button::NavigationBarButtonWidgetRefExt;
 use crate::shared::{feedback::{InlineNoticeWidgetExt,InlineNoticeWidgetRefExt}, popup_list::PopupKind};
 mod ledger;
 mod usage;
@@ -15,6 +16,8 @@ mod recovery;
 mod crypto;
 mod project_navigation;
 mod model_resources;
+#[cfg(debug_assertions)]
+mod preview;
 pub mod approval_discovery;
 
 #[derive(Clone, Debug)]
@@ -596,21 +599,18 @@ script_mod! {
         height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
         icon_walk: Walk{width: 0 height: 0} spacing: 0
     }
-    let Section = RoundedView {width: Fill height: Fit flow: Down padding: 16 spacing: 10
-        draw_bg +: {color: mod.widgets.RINX_SURFACE border_color: mod.widgets.RINX_BORDER border_size: 1 border_radius: 8}
-    }
+    let Section = RinxSection {}
     let DeviceBadge = RoundedView {width: Fit height: 24 align: Align{y:0.5} padding: Inset{left: 8 right: 8 top: 0 bottom: 0}
         draw_bg +: {color: mod.widgets.RINX_HOVER border_radius: 8}
         device_label := RinxLabel {width: Fit height: Fit padding: 0 draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: mod.widgets.RINX_META_SIZE}}}
     }
-    let OverviewMetric = RinxCard {width:Fill height:100 padding:16 flow:Down spacing:10
+    let OverviewMetric = RinxSection {width:Fill height:Fit{min:104} spacing:RINX_SPACE_3
         caption := RinxHint {width:Fill max_lines:1 text_overflow:Ellipsis}
         value := Text {text:"—" draw_text.text_style:theme.font_bold{font_size:mod.widgets.RINX_DISPLAY_SIZE}}
     }
     let Cards = PortalList {width: Fill height: Fill
-        Card := RoundedView {width: Fill height: Fit flow: Right padding: 16 spacing: 16 margin: Inset{right: 20 bottom: 12} align: Align{y: 0.5}
-            draw_bg +: {color: mod.widgets.RINX_SURFACE border_color: mod.widgets.RINX_BORDER border_size: 1 border_radius: 8}
-            content := View {width: Fill height: Fit flow: Down spacing: 6
+        Card := RinxListRow {margin: Inset{right: 12 bottom: RINX_SPACE_3}
+            content := View {width: Fill height: Fit flow: Down spacing: RINX_SPACE_2
                 title := Text {draw_text.text_style: theme.font_bold{font_size: mod.widgets.RINX_TITLE_SIZE}}
                 badge_row := View {width: Fill height: Fit flow: Flow.Right{wrap: true} spacing: 6
                     audience_badge := DeviceBadge {visible: false}
@@ -630,8 +630,22 @@ script_mod! {
             }
             open := Action {text: #(crate::i18n::tr("View details")) i18n_text: "View details"}
         }
+        SidebarCard := View {width:Fill height:Fit flow:Down margin:Inset{bottom:4}
+            open := NavigationBarButton {width:Fill height:Fit flow:Down padding:10 spacing:5
+                draw_bg +: {color_hover:mod.widgets.RINX_HOVER color_active:mod.widgets.RINX_SELECTED border_radius:6}
+                title := Text {max_lines:2 text_overflow:Ellipsis draw_text.text_style:theme.font_bold{font_size:mod.widgets.RINX_UI_SIZE}}
+                summary := Text {max_lines:1 text_overflow:Ellipsis draw_text +: {color:mod.widgets.RINX_MUTED text_style:theme.font_regular{font_size:mod.widgets.RINX_META_SIZE}}}
+                badge_row := View {width:Fill height:Fit flow:Flow.Right{wrap:true} spacing:4
+                    audience_badge := DeviceBadge {visible:false}
+                    device_badge := DeviceBadge {visible:false}
+                    runtime_badge := RinxGhostButton {visible:false height:24 width:Fit padding:Inset{left:6 right:6} icon_walk:Walk{width:0 height:0}}
+                    service_control := RobrixNeutralIconButton {visible:false width:Fit height:24 padding:Inset{left:6 right:6} spacing:4 icon_walk:Walk{width:14 height:14} draw_icon.svg:ICON_SERVICE_PLAY}
+                }
+            }
+        }
+        SidebarEmpty := View {width:Fill height:Fit padding:10 empty_message := Text {draw_text +: {color:mod.widgets.RINX_MUTED text_style:theme.font_regular{font_size:mod.widgets.RINX_META_SIZE}}}}
         Filler := View {width: Fill height: 64}
-        Empty := View {width: Fill height: 64 padding: 16 margin: Inset{right: 20}
+        Empty := RinxSection {width: Fill height: Fit padding: RINX_SPACE_8 margin: Inset{right: 12}
             empty_message := Text {text: #(crate::i18n::tr("No Projects yet. Create a Project to start a shared workspace.")) i18n_text: "No Projects yet. Create a Project to start a shared workspace."}
         }
     }
@@ -668,20 +682,38 @@ script_mod! {
     }
     mod.widgets.HagencyPanel = #(HagencyPanel::register_widget(vm)) {
         ..mod.widgets.SolidView
-        width: Fill height: Fill flow: Down padding: Inset{top: 8 left: 12 right: 0 bottom: 0} spacing: 6 draw_bg.color: mod.widgets.RINX_CONTENT_BG
-        panel_header := View {width:Fill height:Fit margin:Inset{right:20} spacing:6 align:Align{y:0.5}
+        width:Fill height:Fill flow:Right padding:0 spacing:0 draw_bg.color:mod.widgets.RINX_CONTENT_BG
+        agent_sidebar := SolidView {visible:false width:240 height:Fill flow:Down padding:Inset{left:10 right:10 top:16 bottom:12} spacing:8
+            draw_bg.color:mod.widgets.RINX_PANEL_BG
+            agent_sidebar_heading := View {width:Fill height:28 flow:Right spacing:4 align:Align{y:0.5}
+                RinxLabel {width:Fill text:#(crate::i18n::tr("My Agents")) i18n_text:"My Agents" draw_text.text_style:theme.font_bold{font_size:mod.widgets.RINX_HEADING_SIZE}}
+                sidebar_refresh := RinxIconButton {width:28 height:28 draw_icon.svg:crate_resource("self://resources/icons/article_refresh.svg")}
+                sidebar_new := RinxIconButton {width:28 height:28 draw_icon.svg:ICON_ADD}
+            }
+            agent_search := Input {width:Fill empty_text:#(crate::i18n::tr("Search Agents")) i18n_empty_text:"Search Agents"}
+            agent_list_holder := View {width:Fill height:Fill agent_list := Cards {}}
+            agent_sidebar_footer := View {width:Fill height:Fit flow:Down spacing:4
+                agent_approval_chats := Action {visible:#(cfg!(feature="agent_chat")) width:Fill text:#(crate::i18n::tr("Agent approval chats")) i18n_text:"Agent approval chats"}
+                pending_operations := Action {visible:false width:Fill text:#(crate::i18n::tr("Pending operations")) i18n_text:"Pending operations"}
+                ledger_toggle := Action {width:Fill text:#(crate::i18n::tr("Ledger backups")) i18n_text:"Ledger backups"}
+            }
+        }
+        agent_sidebar_divider := SolidView {visible:false width:1 height:Fill draw_bg.color:mod.widgets.RINX_DIVIDER}
+        main_content := View {width:Fill height:Fill flow:Down padding:RINX_SPACE_6 spacing:RINX_SPACE_4
+        panel_header := View {width:Fill height:Fit margin:Inset{right:12} spacing:RINX_SPACE_3 align:Align{y:0.5}
             title_row := View {width:Fill height:Fit spacing:8 align:Align{y:0.5}
+            title_group := View {width:Fill height:Fit{min:32} spacing:8 align:Align{y:0.5}
             back := RinxIconButton {visible:false width:32 height:32 draw_icon.svg:ICON_ARROW_BACK}
-            title_group := View {width:Fill height:32 spacing:8 align:Align{y:0.5}
-            heading := Text {width:Fit{max:FitBound.Rel{base:Base.Line factor:0.9}} max_lines:1 text_overflow:Ellipsis text: #(crate::i18n::tr("Projects")) i18n_text: "Projects" draw_text.text_style: theme.font_bold{font_size: mod.widgets.RINX_TITLE_SIZE}}
+            heading := RinxPageTitle {width:Fit{max:FitBound.Rel{base:Base.Line factor:0.9}} max_lines:1 text_overflow:Ellipsis text: #(crate::i18n::tr("Projects")) i18n_text: "Projects"}
             loading_status := LoadingSpinner {visible: false width: 18 height: 18 draw_bg +: {color: mod.widgets.RINX_MUTED stroke_width: 2.0}}
             }
+            header_actions := RinxToolbar {width:Fit
             new_item := Primary {text: #(crate::i18n::tr("New Project")) i18n_text: "New Project"}
             show_archived_projects := RinxCheckBox {text: #(crate::i18n::tr("Archived projects")) i18n_text: "Archived projects"}
             refresh := Action {text: #(crate::i18n::tr("Refresh")) i18n_text: "Refresh"}
-            ledger_toggle := Action {visible: false text: #(crate::i18n::tr("Ledger backups")) i18n_text: "Ledger backups"}
             }
-            project_tabs := View {visible:false width: Fit height: Fit flow: Flow.Right{wrap: true} spacing: 4
+            }
+            project_tabs := RinxToolbar {visible:false width: Fit
                         overview_tab := Action {height:32 padding:Inset{left:10 right:10}text: #(crate::i18n::tr("Overview")) i18n_text: "Overview"}
                         board_tab := Action {height:32 padding:Inset{left:10 right:10}text: #(crate::i18n::tr("Boards")) i18n_text: "Boards"}
                         rooms_tab := Action {height:32 padding:Inset{left:10 right:10}text: #(crate::i18n::tr("Rooms")) i18n_text: "Rooms"}
@@ -691,10 +723,11 @@ script_mod! {
                     }
         }
         owner := Text {visible: false}
-        status_holder := InlineNotice {margin: Inset{right: 20}}
+        status_holder := InlineNotice {margin: Inset{right: 12}}
         login := Action {visible: false text: #(crate::i18n::tr("Sign in again")) i18n_text: "Sign in again"}
-        lists_pane := View {width: Fill height: Fill margin: Inset{bottom: 16} flow: Down spacing: 8
-                ledger_panel := Section {visible: false width: Fill height: Fit flow: Down spacing: 8 margin: Inset{right: 20}
+        lists_pane := View {width: Fill height: Fill flow: Down spacing: RINX_SPACE_3
+                ledger_viewport := ScrollYView {visible:false width:Fill height:Fill flow:Down
+                ledger_panel := Section {visible: false margin: Inset{right: 12}
                     Text {text: #(crate::i18n::tr("Owner ledger backup")) i18n_text: "Owner ledger backup" draw_text.text_style: theme.font_bold{font_size: mod.widgets.RINX_TITLE_SIZE}}
                     Text {text: #(crate::i18n::tr("Includes Agent settings, usage, pending requests and saved replies on this device. Keep backups private. Provider and Matrix login files are excluded.")) i18n_text: "Includes Agent settings, usage, pending requests and saved replies on this device. Keep backups private. Provider and Matrix login files are excluded."}
                     ledger_path := Input {empty_text: #(crate::i18n::tr("Full backup file path on this device"))}
@@ -708,14 +741,15 @@ script_mod! {
                     ledger_confirm := RinxCheckBox {text: #(crate::i18n::tr("Restore the checked backup into this owner's empty ledger")) i18n_text: "Restore the checked backup into this owner's empty ledger"}
                     ledger_restore := Primary {text: #(crate::i18n::tr("Restore checked backup")) i18n_text: "Restore checked backup"}
                 }
-                agent_recovery := View {visible: false width: Fill height: Fit flow: Down margin: Inset{right: 20}
+                }
+                agent_recovery := ScrollYView {visible:false width:Fill height:Fill flow:Down margin:Inset{right:20}
                     agent_request_list := FlatList {width: Fill height: Fit flow: Down spacing: 8
                         scroll_bars +: {show_scroll_x: false show_scroll_y: false}
                         Request := View {width: Fill height: Fit flow: Down spacing: 6
                             request_notice := InlineNotice {padding: 10 spacing: 4
-                                header +: {flow: Flow.Right{wrap: true} spacing: 8
+                                header +: {flow: Flow.Right{wrap: true row_align: RowAlign.Center} spacing: 8
                                     title +: {width: Fit}
-                                    request_actions := View {width: Fit height: Fit flow: Flow.Right{wrap: true} spacing: 8
+                                    request_actions := View {width: Fit height: Fit flow: Flow.Right{wrap: true row_align: RowAlign.Center} spacing: 8
                                         check_request := Action {text: #(crate::i18n::tr("Check status")) i18n_text: "Check status"}
                                         retry_request := Primary {text: #(crate::i18n::tr("Retry request")) i18n_text: "Retry request"}
                                         dismiss_request := Action {text: #(crate::i18n::tr("Dismiss failed request")) i18n_text: "Dismiss failed request"}
@@ -724,20 +758,25 @@ script_mod! {
                             }
                         }
                     }
+                    agent_recovery_empty := Text {visible:false text:#(crate::i18n::tr("No unfinished creation or binding commands.")) i18n_text:"No unfinished creation or binding commands."}
                 }
             project_list_holder := View {width: Fill height: Fill project_list := Cards {Card +: {
-                padding: Inset{left:16 right:16 top:10 bottom:10} spacing:12 margin:Inset{right:20 bottom:8}
-                draw_bg.border_radius:mod.widgets.RINX_CONTROL_RADIUS
-                content +: {title +: {max_lines:1 text_overflow:Ellipsis draw_text.text_style:theme.font_bold{font_size:mod.widgets.RINX_BODY_SIZE}}}
+                content +: {title +: {max_lines:2 text_overflow:Ellipsis}}
             }}}
-            agent_list_holder := View {visible: false width: Fill height: Fill flow: Down spacing: 8
-                View {visible: #(cfg!(feature = "agent_chat")) width: Fill height: Fit flow: Flow.Right{wrap: true} padding: Inset{right: 20}
-                    agent_approval_chats := Action {text: #(crate::i18n::tr("Agent approval chats")) i18n_text: "Agent approval chats"}
+
+        }
+        workspace_welcome := View {visible:false width:Fill height:Fill flow:Down align:Align{x:0.5 y:0.5} padding:24
+            welcome_content := View {width:Fill{max:480} height:Fit flow:Down spacing:16 align:Align{x:0.5}
+                welcome_symbol := RoundedView {width:56 height:56 align:Align{x:0.5 y:0.5} draw_bg +: {color:mod.widgets.RBX_ACCENT_SOFT border_radius:12}
+                    project_symbol := View {width:26 height:26 Icon {icon_walk:Walk{width:26 height:26} draw_icon +: {svg:ICON_HIERARCHY color:mod.widgets.RINX_ACCENT}}}
+                    agent_symbol := View {visible:false width:26 height:26 Icon {icon_walk:Walk{width:26 height:26} draw_icon +: {svg:ICON_ROBOT color:mod.widgets.RINX_ACCENT}}}
                 }
-                agent_list := Cards {}
+                welcome_title := RinxPageTitle {width:Fill height:Fit align:Align{x:0.5} text:#(crate::i18n::tr("Select a Project"))}
+                welcome_description := Text {align:Align{x:0.5} draw_text.color:mod.widgets.RINX_MUTED}
+                welcome_new := Primary {text:#(crate::i18n::tr("New Project"))}
             }
         }
-        details_scroll := ScrollYView {visible: false width: Fill height: Fill flow: Down padding: Inset{right: 20 bottom: 16} spacing: 12
+        details_scroll := ScrollYView {visible: false width: Fill height: Fill flow: Down padding: Inset{right: 12 bottom: RINX_SPACE_6} spacing: RINX_SPACE_4
             projects_page := View {width: Fill height: Fit flow: Down spacing: 10
                 View {visible: false width: 0 height: 0 projects := Select {labels: [#(crate::i18n::tr("Select a Project"))]}}
                 project_detail := View {visible: false width: Fill height: Fit flow: Down spacing: 6
@@ -747,12 +786,12 @@ script_mod! {
                     overview_section := View {width:Fill height:Fit flow:Down spacing:20 padding:Inset{top:12 bottom:20}
                         project_details := RinxHint {visible:false}
                         overview_archived := RinxHint {visible:false text:#(crate::i18n::tr("Archived Project · boards are read only")) i18n_text:"Archived Project · boards are read only"}
-                        View {width:Fill height:Fit flow:Right spacing:12
+                        metrics_primary := View {width:Fill height:Fit flow:Right spacing:RINX_SPACE_3
                             metric_tasks := OverviewMetric {caption.text:#(crate::i18n::tr("Tasks")) caption.i18n_text:"Tasks"}
                             metric_done := OverviewMetric {caption.text:#(crate::i18n::tr("Completed")) caption.i18n_text:"Completed" value.draw_text.color:mod.widgets.RINX_ACCENT}
                             metric_overdue := OverviewMetric {caption.text:#(crate::i18n::tr("Overdue")) caption.i18n_text:"Overdue"}
                         }
-                        View {width:Fill height:Fit flow:Right spacing:12
+                        metrics_secondary := View {width:Fill height:Fit flow:Right spacing:RINX_SPACE_3
                             metric_boards := OverviewMetric {caption.text:#(crate::i18n::tr("Boards")) caption.i18n_text:"Boards"}
                             metric_members := OverviewMetric {caption.text:#(crate::i18n::tr("Members")) caption.i18n_text:"Members"}
                             metric_progress := OverviewMetric {caption.text:#(crate::i18n::tr("Completion")) caption.i18n_text:"Completion"}
@@ -1311,6 +1350,7 @@ script_mod! {
                 }
             }
         }
+        }
     }
 }
 
@@ -1322,6 +1362,11 @@ pub struct HagencyPanel {
     source: ScriptObjectRef,
     #[deref]
     view: View,
+    #[rust] workspace_split:bool,
+    #[rust] workspace_desktop:bool,
+    #[rust] agent_query:String,
+    #[rust] agent_recovery_open:Cell<bool>,
+    #[rust] visible_agent_indices:Vec<usize>,
     #[rust]
     active: bool,
     #[rust] ledger_open: bool,
@@ -1410,7 +1455,9 @@ pub struct HagencyPanel {
     #[rust] board_creation: Option<(String,String)>,
     #[rust] show_archived_projects: bool,
     #[rust] all_projects: Vec<Value>,
-    #[rust] header_stacked:Option<bool>,
+    #[rust] page_layout:Option<crate::theme::layout::PageLayout>,
+    #[rust] content_width:Option<f64>,
+    #[rust] layout_theme:Option<crate::theme::Snapshot>,
     #[rust] board_creation_open:bool,
     #[rust]
     credential_ref: String,
@@ -1980,7 +2027,7 @@ impl HagencyPanel {
         self.navigation_ready.set(false);
         self.busy = busy;
         for id in [
-            ids!(back),
+            ids!(back),ids!(welcome_new),ids!(sidebar_new),ids!(sidebar_refresh),ids!(pending_operations),
             ids!(projects),
             ids!(rooms),
             ids!(agents),
@@ -2026,6 +2073,7 @@ impl HagencyPanel {
         }
     }
     fn list_page(&self, cx: &mut Cx) {
+        self.agent_recovery_open.set(false);
         self.navigation_ready.set(false);
         self.status(cx, "");
         self.view.label(cx, ids!(heading)).set_text(
@@ -2522,8 +2570,11 @@ impl HagencyPanel {
         self.view
             .view(cx, ids!(requester_holder))
             .set_visible(cx, policy_visible && layer == 2);
-        let list_visible = !self.view.view(cx,ids!(agent_detail)).visible() && !self.view.view(cx,ids!(agent_create)).visible();
-        self.view.view(cx,ids!(agent_recovery)).set_visible(cx, self.page == Page::Agents && list_visible && !self.agent_pending_commands.is_empty());
+        let recovery=self.page==Page::Agents && self.agent_recovery_open.get();
+        self.view.view(cx,ids!(agent_recovery)).set_visible(cx,recovery);
+        self.view.widget(cx,ids!(agent_recovery_empty)).set_visible(cx,recovery && self.agent_pending_commands.is_empty());
+        self.view.button(cx,ids!(pending_operations)).set_visible(cx,self.page==Page::Agents && !self.display_blocked && !self.agent_pending_commands.is_empty());
+        self.view.button(cx,ids!(pending_operations)).set_text(cx,&crate::i18n::format("Pending operations ({count})",&[("count",self.agent_pending_commands.len().to_string())]));
         let detail = match self.page {
             Page::Projects => {
                 self.view.view(cx, ids!(project_detail)).visible()
@@ -2531,17 +2582,32 @@ impl HagencyPanel {
             }
             Page::Agents => {
                 self.view.view(cx, ids!(agent_detail)).visible()
-                    || self.view.view(cx, ids!(agent_create)).visible()
+                    || self.view.view(cx, ids!(agent_create)).visible() || recovery
             }
         };
         if !detail {
             self.view.label(cx,ids!(heading)).set_text(cx,crate::i18n::tr(if self.page==Page::Projects {"Projects"} else {"My Agents"}));
             self.view.button(cx,ids!(new_item)).set_text(cx,crate::i18n::tr(if self.page==Page::Projects {"New Project"} else {"New Agent"}));
         }
-        self.view.view(cx,ids!(lists_pane)).set_visible(cx,!detail && !self.display_blocked);
-        self.view.view(cx,ids!(details_scroll)).set_visible(cx,detail && !self.display_blocked);
-        self.view.view(cx,ids!(project_list_holder)).set_visible(cx,!detail && self.page==Page::Projects);
-        self.view.view(cx,ids!(agent_list_holder)).set_visible(cx,!detail && self.page==Page::Agents);
+        let agents=self.page==Page::Agents;
+        let ledger=agents && self.ledger_open;
+        let welcome=!detail && self.workspace_desktop && (!agents || self.workspace_split) && !self.ledger_open;
+        self.view.view(cx,ids!(workspace_welcome)).set_visible(cx,welcome);
+        self.view.view(cx,ids!(panel_header)).set_visible(cx,!welcome);
+        self.view.view(cx,ids!(agent_sidebar)).set_visible(cx,agents && (self.workspace_split || !detail && !ledger));
+        self.view.view(cx,ids!(agent_sidebar_divider)).set_visible(cx,agents && self.workspace_split);
+        self.view.view(cx,ids!(main_content)).set_visible(cx,!agents || self.workspace_split || detail || ledger);
+        self.view.label(cx,ids!(welcome_title)).set_text(cx,crate::i18n::tr(if agents {"Choose an Agent"} else {"Select a Project"}));
+        self.view.label(cx,ids!(welcome_description)).set_text(cx,crate::i18n::tr(if agents {"Select an Agent on the left to manage its identity, model and service."} else {"Choose a Project on the left to open its boards, rooms and conversations."}));
+        self.view.button(cx,ids!(welcome_new)).set_text(cx,crate::i18n::tr(if agents {"New Agent"} else {"New Project"}));
+        self.view.widget(cx,ids!(agent_symbol)).set_visible(cx,agents);
+        self.view.widget(cx,ids!(project_symbol)).set_visible(cx,!agents);
+        self.view.view(cx,ids!(lists_pane)).set_visible(cx,(!detail || recovery) && !self.display_blocked);
+        if let Some(mut list)=self.view.view(cx,ids!(lists_pane)).borrow_mut() {list.walk.height=if !recovery && !ledger && (welcome || agents) {Size::fit()}else{Size::fill()};}
+        self.view.view(cx,ids!(details_scroll)).set_visible(cx,detail && !recovery && !self.display_blocked);
+        if recovery {self.view.label(cx,ids!(heading)).set_text(cx,crate::i18n::tr("Pending operations"));}
+        self.view.view(cx,ids!(project_list_holder)).set_visible(cx,!detail && self.page==Page::Projects && !welcome);
+        self.view.view(cx,ids!(agent_list_holder)).set_visible(cx,agents && !self.display_blocked && (self.workspace_split || !detail));
         self.view.button(cx,ids!(agent_approval_chats)).set_enabled(cx,!self.busy);
         let members=self.page==Page::Projects && detail && (self.view.view(cx,ids!(members_section)).visible() || self.view.view(cx,ids!(board_section)).visible());
         for id in [ids!(projects_page),ids!(project_detail),ids!(members_section)] {
@@ -2549,12 +2615,12 @@ impl HagencyPanel {
             let height=if members {Size::fill()} else {Size::fit()};
             script_apply_eval!(cx,view,{height:#(height)});
         }
-        self.view
-            .button(cx, ids!(new_item))
-            .set_visible(cx, !detail);
-        self.view.button(cx, ids!(refresh)).set_visible(cx, !detail);
-        self.view.button(cx, ids!(back)).set_visible(cx, detail);
-        self.view.button(cx, ids!(ledger_toggle)).set_visible(cx, !detail && self.page == Page::Agents);
+        self.view.button(cx,ids!(new_item)).set_visible(cx,!detail && !ledger);
+        self.view.button(cx,ids!(refresh)).set_visible(cx,!detail && !ledger);
+        self.view.button(cx,ids!(back)).set_visible(cx,detail || ledger);
+        self.view.view(cx,ids!(ledger_viewport)).set_visible(cx,!detail && ledger);
+        if ledger {self.view.label(cx,ids!(heading)).set_text(cx,crate::i18n::tr("Ledger backups"));}
+        self.view.button(cx, ids!(ledger_toggle)).set_visible(cx, self.page == Page::Agents);
         self.view.view(cx, ids!(ledger_panel)).set_visible(cx, !detail && self.page == Page::Agents && self.ledger_open);
         self.render_ledger(cx);
         self.render_usage_controls(cx);
@@ -2577,7 +2643,8 @@ impl HagencyPanel {
         }
     }
     fn open_card(&mut self, cx: &mut Cx, actions: &Actions) -> bool {
-        if !self.view.view(cx,ids!(lists_pane)).visible() {return false;}
+        if self.page==Page::Projects && !self.view.view(cx,ids!(project_list_holder)).visible()
+            || self.page==Page::Agents && !self.view.view(cx,ids!(agent_list_holder)).visible() {return false;}
         let list = self.view.portal_list(
             cx,
             if self.page == Page::Projects {
@@ -2586,7 +2653,8 @@ impl HagencyPanel {
                 ids!(agent_list)
             },
         );
-        for (index, row) in list.items_with_actions(actions) {
+        for (position, row) in list.items_with_actions(actions) {
+            let index=if self.page==Page::Agents {match self.visible_agent_indices.get(position) {Some(index)=>*index,None if self.agent_query.is_empty()=>position,None=>continue}}else{position};
             if self.page == Page::Agents && !list.was_scrolling() && row.button(cx,ids!(runtime_badge)).clicked(actions) {
                 let Some(agent)=self.agents.get(index) else {return true;};
                 let id=string(agent,"id");
@@ -2623,10 +2691,11 @@ impl HagencyPanel {
                 self.run(cx,Target::ListService,Command::Local {agent_id:id,action:if enabled {LocalAction::StopAgentService} else {LocalAction::StartAgentService},input:if enabled {None} else {Some(json!({}))},binding_id:None,requester:None});
                 return true;
             }
-            if !list.was_scrolling() && row.button(cx, ids!(open)).clicked(actions) {
+            if !list.was_scrolling() && (row.button(cx,ids!(open)).clicked(actions) || row.navigation_bar_button(cx,ids!(open)).clicked(actions)) {
                 if self.page == Page::Projects {
                     self.project_detail(cx, index);
                 } else {
+                    if self.agents.get(index).is_none_or(|agent|self.agent_card_targets.get(&row.widget_uid()).map(String::as_str)!=Some(string(agent,"id"))) {return true;}
                     self.agent_detail(cx, index);
                 }
                 return true;
@@ -2643,6 +2712,7 @@ impl HagencyPanel {
         self.wanted_project_section = None;
         self.wanted_agent = None;
         self.wanted_model = None;
+        self.ledger_open=false;
         self.list_page(cx);
         if self.page == Page::Agents {self.run(cx,Target::AgentJournal,Command::AgentCommands);}
         else {self.refresh_runtime_list(cx);}
@@ -3904,8 +3974,20 @@ impl ScriptHook for HagencyPanel {
 }
 impl Widget for HagencyPanel {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        if matches!(event, Event::LiveEdit | Event::ScriptReapply) {
+            self.page_layout=None;
+            self.content_width=None;
+            self.layout_theme=None;
+        }
         if matches!(event, Event::Actions(_) | Event::Startup | Event::LiveEdit | Event::ScriptReapply) {
             self.navigation_ready.set(false);
+        }
+        if let Event::Actions(actions)=event {
+            if let Some(query)=self.view.text_input(cx,ids!(agent_search)).changed(actions) {
+                self.agent_query=query.trim().to_lowercase();
+                self.view.portal_list(cx,ids!(agent_list)).set_first_id_and_scroll(0,0.0);
+                self.view.redraw(cx);
+            }
         }
         if let Event::Actions(actions)=event {for action in actions {
             if let Some(crate::home::project_tree::ArchivedProjectsVisibility(show))=action.downcast_ref() {
@@ -4155,6 +4237,9 @@ impl Widget for HagencyPanel {
         if self.view.inline_notice(cx,ids!(status_holder)).action_clicked(cx,actions) {
             self.list_page(cx);self.run(cx,Target::AgentJournal,Command::AgentCommands);return;
         }
+        if self.view.button(cx,ids!(pending_operations)).clicked(actions) {
+            self.list_page(cx);self.ledger_open=false;self.agent_recovery_open.set(true);self.navigation_ready.set(false);self.view.redraw(cx);return;
+        }
         if self.agent_request_actions(cx,actions) {return;}
         if self.view.view(cx,ids!(agent_create)).visible()
             && (self.view.text_input(cx,ids!(agent_name)).changed(actions).is_some()
@@ -4188,7 +4273,7 @@ impl Widget for HagencyPanel {
         if self.back_to_list(cx, actions) {
             return;
         }
-        if self.view.button(cx, ids!(new_item)).clicked(actions) {
+        if self.view.button(cx,ids!(new_item)).clicked(actions) || self.view.button(cx,ids!(welcome_new)).clicked(actions) || self.view.button(cx,ids!(sidebar_new)).clicked(actions) {
             self.reset_detail_scroll(cx);
             self.list_page(cx);
             if self.page == Page::Projects {
@@ -4457,7 +4542,7 @@ impl Widget for HagencyPanel {
             return;
         }
         if self.view.button(cx,ids!(configuration_refresh)).clicked(actions) {self.load_configuration(cx);return;}
-        if self.view.button(cx, ids!(refresh)).clicked(actions) {
+        if self.view.button(cx,ids!(refresh)).clicked(actions) || self.view.button(cx,ids!(sidebar_refresh)).clicked(actions) {
             if self.page == Page::Projects {
                 self.run(cx, Target::Journal, Command::Creations);
             } else {
@@ -5050,13 +5135,56 @@ impl Widget for HagencyPanel {
         }
     }
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        let stacked=cx.turtle().rect().size.x<760.0;
-        if self.header_stacked!=Some(stacked) {
-            self.header_stacked=Some(stacked);
+        let allocated=cx.peek_walk_turtle(walk).size.x;
+        let desktop=crate::home::home_screen::effective_is_desktop(cx);
+        let split=desktop && self.page==Page::Agents && allocated>=600.0;
+        if self.workspace_desktop!=desktop || self.workspace_split!=split {
+            self.workspace_desktop=desktop;self.workspace_split=split;self.navigation_ready.set(false);self.page_layout=None;
+        }
+        let preferred=cx.global::<crate::settings::app_preferences::AppPreferencesGlobal>().0.sidebar_widths.context.unwrap_or(240.0);
+        let sidebar=if split {preferred.clamp(180.0,(allocated-320.0).clamp(180.0,340.0))}else{allocated};
+        if let Some(mut pane)=self.view.view(cx,ids!(agent_sidebar)).borrow_mut() {pane.walk.width=Size::Fixed(sidebar);}
+        let width=if split {allocated-sidebar-1.0}else{allocated};
+        if self.layout_theme.is_none() {self.layout_theme=Some(crate::theme::snapshot(cx));}
+        let theme = self.layout_theme.as_ref().unwrap();
+        let layout = crate::theme::layout::PageLayout::from_theme(width, &theme);
+        // Forms and summaries keep a readable measure; a board uses the whole
+        // workspace. The scroll viewport itself always stays full width.
+        let measure=if self.view.view(cx,ids!(board_section)).visible() && self.page==Page::Projects {f64::INFINITY}else{theme.reading_width};
+        if self.content_width!=Some(measure) {
+            self.content_width=Some(measure);
+            for id in [ids!(projects_page),ids!(agents_page)] {
+                if let Some(mut content)=self.view.view(cx,id).borrow_mut() {
+                    let mut size=Size::fill();
+                    if measure.is_finite() && let Size::Fill{max,..}=&mut size {*max=Some(measure);}
+                    content.walk.width=size;
+                }
+            }
+        }
+        if self.page_layout!=Some(layout) {
+            self.page_layout=Some(layout);
+            // Scroll viewports reach the outside edge. Their children keep the
+            // same content gutter as the header, leaving the track at the edge.
+            if let Some(mut content)=self.view.view(cx,ids!(main_content)).borrow_mut() {
+                content.layout.padding=Inset{left:layout.gutter,right:0.0,top:layout.gutter,bottom:layout.gutter};
+                content.layout.spacing=layout.gap;
+            }
             let header=self.view.view(cx,ids!(panel_header));
             let tabs=self.view.view(cx,ids!(project_tabs));
-            if let Some(mut header)=header.borrow_mut() {header.layout.flow=if stacked {Flow::Down}else{Flow::right()};header.layout.align=Align{x:0.0,y:0.5};}
-            if let Some(mut tabs)=tabs.borrow_mut() {tabs.walk.width=if stacked {Size::fill()}else{Size::fit()};}
+            if let Some(mut header)=header.borrow_mut() {header.layout.flow=Flow::Down;header.layout.align=Align{x:0.0,y:0.5};header.walk.margin.right=layout.gutter;}
+            for id in [ids!(status_holder), ids!(ledger_panel)] {
+                let mut widget=self.view.widget(cx,id);
+                script_apply_eval!(cx,widget,{margin:mod.turtle.Inset{right:#(layout.gutter)}});
+            }
+            if let Some(mut scroll)=self.view.view(cx,ids!(details_scroll)).borrow_mut() {scroll.layout.padding.right=layout.gutter;}
+            if let Some(mut tabs)=tabs.borrow_mut() {tabs.walk.width=Size::fill();}
+            let row=self.view.view(cx,ids!(title_row));
+            if let Some(mut row)=row.borrow_mut() {row.layout.flow=if layout.stacked {Flow::Down} else {Flow::right()};}
+            let actions=self.view.view(cx,ids!(header_actions));
+            if let Some(mut actions)=actions.borrow_mut() {actions.walk.width=if layout.stacked {Size::fill()}else{Size::fit()};}
+            for id in [ids!(metrics_primary), ids!(metrics_secondary)] {
+                if let Some(mut row)=self.view.view(cx,id).borrow_mut() {row.layout.flow=if layout.compact {Flow::Down}else{Flow::right()};}
+            }
         }
         if self.page==Page::Projects && self.view.view(cx,ids!(board_section)).visible() {
             let loading=self.busy || self.view.project_board(cx,ids!(board)).is_loading();
@@ -5175,33 +5303,37 @@ impl Widget for HagencyPanel {
                 }
                 continue;
             }
-            let rows = if self.page == Page::Projects {
-                &self.projects
-            } else {
-                &self.agents
-            };
-            let total = rows.len().max(1);
+            let rows = if self.page==Page::Projects {&self.projects}else{&self.agents};
+            let indices:Vec<usize>=rows.iter().enumerate().filter(|(_,agent)|self.page==Page::Projects || self.agent_query.is_empty() || string(agent,"displayName").to_lowercase().contains(&self.agent_query) || string(agent,"puppetMxid").to_lowercase().contains(&self.agent_query)).map(|(index,_)|index).collect();
+            if self.page==Page::Agents {self.visible_agent_indices=indices.clone();}
+            let total=indices.len().max(1);
             if list.first_id() >= total {
                 list.set_first_id_and_scroll(0, 0.0);
             }
             list.set_item_range(cx, 0, total);
             while let Some(index) = list.next_visible_item(cx) {
-                let Some(value) = rows.get(index) else {
-                    let row = list.item(cx, index, card_template(rows.len(), index));
-                    if rows.is_empty() && index == 0 {
+                let Some(value)=indices.get(index).and_then(|index|rows.get(*index)) else {
+                    let row=list.item(cx,index,if self.page==Page::Agents {if indices.is_empty() && index==0 {id!(SidebarEmpty)}else{id!(Filler)}}else{card_template(indices.len(),index)});
+                    if let Some(mut view)=row.borrow_mut::<View>() {
+                        view.walk.margin.right=if self.page==Page::Agents {0.0}else{self.page_layout.map_or(24.0,|layout|layout.gutter)};
+                    }
+                    if indices.is_empty() && index==0 {
                         row.label(cx, ids!(empty_message)).set_text(
                             cx,
                             if self.page == Page::Projects {
                                 project_empty_message(self.projects_loaded,self.busy)
                             } else {
-                                agent_empty_message(self.agents_loaded, self.agents_loading)
+                                if self.agents_loaded && !self.agent_query.is_empty() {crate::i18n::tr("No Agents match your search.")}else{agent_empty_message(self.agents_loaded,self.agents_loading)}
                             },
                         );
                     }
                     row.draw_all(cx, scope);
                     continue;
                 };
-                let row = list.item(cx, index, id!(Card));
+                let row=list.item(cx,index,if self.page==Page::Agents {id!(SidebarCard)}else{id!(Card)});
+                if let Some(mut view)=row.borrow_mut::<View>() {
+                    view.walk.margin.right=self.page_layout.map_or(24.0,|layout|layout.gutter);
+                }
                 let title = if self.page == Page::Projects {
                     string(value, "name")
                 } else {
@@ -5224,12 +5356,13 @@ impl Widget for HagencyPanel {
                 row.view(cx,ids!(badge_row)).set_visible(cx,self.page==Page::Agents || value["archived"]==true);
                 let audience = row.view(cx, ids!(audience_badge));
                 audience.set_visible(cx, self.page == Page::Agents || value["archived"]==true);
-                audience.label(cx, ids!(device_label)).set_text(cx, crate::i18n::tr(if self.page==Page::Agents {audience_label(value)} else {"Archived"}));
+                audience.label(cx, ids!(device_label)).set_text(cx, crate::i18n::tr(if self.page==Page::Agents {match string(value,"visibility") {"private"=>"Private","public"=>"Public",_=>"Unknown"}}else{"Archived"}));
                 row.view(cx, ids!(device_badge)).set_visible(cx, self.page == Page::Agents);
                 if self.page == Page::Agents {
                     let badge = row.widget(cx, ids!(device_badge));
                     let state=agent_device_state(value, &self.current_device_id, &self.execution_devices, self.devices_loaded);
-                    render_device_badge(cx, &badge, state, &self.device_badge(value));
+                    let label=crate::i18n::tr(match state {AgentDeviceState::Here=>"This device",AgentDeviceState::Other=>"Another device",AgentDeviceState::Unassigned=>"Not assigned",AgentDeviceState::Unavailable=>"Device unavailable",AgentDeviceState::Checking=>"Checking…"});
+                    render_device_badge(cx,&badge,state,label);
                     let runtime=row.button(cx,ids!(runtime_badge));runtime.set_visible(cx,state==AgentDeviceState::Here);
                     let label=runtime_list_label(self.runtime_list.get(string(value,"id")),string(value,"id"));
                     let badge=if label.starts_with("Not running") {"Not running"} else if label.starts_with("Running") || label.starts_with("Processing") {"Running"} else if label.starts_with("Service enabled") {"Enabled"} else if label.starts_with("Starting") {"Starting…"} else if label.starts_with("Checking") {"Checking…"} else if label=="Waiting for the previous runtime lease to be released…" {"Waiting for lease"} else {"Needs attention"};
@@ -5246,6 +5379,10 @@ impl Widget for HagencyPanel {
                 let mut control=control;
                 if enabled {script_apply_eval!(cx,control,{draw_icon +: {svg: mod.widgets.ICON_SERVICE_STOP}});} else if status.is_some_and(service_needs_model) {script_apply_eval!(cx,control,{draw_icon +: {svg: mod.widgets.ICON_SETTINGS}});} else {script_apply_eval!(cx,control,{draw_icon +: {svg: mod.widgets.ICON_SERVICE_PLAY}});}
                 if self.page==Page::Agents && here && let Some(error)=self.runtime_list_errors.get(string(value,"id")) {summary.push_str(&format!("\n{error}"));}
+                if self.page==Page::Agents {summary=string(value,"puppetMxid").to_owned();
+                    let selected=self.agent(cx).as_deref()==Some(string(value,"id"));
+                    row.navigation_bar_button(cx,ids!(open)).set_selected(cx,selected);
+                }
                 row.label(cx, ids!(summary)).set_text(cx, &summary);
                 row.label(cx, ids!(summary))
                     .set_visible(cx, !summary.is_empty());
@@ -5301,7 +5438,7 @@ impl HagencyPanelRef {
             panel.rooms.clear();
             panel.agent_rooms.clear();
             panel.spaces.clear();
-            panel.agents.clear(); panel.runtime_list.clear();panel.runtime_list_errors.clear();panel.runtime_list_loading=false;panel.runtime_list_request=nonce();
+            panel.agents.clear();panel.agent_query.clear();panel.agent_recovery_open.set(false);panel.visible_agent_indices.clear();panel.view.text_input(cx,ids!(agent_search)).set_text(cx,""); panel.runtime_list.clear();panel.runtime_list_errors.clear();panel.runtime_list_loading=false;panel.runtime_list_request=nonce();
             panel.devices_loaded = false; panel.current_device_id.clear(); panel.execution_devices.clear(); panel.execution_agent_record = Value::Null; panel.agent_crypto = Value::Null;panel.render_crypto(cx);
             panel.agents_loaded = false;
             panel.bindings.clear();
@@ -5773,46 +5910,51 @@ mod tests {
         panel.devices_loaded = true;
     }
     #[test]
-    fn registered_management_lists_fill_available_height_and_badges_share_a_row() {
+    fn registered_management_navigation_and_welcome_fit_wide_and_narrow_pages() {
         use makepad_widgets::makepad_draw::cx_draw::CxDraw;
         let mut cx=Cx::new(Box::new(|_,_|{}));
         let mut panel=cx.with_vm(|vm|{makepad_widgets::script_mod(vm);crate::app::register_widgets(vm);vm.bx.captured_errors=Some(Vec::new());let v=script_eval!(vm,{mod.widgets.HagencyPanel {}});let p=HagencyPanel::script_from_value(vm,v);assert!(vm.take_errors().is_empty());p});
         panel.projects=vec![json!({"id":"p1","name":"First project"}),json!({"id":"p2","name":"Second project"})];
         panel.agents=vec![json!({"id":"a1","displayName":"First agent","generation":1,"state":"active","executionDeviceId":"here","puppetMxid":"@agent1:server","visibility":"private"}),json!({"id":"a2","displayName":"Second agent","generation":1,"state":"active","executionDeviceId":"here","puppetMxid":"@agent2:server","visibility":"public"})];
         panel.devices_loaded=true;panel.current_device_id="here".into();panel.execution_devices=vec![json!({"id":"here","revoked":false})];
-        for width in [600.0,980.0] {for page in [Page::Projects,Page::Agents] {for height in [760.0,500.0] {
+        for width in [430.0,980.0] {for page in [Page::Projects,Page::Agents] {for height in [760.0,500.0] {
+            crate::home::home_screen::select_design_preview_mode(&mut cx,width);
             panel.set_page(&mut cx,page);panel.list_page(&mut cx);
             {cx.redraw_all();let pass=DrawPass::new(&mut cx);pass.set_size(&mut cx,dvec2(width,height));let mut dl=DrawList2d::new(&mut cx);let overlay=Overlay{draw_list:DrawList::new(&mut cx)};let event=DrawEvent::default();let mut draw=CxDraw::new(&mut cx,&event);let mut cx2d=Cx2d::new(&mut draw);
             cx2d.begin_pass(&pass,None);dl.begin_always(&mut cx2d);overlay.begin(&mut cx2d);cx2d.begin_root_turtle(dvec2(width,height),Layout::flow_overlay());
             panel.draw_walk_all(&mut cx2d,&mut Scope::empty(),Walk::fixed(width,height));
             overlay.end(&mut cx2d);cx2d.end_pass_sized_turtle();dl.end(&mut cx2d);cx2d.end_pass(&pass);}
-            let list=panel.view.portal_list(&cx,if page==Page::Projects {ids!(project_list)} else {ids!(agent_list)});
+            if page==Page::Projects && panel.workspace_desktop {
+                assert!(panel.view.view(&cx,ids!(workspace_welcome)).visible());
+                assert!(!panel.view.view(&cx,ids!(project_list_holder)).visible());
+                let action=panel.view.button(&cx,ids!(welcome_new)).area().rect(&cx);
+                assert!(action.size.x>0.0 && action.pos.y+action.size.y<=height);
+                continue;
+            }
+            let list=panel.view.portal_list(&cx,if page==Page::Projects {ids!(project_list)}else{ids!(agent_list)});
             let rect=list.area().rect(&cx);
-            assert!(rect.size.y>height-120.0,"list should fill the body: {rect:?}, height {height}");
-            assert!(rect.pos.y+rect.size.y<=height-15.0,"list stays within panel padding: {rect:?}");
-            let second=list.item(&mut cx,1,id!(Card)).area().rect(&cx);assert!(second.size.y>0.0 && second.pos.y+second.size.y<height,"second card is fully visible: {second:?}");
-            let header=panel.view.view(&cx,ids!(title_row)).area().rect(&cx);
-            for id in [ids!(new_item),ids!(refresh)] {
-                let button=panel.view.button(&cx,id).area().rect(&cx);
-                assert!(button.pos.y>=header.pos.y && button.pos.y+button.size.y<=header.pos.y+header.size.y+0.1,"header must contain the complete button: {button:?}, {header:?}");
-            }
-            if page==Page::Projects {
-                let row=list.item(&mut cx,0,id!(Card));let card=row.area().rect(&cx);
-                assert!(card.size.y<=64.0,"Project rows without a topic must remain compact: {card:?}");
-                assert!(!row.label(&cx,ids!(summary)).visible());assert!(!row.view(&cx,ids!(badge_row)).visible());
-                let open=row.button(&cx,ids!(open)).area().rect(&cx);
-                assert!(open.pos.y>=card.pos.y && open.pos.y+open.size.y<=card.pos.y+card.size.y,"project action stays inside its row");
-            }
+            assert!(rect.size.y>100.0 && rect.pos.y+rect.size.y<=height,"navigation uses the remaining height: {rect:?}");
+            let template=if page==Page::Agents {id!(SidebarCard)}else{id!(Card)};
+            let second=list.item(&mut cx,1,template).area().rect(&cx);
+            assert!(second.size.y>0.0 && second.pos.y+second.size.y<height);
             if page==Page::Agents {
-                let row=list.item(&mut cx,0,id!(Card));let device=row.view(&cx,ids!(device_badge)).area().rect(&cx);let runtime=row.button(&cx,ids!(runtime_badge)).area().rect(&cx);
-                if width==980.0 {assert!((device.pos.y-runtime.pos.y).abs()<1.0);assert!(runtime.pos.x>=device.pos.x+device.size.x);}
-                assert!(device.size.y<=28.0 && runtime.size.y<=28.0);
+                let sidebar=panel.view.view(&cx,ids!(agent_sidebar)).area().rect(&cx);
+                assert!((sidebar.size.x-if panel.workspace_split {240.0}else{width}).abs()<1.0);
+                assert!(rect.pos.x>=sidebar.pos.x && rect.pos.x+rect.size.x<=sidebar.pos.x+sidebar.size.x);
+                let row=list.item(&mut cx,0,id!(SidebarCard));
                 let badges=row.view(&cx,ids!(badge_row)).area().rect(&cx);
                 for id in [ids!(audience_badge),ids!(device_badge),ids!(runtime_badge)] {
                     let badge=row.widget(&cx,id).area().rect(&cx);
-                    assert!(badge.size.x>0.0 && badge.size.y>0.0);
-                    assert!(badge.pos.x>=badges.pos.x-1.0 && badge.pos.x+badge.size.x<=badges.pos.x+badges.size.x+1.0,"badge overflows at {width}px: {badge:?} in {badges:?}");
+                    assert!(badge.size.x>0.0 && badge.size.y>0.0 && badge.size.y<=28.0);
+                    assert!(badge.pos.x>=badges.pos.x-1.0 && badge.pos.x+badge.size.x<=badges.pos.x+badges.size.x+1.0);
                 }
+                let footer=panel.view.view(&cx,ids!(agent_sidebar_footer)).area().rect(&cx);
+                assert!(footer.pos.y>=rect.pos.y+rect.size.y && footer.pos.y+footer.size.y<=height);
+                if panel.workspace_split {assert!(panel.view.view(&cx,ids!(workspace_welcome)).visible());}
+            }else {
+                let row=list.item(&mut cx,0,id!(Card));let card=row.area().rect(&cx);
+                assert!(card.size.y<=64.0);
+                assert!(!row.label(&cx,ids!(summary)).visible());
             }
         }}}
         panel.set_page(&mut cx,Page::Projects);panel.view.view(&cx,ids!(project_detail)).set_visible(&mut cx,true);panel.project_section(&mut cx,ids!(members_section));panel.members=vec![json!({"name":"Alice","userId":"@alice:server","membership":"join"})];
@@ -5843,7 +5985,8 @@ mod tests {
         });
         panel.agents=vec![json!({"id":"agent-a","displayName":"Agent","generation":1,"visibility":"private","state":"active"})];
         for width in [420.0,1080.0,1440.0] {
-            panel.set_page(&mut cx,Page::Agents);panel.list_page(&mut cx);
+            crate::home::home_screen::select_design_preview_mode(&mut cx,width);
+            panel.set_page(&mut cx,Page::Agents);panel.list_page(&mut cx);panel.agent_recovery_open.set(true);
             panel.agent_pending_commands=vec![json!({"id":"request-a","operation":"agent.create","state":"unknown","input":{"displayName":"Pending Agent"}})];
             draw(&mut cx,&mut panel,width);
             let requests=panel.view.flat_list(&cx,ids!(agent_request_list));
@@ -5866,19 +6009,55 @@ mod tests {
                 assert!((check.pos.y+check.size.y/2.0-title.pos.y-title.size.y/2.0).abs()<4.0,"actions align with the title: {title:?}, {check:?}");
             }
             let recovery=panel.view.view(&cx,ids!(agent_recovery)).area().rect(&cx);
-            assert!((recovery.size.y-request_rect.size.y).abs()<2.0,"no outer panel padding or repeated headings");
-            let viewport=panel.view.portal_list(&cx,ids!(agent_list)).area().rect(&cx);
-            assert!((viewport.pos.x+viewport.size.x-width).abs()<1.0,"scrolling viewport reaches the panel edge: {viewport:?}");
-            let card=panel.view.portal_list(&cx,ids!(agent_list)).item(&mut cx,0,id!(Card)).area().rect(&cx);
-            assert!((width-card.pos.x-card.size.x-20.0).abs()<1.0,"content keeps its own right gutter: {card:?}");
+            assert!(recovery.size.y>=request_rect.size.y && recovery.pos.y+recovery.size.y<=800.0,"saved operations scroll within the remaining main pane");
+            assert!(row.pos.x>=recovery.pos.x && row.pos.x+row.size.x<=recovery.pos.x+recovery.size.x);
             panel.agent_pending_commands.clear();panel.sync_navigation(&mut cx);draw(&mut cx,&mut panel,width);
+            assert!(panel.view.widget(&cx,ids!(agent_recovery_empty)).visible());
+            panel.list_page(&mut cx);draw(&mut cx,&mut panel,width);
             assert!(!panel.view.view(&cx,ids!(agent_recovery)).visible());
-            assert!(panel.view.portal_list(&cx,ids!(agent_list)).area().rect(&cx).pos.y<viewport.pos.y-50.0);
-            panel.set_page(&mut cx,Page::Projects);panel.list_page(&mut cx);draw(&mut cx,&mut panel,width);
-            let viewport=panel.view.portal_list(&cx,ids!(project_list)).area().rect(&cx);
-            assert!((viewport.pos.x+viewport.size.x-width).abs()<1.0);
+            let sidebar=panel.view.view(&cx,ids!(agent_sidebar)).area().rect(&cx);
+            let viewport=panel.view.portal_list(&cx,ids!(agent_list)).area().rect(&cx);
+            assert!(viewport.size.y>100.0 && viewport.pos.x+viewport.size.x<=sidebar.pos.x+sidebar.size.x);
         }
     }
+    #[test]
+    fn agent_sidebar_search_opens_the_original_record_and_stays_beside_its_detail() {
+        let mut cx=Cx::new(Box::new(|_,_|{}));
+        let mut panel=cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm);crate::app::register_widgets(vm);
+            let value=script_eval!(vm,{mod.widgets.HagencyPanel {}});
+            HagencyPanel::script_from_value(vm,value)
+        });
+        panel.agents=vec![json!({"id":"first","displayName":"First","puppetMxid":"@first:server"}),json!({"id":"second","displayName":"Second","puppetMxid":"@second:server"})];
+        panel.labels(&mut cx,ids!(agents),"Select",&panel.agents,"id");
+        panel.set_page(&mut cx,Page::Agents);panel.list_page(&mut cx);
+        crate::home::home_screen::select_design_preview_mode(&mut cx,1280.0);
+        let input=panel.view.text_input(&cx,ids!(agent_search));
+        let actions=cx.capture_actions(|cx|cx.widget_action(input.widget_uid(),TextInputAction::Changed("second".into())));
+        panel.handle_event(&mut cx,&Event::Actions(actions),&mut Scope::empty());
+        crate::home::mobile::new_chat_tests::draw_with_state(&mut cx,&mut panel,980.0,&mut crate::app::AppState::default());
+        assert_eq!(panel.visible_agent_indices,vec![1]);
+        let list=panel.view.portal_list(&cx,ids!(agent_list));let row=list.item(&mut cx,0,id!(SidebarCard));
+        assert_eq!(row.label(&cx,ids!(title)).text(),"Second");
+        let open=row.navigation_bar_button(&cx,ids!(open));
+        let actions=cx.capture_actions(|cx|cx.group_widget_actions(list.widget_uid(),row.widget_uid(),|cx|cx.widget_action(open.widget_uid(),crate::shared::navigation_bar_button::NavigationBarButtonAction::Clicked)));
+        assert!(panel.open_card(&mut cx,&actions));
+        assert_eq!(panel.agent(&mut cx).as_deref(),Some("second"));
+        panel.sync_navigation(&mut cx);
+        assert!(panel.view.view(&cx,ids!(agent_list_holder)).visible());
+        assert!(panel.view.view(&cx,ids!(agent_detail)).visible());
+        let toggle=panel.view.button(&cx,ids!(ledger_toggle));
+        let actions=cx.capture_actions(|cx|cx.widget_action(toggle.widget_uid(),ButtonAction::Clicked(KeyModifiers::default())));
+        assert!(panel.ledger_actions(&mut cx,&actions));
+        assert!(panel.ledger_open);
+        assert!(panel.view.view(&cx,ids!(ledger_viewport)).visible());
+        let back=panel.view.button(&cx,ids!(back));
+        let actions=cx.capture_actions(|cx|cx.widget_action(back.widget_uid(),ButtonAction::Clicked(KeyModifiers::default())));
+        assert!(panel.back_to_list(&mut cx,&actions));
+        assert!(!panel.ledger_open);
+        assert_eq!(panel.agent(&mut cx).as_deref(),Some("second"));
+    }
+
     #[test]
     fn lease_wait_is_explicit_in_agent_list() {
         let value=json!({"runtime":{"agentId":"a","phase":"waiting_for_lease"}});
@@ -6424,7 +6603,7 @@ mod tests {
         assert!(!agent_command_details(&global).contains("Project:"));
         panel.apply(&mut cx, Target::AgentJournal, &original);
         panel.sync_navigation(&mut cx);
-        assert!(panel.view.view(&cx, ids!(agent_recovery)).visible());
+        assert!(panel.view.button(&cx,ids!(pending_operations)).visible(),"pending work remains accessible from the persistent sidebar");
         assert!(
             panel
                 .view
@@ -6448,7 +6627,7 @@ mod tests {
         );
         panel.apply(&mut cx, Target::AgentJournal, &json!({"commands":[]}));
         panel.sync_navigation(&mut cx);
-        assert!(!panel.view.view(&cx, ids!(agent_recovery)).visible());
+        assert!(!panel.view.button(&cx,ids!(pending_operations)).visible());
         assert!(
             panel
                 .view
@@ -6678,7 +6857,7 @@ mod tests {
         for direct in [true, false] {
             let room = matrix_sdk::ruma::OwnedRoomId::try_from("!exact-room:server").unwrap();
             let actions = cx.capture_actions(|cx| navigate_agent_chat(cx, room.clone(), direct, Some(("owner-pin", "project-a"))));
-            assert_eq!(actions.iter().filter(|a| matches!(a.downcast_ref::<crate::home::navigation_tab_bar::NavigationBarAction>(), Some(crate::home::navigation_tab_bar::NavigationBarAction::GoToTab(crate::home::navigation_tab_bar::SelectedTab::Contacts)))).count(), usize::from(direct));
+            assert_eq!(actions.iter().filter(|a| matches!(a.downcast_ref::<crate::home::navigation_tab_bar::NavigationBarAction>(), Some(crate::home::navigation_tab_bar::NavigationBarAction::GoToHome))).count(), usize::from(direct));
             let projects: Vec<_> = actions.iter().filter_map(|a| a.downcast_ref::<ProjectRoomNavigation>()).collect();
             assert_eq!(projects.len(), usize::from(!direct));
             if !direct {assert_eq!(projects[0].project_id, "project-a");assert_eq!(projects[0].identity, "owner-pin");}
@@ -7027,6 +7206,7 @@ mod tests {
             panel.set_page(&mut cx, page);
             panel.list_page(&mut cx);
             panel.sync_navigation(&mut cx);
+            if page==Page::Agents {panel.agent_card_targets.insert(panel.view.portal_list(&cx,ids!(agent_list)).item(&mut cx,1,id!(Card)).widget_uid(),"agent-b".into());}
             assert!(!panel.view.button(&cx, ids!(back)).visible());
             assert!(panel.view.button(&cx, ids!(close)).borrow().is_none());
             assert!(panel.view.button(&cx, ids!(new_item)).visible());

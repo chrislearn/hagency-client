@@ -115,6 +115,7 @@ script_mod! {
             project_invite := mod.widgets.ContextMenuButton {visible: false enabled: false icon_walk: Walk{width: 0 height: 0} spacing: 0 text: #(crate::i18n::tr("Invite members")) i18n_text: "Invite members"}
             project_access := mod.widgets.ContextMenuButton {visible: false icon_walk: Walk{width: 0 height: 0} spacing: 0 text: #(crate::i18n::tr("Access")) i18n_text: "Access"}
             new_project := mod.widgets.ContextMenuButton {icon_walk: Walk{width: 0 height: 0} spacing: 0 text: #(crate::i18n::tr("New project")) i18n_text: "New project"}
+            new_private_chat := mod.widgets.ContextMenuButton {icon_walk:Walk{width:0 height:0} spacing:0 text:#(crate::i18n::tr("New private chat")) i18n_text:"New private chat"}
             new_group_chat := mod.widgets.ContextMenuButton {icon_walk: Walk{width: 0 height: 0} spacing: 0 text: #(crate::i18n::tr("New group chat")) i18n_text: "New group chat"}
             new_agent := mod.widgets.ContextMenuButton {icon_walk: Walk{width: 0 height: 0} spacing: 0 text: #(crate::i18n::tr("New agent")) i18n_text: "New agent"}
             open_discover := mod.widgets.ContextMenuButton {icon_walk: Walk{width: 0 height: 0} spacing: 0 text: #(crate::i18n::tr("Discover")) i18n_text: "Discover"}
@@ -149,6 +150,7 @@ impl SidebarActionMenu {
         for (button, target) in [
             (id!(new_project), SidebarMenuKind::Projects),
             (id!(new_group_chat), SidebarMenuKind::GroupChats),
+            (id!(new_private_chat), SidebarMenuKind::GroupChats),
             (id!(new_agent), SidebarMenuKind::Agents),
         ] {
             let button = self.view.button(cx, &[button]);
@@ -167,7 +169,7 @@ impl SidebarActionMenu {
             button.set_visible(cx, kind == SidebarMenuKind::Tools);
             button.reset_hover(cx);
         }
-        let mut menu_size = expected_menu_size(if kind == SidebarMenuKind::Tools { 6 } else { 1 }, 0);
+        let mut menu_size = expected_menu_size(if kind == SidebarMenuKind::Tools { 6 } else if kind == SidebarMenuKind::GroupChats {2} else { 1 }, 0);
         menu_size.x = if kind == SidebarMenuKind::Tools {216.0} else {176.0};
         let margin = menu_position_margin(container, pos, menu_size);
         let mut content = self.view.view(cx, ids!(main_content));
@@ -440,7 +442,7 @@ impl Widget for SidebarActionMenu {
                     self.view.button(cx, ids!(new_project)).clicked(actions)
                 }
                 Some(SidebarMenuKind::GroupChats) => {
-                    self.view.button(cx, ids!(new_group_chat)).clicked(actions)
+                    self.view.button(cx, ids!(new_group_chat)).clicked(actions) || self.view.button(cx,ids!(new_private_chat)).clicked(actions)
                 }
                 Some(SidebarMenuKind::Agents) => {
                     self.view.button(cx, ids!(new_agent)).clicked(actions)
@@ -453,7 +455,8 @@ impl Widget for SidebarActionMenu {
                         cx.action(crate::hagency::ui::HagencyAction::NewProject)
                     }
                     Some(SidebarMenuKind::GroupChats) => {
-                        cx.action(super::space_management::SpaceManagementAction::Open {parent:None})
+                        if self.view.button(cx,ids!(new_private_chat)).clicked(actions) {cx.action(super::navigation_tab_bar::NavigationBarAction::NewChat);}
+                        else {cx.action(super::space_management::SpaceManagementAction::Open {parent:None});}
                     }
                     Some(SidebarMenuKind::Agents) => {
                         cx.action(crate::hagency::ui::HagencyAction::NewAgent { project_id: None })

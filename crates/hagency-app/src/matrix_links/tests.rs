@@ -726,8 +726,8 @@ async fn scope_queued_input_keeps_its_original_account_before_any_controller_mut
 }
 
 #[tokio::test]
-async fn navigation_direct_contact_view_keeps_thread_ticket_and_drops_retired_intents() {
-    if !isolated("navigation_direct_contact_view_keeps_thread_ticket_and_drops_retired_intents") {
+async fn navigation_private_chat_keeps_thread_ticket_and_drops_retired_intents() {
+    if !isolated("navigation_private_chat_keeps_thread_ticket_and_drops_retired_intents") {
         return;
     }
     let server = direct_fixture();
@@ -746,6 +746,12 @@ async fn navigation_direct_contact_view_keeps_thread_ticket_and_drops_retired_in
         .await
         .unwrap();
         crate::home::mobile::new_chat_tests::matrix_link_navigation(navigation, cancel).await;
+    }
+    for event in [None,Some("$reply".try_into().unwrap())] {
+        let navigation=conversation(&room,event,Ticket::new(&room.client())).await.unwrap();
+        for width in [375.0,1280.0] {
+            crate::home::home_screen::responsive_layout_tests::profile_chat_root_delivery(navigation.selected.clone(),width);
+        }
     }
     assert_no_owner_startup();
     install_link_client(None);

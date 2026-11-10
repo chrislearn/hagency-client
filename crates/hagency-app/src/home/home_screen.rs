@@ -23,7 +23,6 @@ use crate::{
     utils::RoomNameId,
 };
 
-use super::mobile::MobileHubWidgetExt;
 use super::project_tree::{ProjectTreeWidgetExt, ProjectTreeMode};
 use super::rooms_sidebar::DesktopWorkspace;
 use crate::hagency::ui::approval_discovery::GlobalApprovalInboxWidgetExt;
@@ -175,7 +174,11 @@ script_mod! {
                     draw_bg.color: mod.widgets.RINX_PANEL_BG
                     View {width: Fill height: Fill flow: Down spacing: 8
                     padding: Inset{left: 10 right: 10 top: 16 bottom: 12}
-                    context_title := RinxLabel {width: Fill height: Fit padding: 0 text: #(crate::i18n::tr("Projects")) draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_bold {font_size: mod.widgets.RINX_HEADING_SIZE}}}
+                    context_heading := View {width:Fill height:28 flow:Right spacing:4 align:Align{y:0.5}
+                        context_title := RinxLabel {width:Fill height:Fill align:Align{y:0.5} padding:0 text:#(crate::i18n::tr("Projects")) draw_text +: {color:mod.widgets.RINX_INK text_style:theme.font_bold{font_size:mod.widgets.RINX_HEADING_SIZE}}}
+                        context_refresh := RinxIconButton {width:28 height:28 draw_icon.svg:crate_resource("self://resources/icons/article_refresh.svg")}
+                        context_new := RinxIconButton {width:28 height:28 draw_icon.svg:ICON_ADD}
+                    }
                     context_search := View {width: Fill height: 36 visible: false
                         room_filter_input_bar := RoomFilterInputBar {height: 36 input.empty_text: #(crate::i18n::tr("Search chats")) input.i18n_empty_text: "Search chats"}
                     }
@@ -432,6 +435,15 @@ impl SpacesBarWrapperRef {
 /// Don't query this directly, instead call [`effective_is_desktop()`].
 ///
 /// The inner value should only be modified by [`HomeScreen::apply_view_mode()`].
+/// Select the same responsive mode for the signed-out native review executable.
+#[cfg(debug_assertions)]
+pub fn select_design_preview_mode(cx:&mut Cx,width:f64) {
+    assert!(crate::sliding_sync::current_user_id().is_none(),"Review requires a signed-out account");
+    let mut select=ViewModeOverride::default().variant_selector();
+    let desktop=select(cx,&dvec2(width,860.0))==id!(Desktop);
+    cx.global::<MainViewIsDesktop>().0=Some(desktop);
+}
+
 #[derive(Default)]
 pub struct MainViewIsDesktop(Option<bool>);
 
@@ -544,6 +556,12 @@ impl Widget for HomeScreen {
                 self.view.redraw(cx);
             }
 
+            if self.view.button(cx,ids!(context_new)).clicked(actions) {
+                cx.action(crate::hagency::ui::HagencyAction::NewProject);
+            }
+            if self.view.button(cx,ids!(context_refresh)).clicked(actions) {
+                self.view.project_tree(cx,ids!(project_tree)).refresh(cx);
+            }
             let app_state = scope.data.get_mut::<AppState>().unwrap();
             if actions.iter().any(|a| a.downcast_ref::<super::rooms_sidebar::DesktopRailAction>().is_some()) {
                 app_state.app_prefs.desktop_sidebar_collapsed = !app_state.app_prefs.desktop_sidebar_collapsed;
@@ -569,11 +587,23 @@ impl Widget for HomeScreen {
                 }
             }
             for action in actions {
+                if let Some(navigation)=action.downcast_ref::<super::mobile::DirectNavigation>() {
+                    if !effective_is_desktop(cx) {
+                        let Some(selected)=navigation.selection(cx) else {continue;};
+                        self.push_selected_screen_view(cx,app_state,selected);
+                        let stack=self.view.stack_navigation(cx,ids!(view_stack));
+                        if let Some(view)=stack.destination_view().or_else(||stack.current_view()) {
+                            let screen=stack.view_by_id(cx,view).room_screen(cx,ids!(room_screen));
+                            if let Some(event)=&navigation.jump {
+                                if let Some(ticket)=&navigation.ticket {screen.jump_to_matrix_event(cx,event.clone(),ticket.clone());}
+                                else {screen.jump_to_history_event(cx,event.clone());}
+                            }
+                        }
+                    }
+                }
                 if let RoomsListAction::Selected(selected)=action.as_widget_action().cast()
                     && super::mobile::is_direct_selection(cx,&selected) {
-                    let thread=if let SelectedRoom::Thread {thread_root_event_id,..}=&selected {Some(thread_root_event_id.clone())}else{None};
-                    super::mobile::navigate_direct_view(cx,selected.room_name().clone(),thread,None);
-                    continue;
+                    *cx.global::<DesktopWorkspace>()=DesktopWorkspace::GroupChats;
                 }
                 if let Some(action) = action.downcast_ref::<crate::hagency::ui::HagencyAction>() {
                     *cx.global::<DesktopWorkspace>() = match action {
@@ -586,7 +616,7 @@ impl Widget for HomeScreen {
                     && navigation.current() {
                     *cx.global::<DesktopWorkspace>() = DesktopWorkspace::Projects;
                 }
-                if matches!(action.downcast_ref(), Some(crate::home::main_desktop_ui::MainDesktopUiAction::ShowGroupChats)) {
+                if matches!(action.downcast_ref(), Some(crate::home::main_desktop_ui::MainDesktopUiAction::ShowGroupChats | crate::home::main_desktop_ui::MainDesktopUiAction::ActivateChats)) {
                     *cx.global::<DesktopWorkspace>() = DesktopWorkspace::GroupChats;
                 }
                 // A hosted miniapp overlays this workspace. Its close action
@@ -597,13 +627,14 @@ impl Widget for HomeScreen {
                 }
                 if effective_is_desktop(cx) && (
                     action.downcast_ref::<crate::hagency::ui::HagencyAction>().is_some()
-                    || matches!(action.downcast_ref::<crate::home::main_desktop_ui::MainDesktopUiAction>(), Some(crate::home::main_desktop_ui::MainDesktopUiAction::ShowGroupChats))
+                    || matches!(action.downcast_ref::<crate::home::main_desktop_ui::MainDesktopUiAction>(), Some(crate::home::main_desktop_ui::MainDesktopUiAction::ShowGroupChats | crate::home::main_desktop_ui::MainDesktopUiAction::ActivateChats))
                     || matches!(action.downcast_ref::<RoomsListAction>(), Some(RoomsListAction::Selected(_)))
                 ) {
                     self.switch_to_tab(cx, app_state, SelectedTab::Home);
                 }
                 if let Some(crate::matrix_links::LinkAction::EnterHome(navigation)) = action.downcast_ref()
                     && navigation.is_current() {
+                    if super::mobile::is_direct_selection(cx,&navigation.selected) {*cx.global::<DesktopWorkspace>()=DesktopWorkspace::GroupChats;}
                     self.pending_new_chat=false;
                     let already_home=app_state.selected_tab==SelectedTab::Home;
                     self.switch_to_tab(cx,app_state,SelectedTab::Home);
@@ -611,18 +642,8 @@ impl Widget for HomeScreen {
                     self.pending_matrix_link=Some(navigation.clone());
                     self.view.redraw(cx);
                 }
-                if let Some(crate::matrix_links::LinkAction::EnterContacts(ticket)) = action.downcast_ref()
-                    && ticket.is_current() {
-                    self.pending_new_chat=false;
-                    self.switch_to_tab(cx,app_state,SelectedTab::Contacts);
-                }
                 if let Some(crate::matrix_links::LinkAction::Navigate(navigation)) = action.downcast_ref() {
                     if !effective_is_desktop(cx) && navigation.is_current() {
-                        if crate::sliding_sync::get_client().and_then(|client|client.get_room(navigation.selected.room_id()))
-                            .is_some_and(|room|!room.direct_targets().is_empty()) {
-                            super::mobile::navigate_matrix_direct(cx, navigation.clone());
-                            continue;
-                        }
                         if matches!(navigation.selected, SelectedRoom::Space {..}) {
                             self.push_selected_screen_view(cx, app_state, navigation.selected.clone());
                             continue;
@@ -883,8 +904,9 @@ impl Widget for HomeScreen {
         if show_context {
             let chats = workspace == DesktopWorkspace::GroupChats;
             tree.set_mode(cx, if chats {ProjectTreeMode::GroupChats} else {ProjectTreeMode::Projects});
-            self.view.label(cx, ids!(context_title)).set_text(cx, crate::i18n::tr(if chats {"Group Chats"} else {"Projects"}));
+            self.view.label(cx, ids!(context_title)).set_text(cx, crate::i18n::tr(if chats {"Chats"} else {"Projects"}));
             self.view.view(cx, ids!(context_search)).set_visible(cx, chats);
+            self.view.button(cx,ids!(context_new)).set_visible(cx,!chats);
         }
         let show_tabs = matches!(app_state.selected_tab, SelectedTab::Home | SelectedTab::Contacts | SelectedTab::Discover | SelectedTab::Me | SelectedTab::Space {..})
             && !(app_state.selected_tab == SelectedTab::Contacts && self.mobile_detail_open);
@@ -946,6 +968,11 @@ impl Widget for HomeScreen {
             // the ticket-bound target on the next action turn.
             if let Some(navigation)=self.pending_matrix_link.take()
                 && navigation.is_current() {cx.action(crate::matrix_links::LinkAction::Navigate(navigation));}
+            // Deliver after the original child draw: lazy LoadDockFromAppState
+            // must precede a private-chat selection from a contact profile.
+            if scope.data.get::<AppState>().is_some_and(|s|s.selected_tab==SelectedTab::Home) {
+                super::mobile::dispatch_pending_direct(cx);
+            }
             if settings && (rect.size.x <= 0.0 || rect.size.y <= 0.0) {
                 self.view.redraw(cx);
             }
@@ -1193,7 +1220,6 @@ impl HomeScreen {
     /// Switches to (selects) the given navigation tab, if it isn't already the selected one.
     fn switch_to_tab(&mut self, cx: &mut Cx, app_state: &mut AppState, new_tab: SelectedTab) {
         if app_state.selected_tab == new_tab { return }
-        if app_state.selected_tab==SelectedTab::Contacts {self.view.mobile_hub(cx,ids!(contacts_page)).suspend_chat(cx);}
         self.previous_selection = std::mem::replace(&mut app_state.selected_tab, new_tab);
         cx.action(NavigationBarAction::TabSelected(app_state.selected_tab.clone()));
         self.update_active_page_from_selection(cx, app_state);
@@ -1291,6 +1317,44 @@ pub(crate) mod responsive_layout_tests {
     use super::*;
     use makepad_widgets::makepad_draw::cx_draw::CxDraw;
 
+    pub(crate) fn profile_chat_root_delivery(selected:SelectedRoom,width:f64) {
+        let (mut cx,mut home,mut state)=home();
+        state.selected_tab=SelectedTab::Contacts;
+        draw_pane(&mut cx,&mut home,&mut state,width);
+        let thread=if let SelectedRoom::Thread {thread_root_event_id,..}=&selected {Some(thread_root_event_id.clone())}else{None};
+        let mut actions=cx.capture_actions(|cx|super::super::mobile::navigate_direct_view(cx,selected.room_name().clone(),thread,None));
+        for _ in 0..5 {
+            actions=cx.capture_actions(|cx| {
+                home.handle_event(cx,&Event::Actions(actions),&mut Scope::with_data(&mut state));
+                draw_pane(cx,&mut home,&mut state,width);
+            });
+        }
+        assert_eq!(state.selected_tab,SelectedTab::Home);
+        assert_eq!(*cx.global::<DesktopWorkspace>(),DesktopWorkspace::GroupChats);
+        if width>=760.0 {
+            let dock=home.view.dock(&cx,ids!(dock));
+            let tab=selected.tab_id();
+            assert!(dock.clone_state().unwrap().values().any(|item|matches!(item,DockItem::Tabs {tabs,selected,..} if tabs.get(*selected)==Some(&tab))),"lazy dock initialization must not replace the selected private chat");
+            dock.item(tab).as_room_screen().assert_chat_target(&cx,&selected);
+        }else {
+            assert_eq!(state.selected_room.as_ref(),Some(&selected));
+            let stack=home.view.stack_navigation(&cx,ids!(view_stack));
+            let view=stack.destination_view().or_else(||stack.current_view()).unwrap();
+            stack.view_by_id(&mut cx,view).room_screen(&cx,ids!(room_screen)).assert_chat_target(&cx,&selected);
+        }
+    }
+
+    pub(crate) fn matrix_link_cancelled_root(navigation:crate::matrix_links::Navigation) {
+        let (mut cx,mut home,mut state)=home();
+        state.selected_tab=SelectedTab::Settings;
+        draw_pane(&mut cx,&mut home,&mut state,375.0);
+        let actions=cx.capture_actions(|cx|crate::matrix_links::publish_navigation(cx,navigation));
+        home.handle_event(&mut cx,&Event::Actions(actions),&mut Scope::with_data(&mut state));
+        draw_pane(&mut cx,&mut home,&mut state,375.0);
+        assert_eq!(state.selected_tab,SelectedTab::Settings);
+        assert!(state.selected_room.is_none());
+    }
+
     pub(crate) fn matrix_link_root_delivery(navigation: crate::matrix_links::Navigation, direct: bool, width:f64, observe: &mut impl FnMut(&Action)) {
         let (mut cx,mut home,mut state)=home();
         state.selected_tab=SelectedTab::Settings;
@@ -1305,10 +1369,9 @@ pub(crate) mod responsive_layout_tests {
         }
         draw_pane(&mut cx,&mut home,&mut state,width);
         assert!(navigation.is_current(),"tagged internal root switches must preserve the exact original ticket");
-        assert_eq!(state.selected_tab,if direct {SelectedTab::Contacts}else{SelectedTab::Home});
-        if direct {
-            super::super::mobile::new_chat_tests::assert_matrix_link_in_contacts(&home.view.mobile_hub(&cx,ids!(contacts_page)),&cx,&navigation);
-        } else if width>=760.0 {
+        assert_eq!(state.selected_tab,SelectedTab::Home);
+        if direct {assert_eq!(*cx.global::<DesktopWorkspace>(),DesktopWorkspace::GroupChats);}
+        if width>=760.0 {
             let dock=home.view.dock(&cx,ids!(dock));
             let tab=navigation.selected.tab_id();
             assert!(dock.clone_state().expect("actual desktop dock").values().any(|item|matches!(item,DockItem::Tabs {tabs,selected,..} if tabs.get(*selected)==Some(&tab))),"the original target must remain selected in the restored Home dock after subsequent action/frame turns");

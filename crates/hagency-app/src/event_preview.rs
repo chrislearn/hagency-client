@@ -262,6 +262,7 @@ fn text_preview_of_message(
             let visible_body=usage.as_ref().map_or(text.body.as_str(),|u|u.answer);
             text.formatted
                 .as_ref()
+                .filter(|_| usage.is_none())
                 .and_then(|fb|
                     (fb.format == MessageFormat::Html).then(|| {
                         let filtered_and_trimmed = utils::trim_start_html_whitespace(
@@ -774,5 +775,11 @@ mod usage_preview_tests {
         assert!(!text_preview_of_raw_timeline_event(&raw,"Agent").unwrap().format_with("Agent",true).contains("Token"));
         // Presentation does not change the SDK message used for copy/forward.
         assert_eq!(message.body(),body);
+        let rich = MessageType::text_html(body, "<p>&lt;Answer&gt;</p><p>本次用量 50 Token</p>");
+        let preview = text_preview_of_message(&rich, sender, "Agent").format_with("Agent", true);
+        assert!(preview.contains("&lt;Answer&gt;"));
+        assert!(!preview.contains("Token"));
+        assert!(text_preview_of_message(&rich, matrix_sdk::ruma::user_id!("@alice:test"), "Alice").format_with("Alice", true).contains("Token"));
+        assert_eq!(rich.body(), body);
     }
 }

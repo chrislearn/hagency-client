@@ -8,18 +8,6 @@ use crate::settings::app_preferences::{AppPreferencesAction, AppPreferencesGloba
 use crate::{app::{AppState, AppStateAction, SavedDockState, SelectedRoom}, home::{navigation_tab_bar::{NavigationBarAction, SelectedTab}, rooms_list::RoomsListRef, space_lobby::SpaceLobbyScreenWidgetRefExt}, utils::RoomNameId};
 use super::{invite_screen::InviteScreenWidgetRefExt, room_screen::RoomScreenWidgetRefExt, rooms_list::{AcceptedInviteKind, RoomsListAction}, spaces_bar::SpacesBarAction};
 
-#[derive(Default)]
-struct ContactDock(Option<makepad_widgets::widget::WidgetWeakRef>);
-
-/// Return the original timeline before Contacts takes it. Old saved layouts may
-/// still contain DM tabs. The weak binding never keeps an obsolete dock alive.
-pub(crate) fn release_legacy_direct_timeline(cx:&mut Cx,room:&RoomNameId) {
-    let dock=cx.global::<ContactDock>().0.as_ref().and_then(makepad_widgets::widget::WidgetWeakRef::upgrade);
-    if let Some(dock)=dock {
-        let tab=SelectedRoom::JoinedRoom {room_name_id:room.clone()}.tab_id();
-        dock.as_dock().item(tab).as_room_screen().hide_displayed_room(cx);
-    }
-}
 struct RestoredRoomContext {
     room: OwnedRoomId,
     epoch: u64,
@@ -117,7 +105,6 @@ impl ScriptHook for MainDesktopUI {
     fn on_after_new(&mut self, vm: &mut ScriptVm) {
         vm.with_cx_mut(|cx| {
             self.default_layout = self.save_dock_state(cx);
-            cx.global::<ContactDock>().0=Some(self.view.dock(cx,ids!(dock)).downgrade());
         });
     }
 }
@@ -169,7 +156,7 @@ impl MainDesktopUI {
             if direct {
                 // Only the sidebar context changes. ShowGroupChats would reload a
                 // dock and could replace the exact Room we just restored.
-                if let Some(room)=self.most_recently_selected_room.as_ref() {super::mobile::navigate_direct(cx,room.room_name().clone());}
+                cx.action(MainDesktopUiAction::ActivateChats);
                 cx.redraw_all();
             }
         }
@@ -662,9 +649,23 @@ impl WidgetMatchEvent for MainDesktopUI {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
         let mut should_save_dock_action: bool = false;
         for action in actions {
+            if let Some(navigation)=action.downcast_ref::<super::mobile::DirectNavigation>() {
+                let Some(selected)=navigation.selection(cx) else {continue;};
+                if self.selected_space.is_some() {
+                    self.switch_dock_to_space(cx,scope.data.get_mut::<AppState>().unwrap(),None);
+                }
+                self.focus_or_create_tab(cx,selected.clone());
+                let screen=self.view.dock(cx,ids!(dock)).item(selected.tab_id()).as_room_screen();
+                if let Some(event)=&navigation.jump {
+                    if let Some(ticket)=&navigation.ticket {screen.jump_to_matrix_event(cx,event.clone(),ticket.clone());}
+                    else {screen.jump_to_history_event(cx,event.clone());}
+                }
+                should_save_dock_action=true;
+                continue;
+            }
             // Explicit navigation wins over a delayed restored Room classification.
             if action.downcast_ref::<HagencyAction>().is_some()
-                || matches!(action.downcast_ref::<MainDesktopUiAction>(), Some(MainDesktopUiAction::ShowGroupChats)) {
+                || matches!(action.downcast_ref::<MainDesktopUiAction>(), Some(MainDesktopUiAction::ShowGroupChats | MainDesktopUiAction::ActivateChats)) {
                 self.restored_context = None;
             }
             if let Some(navigation) = action.downcast_ref::<crate::hagency::ui::ProjectRoomNavigation>()
@@ -681,7 +682,7 @@ impl WidgetMatchEvent for MainDesktopUI {
                     let tab = id!(group_chats_welcome_tab);
                     if dock.item(tab).is_empty() {
                         if let Some((bar, _)) = dock.find_tab_bar_of_tab(id!(home_tab)) {
-                            dock.create_and_select_tab(cx, bar, tab, id!(group_chats_welcome), crate::i18n::tr("Group Chats").to_owned(), id!(CloseableTab), None);
+                            dock.create_and_select_tab(cx, bar, tab, id!(group_chats_welcome), crate::i18n::tr("Chats").to_owned(), id!(CloseableTab), None);
                         }
                     } else {dock.select_tab(cx, tab);}
                     cx.action(AppStateAction::FocusNone);
@@ -713,8 +714,8 @@ impl WidgetMatchEvent for MainDesktopUI {
                 if !navigation.is_current() {continue;}
                 if crate::sliding_sync::get_client().and_then(|client|client.get_room(navigation.selected.room_id()))
                     .is_some_and(|room|!room.direct_targets().is_empty()) {
-                    super::mobile::navigate_matrix_direct(cx, navigation.clone());
-                    continue;
+                    if self.selected_space.is_some() {self.switch_dock_to_space(cx,scope.data.get_mut::<AppState>().unwrap(),None);}
+                    cx.action(MainDesktopUiAction::ActivateChats);
                 }
                 if matches!(navigation.selected, SelectedRoom::Space {..}) {
                     self.focus_or_create_tab(cx, navigation.selected.clone());
@@ -860,9 +861,8 @@ impl WidgetMatchEvent for MainDesktopUI {
             match widget_action.cast_ref() {
                 RoomsListAction::Selected(selected_room) => {
                     if super::mobile::is_direct_selection(cx,selected_room) {
-                        let thread=if let SelectedRoom::Thread {thread_root_event_id,..}=selected_room {Some(thread_root_event_id.clone())}else{None};
-                        super::mobile::navigate_direct_view(cx,selected_room.room_name().clone(),thread,None);
-                        continue;
+                        if self.selected_space.is_some() {self.switch_dock_to_space(cx,scope.data.get_mut::<AppState>().unwrap(),None);}
+                        cx.action(MainDesktopUiAction::ActivateChats);
                     }
                     // Contacts can open a DM or a group while the chat dock is
                     // covered. Restore the home dock before selecting that room.
@@ -936,10 +936,11 @@ impl WidgetMatchEvent for MainDesktopUI {
                     // old passive LoadDock to enter the management factory.
                     let permalink_initialization=self.matrix_link_root.take().is_some();
                     self.load_dock_state_from(cx, app_state);
-                    // A permalink initializes the dock to open its exact Room,
-                    // not to enter the management factory as an intermediate page.
+                    // Opening a conversation must not enter Projects management
+                    // as an intermediate page while the requested Room is queued.
+                    let chats_context=*cx.global::<super::rooms_sidebar::DesktopWorkspace>()==super::rooms_sidebar::DesktopWorkspace::GroupChats;
                     if self.most_recently_selected_room.is_none()
-                        && !permalink_initialization {
+                        && !permalink_initialization && !chats_context {
                         self.view.dock(cx, ids!(dock)).item(id!(home_tab))
                             .as_hagency_panel().action(cx, &HagencyAction::OpenProjects);
                     }
@@ -961,6 +962,8 @@ impl WidgetMatchEvent for MainDesktopUI {
 /// Actions sent to the MainDesktopUI widget for saving/restoring its dock state.
 #[derive(Debug)]
 pub enum MainDesktopUiAction {
+    /// Select the Chats context without replacing the currently focused Room.
+    ActivateChats,
     /// Save the state of the dock into the AppState.
     SaveDockIntoAppState,
     /// Select the most recent chat, or the chat welcome pane when none exist.
@@ -1005,6 +1008,16 @@ mod dock_state_repair {
                 kind: id!(hagency_panel),
             },
         )?;
+        // Older clients saved welcome_screen as Home and as the Chats landing
+        // tab. That template no longer exists; preserving its kind renders a
+        // blank body even though the sidebar and tab selection are correct.
+        for item in saved.dock_items.values_mut() {
+            if let DockItem::Tab {name,kind,..}=item && *kind==id!(welcome_screen) {
+                *kind=id!(group_chats_welcome);
+                *name=crate::i18n::tr("Chats").to_owned();
+                repaired=true;
+            }
+        }
         // The navigation sidebar now belongs to HomeScreen, outside the Dock.
         // Remove only its old fixed tab, retaining all chat and user tab content.
         for item in saved.dock_items.values_mut() {
@@ -1178,7 +1191,14 @@ mod dock_state_repair {
         tab_item: DockItem,
     ) -> Result<bool, &'static str> {
         match saved.dock_items.get(&tab_id) {
-            Some(DockItem::Tab { .. }) => Ok(false),
+            Some(DockItem::Tab {name,template,kind}) => {
+                let DockItem::Tab {name:expected_name,template:expected_template,kind:expected_kind}=&tab_item else {return Err("fixed tab must be a tab");};
+                if name==expected_name && template==expected_template && kind==expected_kind {return Ok(false);}
+                // Fixed application tabs have an authoritative template. The
+                // user's room tabs and split-pane topology remain untouched.
+                saved.dock_items.insert(tab_id,tab_item);
+                Ok(true)
+            }
             None => {
                 saved.dock_items.insert(tab_id, tab_item);
                 Ok(true)
@@ -1524,7 +1544,7 @@ pub(crate) mod persistent_navigation_tests {
         ui.apply_restored_context(&mut cx, None, epoch);
         assert!(ui.restored_context.is_some(), "wait for exact Room metadata instead of guessing from its name");
         let actions=cx.capture_actions(|cx|ui.apply_restored_context(cx,Some(true),epoch));
-        assert!(actions.iter().any(|a|matches!(a.downcast_ref(),Some(NavigationBarAction::GoToTab(SelectedTab::Contacts)))));
+        assert!(actions.iter().any(|a|matches!(a.downcast_ref(),Some(MainDesktopUiAction::ActivateChats))));
         assert_eq!(*cx.global::<super::super::rooms_sidebar::DesktopWorkspace>(), super::super::rooms_sidebar::DesktopWorkspace::Projects);
         assert_eq!(ui.most_recently_selected_room, Some(selected.clone()));
         assert!(ui.selected_space.is_some(), "classification must not reload or replace a saved dock");
@@ -1567,6 +1587,46 @@ pub(crate) mod persistent_navigation_tests {
         assert_eq!(saved.selected_room, Some(b));
         assert!(!dock_state_repair::validate_and_repair_dock_state(&mut saved).unwrap());
     }
+    #[test]
+    fn legacy_welcome_templates_migrate_without_losing_chat_tabs_or_selection() {
+        let room=room("retained");
+        let mut saved=SavedDockState::default();
+        saved.dock_items.extend([
+            (id!(root),tabs(vec![id!(home_tab),room.tab_id(),id!(group_chats_welcome_tab)])),
+            (id!(home_tab),DockItem::Tab {name:"Home".into(),template:id!(CloseableTab),kind:id!(welcome_screen)}),
+            (room.tab_id(),tab(id!(room_screen))),
+            (id!(group_chats_welcome_tab),DockItem::Tab {name:"Group Chats".into(),template:id!(CloseableTab),kind:id!(welcome_screen)}),
+        ]);
+        saved.open_rooms.insert(room.tab_id(),room.clone());
+        saved.room_order.push(room.clone());
+        saved.selected_room=Some(room.clone());
+        let legacy=saved.clone();
+        assert!(dock_state_repair::validate_and_repair_dock_state(&mut saved).unwrap());
+        assert!(matches!(&saved.dock_items[&id!(home_tab)],DockItem::Tab {name,template,kind} if name=="Projects" && *template==id!(PermanentTab) && *kind==id!(hagency_panel)));
+        assert!(matches!(&saved.dock_items[&id!(group_chats_welcome_tab)],DockItem::Tab {kind,..} if *kind==id!(group_chats_welcome)));
+        assert_eq!(saved.open_rooms.get(&room.tab_id()),Some(&room));
+        assert_eq!(saved.room_order,vec![room.clone()]);
+        assert_eq!(saved.selected_room,Some(room.clone()));
+        assert!(matches!(&saved.dock_items[&id!(root)],DockItem::Tabs {tabs,selected,..} if tabs.get(*selected)==Some(&room.tab_id())));
+        assert!(!dock_state_repair::validate_and_repair_dock_state(&mut saved).unwrap(),"migration is idempotent");
+
+        let mut cx=Cx::new(Box::new(|_,_|{}));
+        let mut ui=cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm);crate::app::register_widgets(vm);
+            let value=script_eval!(vm,{mod.widgets.MainDesktopUI {}});
+            MainDesktopUI::script_from_value(vm,value)
+        });
+        let mut state=AppState {saved_dock_state_home:legacy,..Default::default()};
+        ui.load_dock_state_from(&mut cx,&mut state);
+        ui.select_room(&mut cx,None);
+        super::super::mobile::new_chat_tests::draw_with_state(&mut cx,&mut ui,1280.0,&mut state);
+        let panel=ui.view.dock(&cx,ids!(dock)).item(id!(home_tab)).as_hagency_panel();
+        assert!(panel.borrow().is_some(),"the restored Home tab must instantiate the real management panel");
+        let heading=panel.label(&cx,ids!(welcome_title)).area().rect(&cx);
+        let create=panel.button(&cx,ids!(welcome_new)).area().rect(&cx);
+        assert!(heading.size.x>0.0 && create.size.x>0.0,"the right pane must show its welcome and create controls");
+    }
+
     #[test]
     fn new_root_tabs_need_no_sidebar_promotion_and_recover_missing_room_refs() {
         let a = room("first"); let mut saved = SavedDockState::default();

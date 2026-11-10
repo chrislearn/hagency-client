@@ -394,7 +394,7 @@ script_mod! {
 
                 username_view := View {
                     flow: Right,
-                    width: Fill,
+                    width: Fill{max: mod.widgets.RINX_READING_WIDTH},
                     height: Fit,
                     align: Align{y: 0.5} spacing: 5 padding: Inset{top: 8 bottom: 7}
                     username := RinxLabel {
@@ -411,6 +411,7 @@ script_mod! {
                         text: #(crate::i18n::tr("<Username not available>"))
                     }
                     agent_badge := mod.widgets.AgentBadge {}
+                    usage_spacer := View {width: Fill height: 1}
                     agent_usage_toggle := mod.widgets.AgentUsage {width: Fit show_details: false}
                 }
 
@@ -454,6 +455,7 @@ script_mod! {
                 draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: mod.widgets.RINX_META_SIZE}}
             }
             agent_badge := mod.widgets.AgentBadge {}
+            usage_spacer := View {width: Fill height: 1}
             agent_usage_toggle := mod.widgets.AgentUsage {width: Fit show_details: false}
         }
         bubble := RoundedView {
@@ -596,8 +598,9 @@ script_mod! {
                 padding: Inset{ left: 10.0 }
 
                 username_view := View {
-                    visible: false width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 5
+                    visible: false width: Fill{max: mod.widgets.RINX_READING_WIDTH} height: Fit flow: Right align: Align{y: 0.5} spacing: 5
                     username := RinxLabel {width: Fit{max: FitBound.Rel{base: Base.Line, factor: 0.8}} max_lines: 1 text_overflow: Ellipsis draw_text +: {text_style: USERNAME_TEXT_STYLE {} color: (USERNAME_TEXT_COLOR)}}
+                    usage_spacer := View {width: Fill height: 1}
                     agent_usage_toggle := mod.widgets.AgentUsage {width: Fit show_details: false}
                 }
 
@@ -3309,13 +3312,16 @@ impl RoomScreen {
         let top = (rect.pos.y + 2.0)
             .clamp(timeline_rect.pos.y, (timeline_rect.pos.y + timeline_rect.size.y - 32.0).max(timeline_rect.pos.y));
         let mut right = rect.pos.x + rect.size.x - 8.0;
-        // A short condensed row can put receipts/status alongside the toolbar.
-        // Leave their actual drawn area clear, including multi-avatar receipts.
+        // Keep the usage entry clickable when hovering an Agent response, and
+        // leave receipts/status clear even on a short condensed row.
         let list = self.view.portal_list(cx, ids!(timeline.list));
         for index in details.item_id.saturating_sub(1)..=details.item_id {
             if let Some((_, item)) = list.get_item(index) {
-                for path in [ids!(avatar_row), ids!(send_status_indicator)] {
-                    let status = item.widget(cx, path).area().rect(cx);
+                let protected_paths: [&[LiveId]; 3] = [ids!(avatar_row), ids!(send_status_indicator), ids!(content.username_view.agent_usage_toggle)];
+                for path in protected_paths {
+                    let protected = item.widget(cx, path);
+                    if !protected.visible() {continue;}
+                    let status = protected.area().rect(cx);
                     if status.size.x > 0.0 && status.size.y > 0.0
                         && top < status.pos.y + status.size.y && top + 32.0 > status.pos.y {
                         right = right.min(status.pos.x - 8.0);
@@ -4815,6 +4821,16 @@ impl RoomScreen {
 
 impl RoomScreenRef {
     #[cfg(test)]
+    pub(crate) fn assert_chat_target(&self,cx:&Cx,selected:&crate::app::SelectedRoom) {
+        let inner=self.borrow().expect("the real chat screen must be selected");
+        let expected=match selected {
+            crate::app::SelectedRoom::Thread {room_name_id,thread_root_event_id}=>TimelineKind::Thread {room_id:room_name_id.room_id().clone(),thread_root_event_id:thread_root_event_id.clone()},
+            selected=>TimelineKind::MainRoom {room_id:selected.room_id().clone()},
+        };
+        assert_eq!(inner.timeline_kind.as_ref(),Some(&expected));
+        assert_eq!(inner.view.room_input_bar(cx,ids!(room_input_bar)).matrix_link_context(),Some(expected));
+    }
+    #[cfg(test)]
     pub(crate) fn assert_matrix_link_target(&self, cx: &Cx, navigation: &crate::matrix_links::Navigation) {
         let inner=self.borrow().expect("actual target RoomScreen");
         let expected=match &navigation.selected {
@@ -6268,9 +6284,9 @@ fn populate_message_view(
     if mobile {
         let direct = cx.get_global::<RoomsListRef>().is_direct_room(timeline_kind.room_id()).unwrap_or(false);
         #[cfg(feature = "agent_chat")]
-        let agent = agent_presentation.is_some() || crate::agent_access::framework_label(event_tl_item.sender()).is_some();
+        let agent = event_tl_item.sender().localpart().starts_with("_hagency_agt_") || agent_presentation.is_some() || crate::agent_access::framework_label(event_tl_item.sender()).is_some();
         #[cfg(not(feature = "agent_chat"))]
-        let agent = false;
+        let agent = event_tl_item.sender().localpart().starts_with("_hagency_agt_");
         item.view(cx, ids!(content.username_view)).set_visible(cx, !event_tl_item.is_own() && (!direct || agent));
     }
 
@@ -6368,21 +6384,34 @@ fn populate_message_view(
         },
         _ => None,
     };
+    // Usage availability is separate from Agent identity: recent runtimes send
+    // answer-only replies, and old messages may never have carried accounting.
+    let is_agent_reply = matches!(&msg_like_content.kind, MsgLikeKind::Message(msg) if matches!(msg.msgtype(), MessageType::Text(_)))
+        && (event_tl_item.sender().localpart().starts_with("_hagency_agt_")
+            || crate::agent_access::framework_label(event_tl_item.sender()).is_some()
+            || {
+                #[cfg(feature = "agent_chat")]
+                { agent_presentation.is_some() }
+                #[cfg(not(feature = "agent_chat"))]
+                { false }
+            });
     {
-        use crate::shared::agent_usage::AgentUsageWidgetRefExt;
-        item.agent_usage(cx,ids!(content.agent_usage)).populate(cx,usage_identity.clone(),usage.as_ref());
-        // Both placements share the same event key; only the name row has a button.
-        item.agent_usage(cx,ids!(content.username_view.agent_usage_toggle)).populate(cx,usage_identity,usage.as_ref());
+        populate_response_usage(cx, &item, usage_identity, usage.as_ref(), is_agent_reply);
         if !mobile && use_compact_view {
-            item.view(cx,ids!(content.username_view)).set_visible(cx,usage.is_some());
-            if usage.is_some() {
+            item.view(cx,ids!(content.username_view)).set_visible(cx,is_agent_reply || usage.is_some());
+            if is_agent_reply || usage.is_some() {
                 let username=get_profile_display_name(event_tl_item).unwrap_or_else(||event_tl_item.sender().localpart().to_owned());
                 item.label(cx,ids!(content.username)).set_text(cx,&username);
             }
         }
         if let Some(usage)=&usage && !used_cached_item {
             let content=item.html_or_plaintext(cx,ids!(content.message));
-            populate_text_message_content(cx,&content,usage.answer,None,has_room_mention.then(||timeline_kind.room_id()),None,None,None);
+            let original = match &msg_like_content.kind {
+                MsgLikeKind::Message(msg) => match msg.msgtype() { MessageType::Text(text) => text.formatted.as_ref(), _ => None },
+                _ => None,
+            };
+            let formatted = usage.formatted_answer(original);
+            populate_text_message_content(cx,&content,usage.answer,formatted.as_ref(),has_room_mention.then(||timeline_kind.room_id()),None,None,None);
         }
     }
     #[cfg(feature = "agent_chat")]
@@ -6400,6 +6429,8 @@ fn populate_message_view(
         if let (Some((body, formatted)), Some(mut presentation), Some(event_id)) =
             (text, AgentMessagePresentation::for_sender(event_tl_item.sender()), event_tl_item.event_id())
         {
+            let usage_formatted = usage.as_ref().and_then(|u| u.formatted_answer(formatted));
+            let formatted = if usage.is_some() { usage_formatted.as_ref() } else { formatted };
             let (body, formatted) = presentation.present(usage.as_ref().map_or(body.as_str(),|u|u.answer), formatted);
             let identity = format!("{}|{}|{}", crate::sliding_sync::current_user_id().map(|id| id.to_string()).unwrap_or_default(), timeline_kind.room_id(), event_id);
             let fresh = crate::agent_chat::reply::event_is_fresh(event_tl_item);
@@ -7335,7 +7366,9 @@ pub fn populate_preview_of_timeline_item(
             MessageType::Text(TextMessageEventContent { body, formatted, .. })
             | MessageType::Notice(NoticeMessageEventContent { body, formatted, .. }) => {
                 let usage=crate::shared::agent_usage::parse_usage(sender_user_id.localpart(),body,formatted.is_some());
-                let _ = populate_text_message_content(cx, widget_out, usage.as_ref().map_or(body.as_str(),|u|u.answer), formatted.as_ref(), None, None, None, None);
+                let usage_formatted = usage.as_ref().and_then(|u| u.formatted_answer(formatted.as_ref()));
+                let formatted = if usage.is_some() { usage_formatted.as_ref() } else { formatted.as_ref() };
+                let _ = populate_text_message_content(cx, widget_out, usage.as_ref().map_or(body.as_str(),|u|u.answer), formatted, None, None, None, None);
                 return;
             }
             _ => { } // fall through to the general case for all timeline items below.
@@ -7349,6 +7382,42 @@ pub fn populate_preview_of_timeline_item(
     widget_out.show_html(cx, html);
 }
 
+
+fn populate_response_usage(
+    cx: &mut Cx,
+    item: &WidgetRef,
+    identity: String,
+    usage: Option<&crate::shared::agent_usage::UsageInfo<'_>>,
+    is_agent_reply: bool,
+) {
+    use crate::shared::agent_usage::AgentUsageWidgetRefExt;
+    // Both placements share the same event key; only the name row has a button.
+    item.agent_usage(cx, ids!(content.agent_usage)).populate(cx, identity.clone(), usage, is_agent_reply);
+    item.agent_usage(cx, ids!(content.username_view.agent_usage_toggle)).populate(cx, identity, usage, is_agent_reply);
+}
+
+#[cfg(debug_assertions)]
+pub fn show_usage_design_preview(cx: &mut Cx, item: &WidgetRef, identity: &str, body: &str, agent: bool) {
+    assert!(crate::sliding_sync::current_user_id().is_none());
+    let reference = item.as_message();
+    let Some(mut message) = reference.borrow_mut() else { return; };
+    message.details = Some(MessageDetails {
+        item_id: 0,
+        timeline_event_id: TimelineEventItemId::EventId(format!("${identity}:preview.invalid").try_into().unwrap()),
+        related_event_id: None, thread_root_event_id: None,
+        room_screen_widget_uid: message.widget_uid(),
+        abilities: MessageAbilities::empty(), should_be_highlighted: false, selected_text: None,
+    });
+    drop(message);
+    let usage = crate::shared::agent_usage::parse_usage(if agent {"_hagency_agt_preview"} else {"human"}, body, true);
+    item.view(cx, ids!(content.username_view)).set_visible(cx, true);
+    item.label(cx, ids!(content.username_view.username)).set_text(cx, if agent {"Research agent"} else {"Joey"});
+    item.avatar(cx, ids!(profile.avatar)).show_user_text(cx, matrix_sdk::ruma::user_id!("@preview:preview.invalid"), if agent {"Research agent"} else {"Joey"});
+    let answer = usage.as_ref().map_or(body, |u| u.answer);
+    let formatted = FormattedBody::markdown(answer);
+    populate_text_message_content(cx, &item.html_or_plaintext(cx, ids!(content.message)), answer, formatted.as_ref(), None, None, None, None);
+    populate_response_usage(cx, item, format!("preview|room|{identity}"), usage.as_ref(), agent);
+}
 
 /// A trait for abstracting over the different types of timeline events
 /// that can be displayed in a `SmallStateEvent` widget.
@@ -7959,6 +8028,10 @@ impl Widget for Message {
         self.view.handle_event(cx, event, scope);
 
         // Finally, handle any hits on the rest of the message body itself.
+        if matches!(event, Event::Actions(_)) {
+            use crate::shared::agent_usage::AgentUsageWidgetExt;
+            self.view.agent_usage(cx, ids!(content.agent_usage)).refresh_expansion(cx);
+        }
         let message_view_area = self.view.area();
         let body_hit = handle_hover_hit(self, cx, event, message_view_area, claim_before, self.is_context_menu_open);
         if let Hit::FingerDown(_) = body_hit {
@@ -8679,6 +8752,10 @@ mod hover_action_bar_tests {
     }
 
     fn draw_screen(cx: &mut Cx, screen: &mut RoomScreen) {
+        draw_screen_with_usage(cx, screen, false);
+    }
+
+    fn draw_screen_with_usage(cx: &mut Cx, screen: &mut RoomScreen, usage: bool) {
         cx.redraw_all();
         let pass = DrawPass::new(cx);
         pass.set_size(cx, dvec2(1280.0, 900.0));
@@ -8702,6 +8779,10 @@ mod hover_action_bar_tests {
                 while let Some(index) = list.next_visible_item(&mut cx2d) {
                     let item = list.item(&mut cx2d, index, id!(CondensedMessage));
                     item.html_or_plaintext(&cx2d, ids!(message)).show_plaintext(&mut cx2d, "A short message");
+                    if usage {
+                        item.view(&cx2d, ids!(content.username_view)).set_visible(&mut cx2d, true);
+                        populate_response_usage(&mut cx2d, &item, "preview|room|event".into(), None, true);
+                    }
                     let receipts = indexmap::IndexMap::from_iter([
                         (matrix_sdk::ruma::user_id!("@reader:server").to_owned(), serde_json::from_value(serde_json::json!({})).unwrap()),
                     ]);
@@ -8754,6 +8835,21 @@ mod hover_action_bar_tests {
             a.as_widget_action().widget_uid_eq(room_screen_uid).cast_ref(),
             MessageAction::MessageUnhovered
         )), "leaving a message must report MessageUnhovered");
+    }
+
+    #[test]
+    fn hover_toolbar_leaves_the_agent_usage_entry_clickable() {
+        let (mut cx, mut screen) = screen();
+        draw_screen_with_usage(&mut cx, &mut screen, true);
+        let item = screen.view.portal_list(&cx, ids!(timeline.list)).get_item(0).unwrap().1;
+        let toggle = item.widget(&cx, ids!(content.username_view.agent_usage_toggle)).area().rect(&cx);
+        assert!(toggle.size.x >= 24.0 && toggle.size.y >= 24.0);
+        let message_rect = item.area().rect(&cx);
+        screen.show_message_action_bar(&mut cx, &message_details(screen.widget_uid()), message_rect);
+        draw_screen_with_usage(&mut cx, &mut screen, true);
+        let bar = screen.view.view(&cx, ids!(message_action_bar.bar_inner)).area().rect(&cx);
+        assert!(bar.size.x > 0.0 && bar.size.y > 0.0);
+        assert!(bar.pos.x + bar.size.x <= toggle.pos.x - 7.0, "toolbar must leave the signal button clear: {bar:?} vs {toggle:?}");
     }
 
     #[test]
@@ -9144,7 +9240,7 @@ pub(crate) mod skeleton_tests {
     }
 
     #[test]
-    fn contacts_handoff_releases_the_original_timeline_from_a_legacy_saved_dm_tab() {
+    fn opening_contacts_keeps_the_original_timeline_in_its_chat_dock() {
         let mut cx=Cx::new(Box::new(|_,_|{}));
         let desktop=cx.with_vm(|vm| {
             makepad_widgets::script_mod(vm);crate::app::register_widgets(vm);
@@ -9165,12 +9261,17 @@ pub(crate) mod skeleton_tests {
         }
         timeline_state_store::mark_taken(&mut cx,&kind,original);
         assert!(matches!(timeline_state_store::take(&mut cx,&kind,desktop.widget_uid()),timeline_state_store::TakeResult::AlreadyTaken {..}));
-        crate::home::main_desktop_ui::release_legacy_direct_timeline(&mut cx,&name);
-        assert!(tab.borrow::<RoomScreen>().unwrap().tl_state.is_none());
-        assert!(tab.borrow::<RoomScreen>().unwrap().timeline_kind.is_none());
-        let timeline_state_store::TakeResult::Taken(state)=timeline_state_store::take(&mut cx,&kind,desktop.widget_uid()) else {panic!("Contacts must take the same original timeline after handoff")};
-        assert_eq!(state.kind,kind);
-        timeline_state_store::put_back(desktop.widget_uid(),state);
+        let contacts=cx.with_vm(|vm| {
+            let value=script_eval!(vm,{mod.widgets.MobileHub {kind:0}});
+            WidgetRef::script_from_value(vm,value)
+        });
+        let mut state=crate::app::AppState {selected_tab:crate::home::navigation_tab_bar::SelectedTab::Contacts,..Default::default()};
+        let actions=cx.capture_actions(|cx|cx.action(crate::home::navigation_tab_bar::NavigationBarAction::TabSelected(state.selected_tab.clone())));
+        contacts.handle_event(&mut cx,&Event::Actions(actions),&mut Scope::with_data(&mut state));
+        assert!(tab.borrow::<RoomScreen>().unwrap().tl_state.is_some());
+        assert_eq!(tab.borrow::<RoomScreen>().unwrap().timeline_kind.as_ref(),Some(&kind));
+        assert!(contacts.widget(&cx,ids!(contact_chat)).is_empty(),"Contacts owns profile details, never a second timeline");
+        assert!(matches!(timeline_state_store::take(&mut cx,&kind,contacts.widget_uid()),timeline_state_store::TakeResult::AlreadyTaken {..}));
     }
 
     #[test]
