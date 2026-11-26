@@ -177,7 +177,7 @@ script_mod! {
         visible: false width: Fill height: Fit
         open_bundle := NavigationBarButton {
             width: Fill height: Fit padding: 14 flow: Down spacing: 8
-            draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_HOVER border_radius: 5}
+            draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_HOVER}
             title := RinxLabel {width: Fill max_lines: 2 draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_bold {font_size: mod.widgets.RINX_HEADING_SIZE}}}
             preview := RinxLabel {width: Fill max_lines: 3 text_overflow: Ellipsis draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: mod.widgets.RINX_UI_SIZE}}}
             RinxLabel {text: #(crate::i18n::tr("Chat history  ›")) i18n_text: "Chat history  ›" draw_text +: {color: mod.widgets.RINX_ACCENT text_style: theme.font_regular {font_size: mod.widgets.RINX_UI_SIZE}}}
@@ -196,7 +196,7 @@ script_mod! {
             width: Fill height: Fill
             Entry := NavigationBarButton {
                 width: Fill height: 100 padding: 12 flow: Right spacing: 12 align: Align{y: 0.5}
-                draw_bg +: {color_hover: mod.widgets.RINX_SURFACE color_active: mod.widgets.RINX_SELECTED border_radius: 0}
+                draw_bg +: {color_hover: mod.widgets.RINX_SURFACE color_active: mod.widgets.RINX_SELECTED}
                 choice := RinxLabel {width: 22 draw_text +: {color: mod.widgets.RINX_ACCENT text_style.font_size: mod.widgets.RINX_TITLE_SIZE}}
                 text_content := View {width: Fill height: Fill flow: Down spacing: 8
                     sender := RinxLabel {width: Fill max_lines: 1 text_overflow: Ellipsis draw_text +: {color: mod.widgets.RINX_ACCENT text_style.font_size: mod.widgets.RINX_BODY_SIZE}}
@@ -205,7 +205,7 @@ script_mod! {
             }
             History := NavigationBarButton {
                 width: Fill height: Fit padding: 16 flow: Down spacing: 8
-                draw_bg +: {color_hover: mod.widgets.RINX_SURFACE color_active: mod.widgets.RINX_SURFACE border_radius: 0}
+                draw_bg +: {color_hover: mod.widgets.RINX_SURFACE color_active: mod.widgets.RINX_SURFACE}
                 sender := RinxLabel {width: Fill flow: Flow.Right{wrap: true} draw_text +: {color: mod.widgets.RINX_ACCENT text_style.font_size: mod.widgets.RINX_BODY_SIZE}}
                 body := RinxLabel {width: Fill flow: Flow.Right{wrap: true} draw_text +: {color: mod.widgets.RINX_INK text_style.font_size: mod.widgets.RINX_BODY_SIZE}}
             }
@@ -229,7 +229,7 @@ script_mod! {
                 width: Fill height: Fill
                 Chat := NavigationBarButton {
                     width: Fill height: 56 padding: 12 flow: Right spacing: 12 align: Align{y: 0.5}
-                    draw_bg +: {color_hover: mod.widgets.RINX_SURFACE color_active: mod.widgets.RINX_SELECTED border_radius: 0}
+                    draw_bg +: {color_hover: mod.widgets.RINX_SURFACE color_active: mod.widgets.RINX_SELECTED}
                     choice := RinxLabel {width: 22 draw_text +: {color: mod.widgets.RINX_ACCENT text_style.font_size: mod.widgets.RINX_TITLE_SIZE}}
                     name := RinxLabel {width: Fill max_lines: 1 text_overflow: Ellipsis draw_text +: {color: mod.widgets.RINX_INK text_style.font_size: mod.widgets.RINX_BODY_SIZE}}
                 }

@@ -15,7 +15,7 @@ script_mod! {
     let AccountPickerRow = RobrixIconButton {
         height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
         width: Fill margin: 0 align: Align{x: 0 y: 0.5}
-        draw_bg +: {color: mod.widgets.RINX_SURFACE color_hover: mod.widgets.RINX_HOVER color_down: mod.widgets.RINX_PRESSED border_size: 0 border_radius: 4}
+        draw_bg +: {color: mod.widgets.RINX_SURFACE color_hover: mod.widgets.RINX_HOVER color_down: mod.widgets.RINX_PRESSED border_size: 0 border_radius: mod.widgets.RINX_CONTROL_RADIUS}
         draw_icon.color: mod.widgets.RINX_ACCENT
         draw_text +: {color: mod.widgets.RINX_INK color_hover: mod.widgets.RINX_INK color_down: mod.widgets.RINX_INK text_style: mod.widgets.RBX_TEXT_BODY}
     }

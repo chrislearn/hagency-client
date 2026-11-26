@@ -19,7 +19,7 @@ script_mod! {
             color: (COLOR_PRIMARY)
             color_hover: mod.widgets.RINX_HOVER
             color_down: mod.widgets.RINX_PRESSED
-            border_radius: 4.0
+            border_radius: mod.widgets.RINX_CONTROL_RADIUS
         }
         draw_text +: {
             color: (COLOR_TEXT)
@@ -59,7 +59,7 @@ script_mod! {
             show_bg: true
             draw_bg +: {
                 color: (COLOR_PRIMARY)
-                border_radius: 5.0
+                border_radius: mod.widgets.RINX_CARD_RADIUS
                 border_size: 0.0
                 shadow_color: #0005
                 shadow_radius: 14.0

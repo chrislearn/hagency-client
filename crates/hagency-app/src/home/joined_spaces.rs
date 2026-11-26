@@ -43,7 +43,7 @@ script_mod! {
                 row := NavigationBarButton {
                     width: Fill height: 56 flow: Right spacing: 10
                     align: Align{y: 0.5} padding: Inset{left: 16 right: 14}
-                    draw_bg +: {color_hover: mod.widgets.RINX_BORDER color_active: mod.widgets.RINX_BORDER border_radius: 0}
+                    draw_bg +: {color_hover: mod.widgets.RINX_BORDER color_active: mod.widgets.RINX_BORDER border_radius: mod.widgets.RINX_CONTROL_RADIUS}
                     indent := View {width: 0 height: 1}
                     disclosure := View {
                         width: 12 height: 14 flow: Overlay align: Align{x: 0.5 y: 0.5}
@@ -79,7 +79,7 @@ script_mod! {
                 row := NavigationBarButton {
                     width: Fill height: Fill flow: Right align: Align{y: 0.5}
                     padding: Inset{left: 48 right: 14}
-                    draw_bg +: {color_hover: mod.widgets.RINX_BORDER border_radius: 0}
+                    draw_bg +: {color_hover: mod.widgets.RINX_BORDER border_radius: mod.widgets.RINX_CONTROL_RADIUS}
                     indent := View {width: 0 height: 1}
                     name := RinxLabel {
                         text: #(crate::i18n::tr("Browse rooms ›")) i18n_text: "Browse rooms ›"

@@ -165,9 +165,9 @@ script_mod! {
             color_2_hover: (RBX_BG_HOVER)
             color_active: (RBX_ACCENT)
             color_2_active: (RBX_ACCENT)
-            // Remove the border and rounded corners from the default Tab style
+            // Keep the tab borderless during selection.
             border_size: 0.0
-            border_radius: 3.0
+            border_radius: mod.widgets.RINX_CONTROL_RADIUS
         }
 
         animator: Animator{

@@ -24,7 +24,7 @@ script_mod! {
 
     let ChatSwitchButton = NavigationBarButton {
         width: Fill height: 32 align: Align{x: 0.0 y: 0.5} padding: Inset{left: 12 right: 8}
-        draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_SELECTED border_radius: 5}
+        draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_SELECTED border_radius: mod.widgets.RINX_CONTROL_RADIUS}
         label := RinxLabel {
             draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: mod.widgets.RINX_UI_SIZE}}
         }
@@ -43,7 +43,7 @@ script_mod! {
         draw_bg.color: MOBILE_BG
         RoundedView {
             width: Fill height: Fill flow: Right padding: 2
-            draw_bg +: {color: mod.widgets.RINX_FIELD border_radius: 6}
+            draw_bg +: {color: mod.widgets.RINX_FIELD border_radius: mod.widgets.RINX_CONTROL_RADIUS}
             all_chats := ChatSwitchButton {label.text: #(crate::i18n::tr("All Chats")) label.i18n_text: "All Chats"}
             joined_spaces_tab := ChatSwitchButton {label.text: #(crate::i18n::tr("Spaces")) label.i18n_text: "Spaces"}
         }
@@ -100,7 +100,7 @@ script_mod! {
                 draw_bg.color: MOBILE_BG
                 room_filter_input_bar := RoomFilterInputBar {
                     height: 36
-                    draw_bg +: {color: mod.widgets.RINX_SURFACE border_size: 0 border_radius: 5}
+                    draw_bg +: {color: mod.widgets.RINX_SURFACE border_size: 0 border_radius: mod.widgets.RINX_CONTROL_RADIUS}
                     input +: {
                         empty_text: #(crate::i18n::tr("Search")) i18n_empty_text: "Search"
                         draw_text.text_style.font_size: mod.widgets.RINX_UI_SIZE

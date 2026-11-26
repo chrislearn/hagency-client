@@ -111,7 +111,7 @@ script_mod! {
         show_bg: true
         draw_bg +: {
             color: (COLOR_PRIMARY_DARKER)
-            border_radius: 4.0
+            border_radius: mod.widgets.RINX_CARD_RADIUS
             border_size: 0.0
             shadow_color: #0005
             shadow_radius: 15.0
@@ -224,7 +224,7 @@ script_mod! {
                         show_bg: true,
                         draw_bg +: {
                             color: (COLOR_PRIMARY)
-                            border_radius: 4.0
+                            border_radius: mod.widgets.RINX_CARD_RADIUS
                         }
 
                         CachedWidget {
@@ -239,7 +239,7 @@ script_mod! {
                         show_bg: true,
                         draw_bg +: {
                             color: (COLOR_PRIMARY)
-                            border_radius: 4.0
+                            border_radius: mod.widgets.RINX_CARD_RADIUS
                         }
 
                         CachedWidget {

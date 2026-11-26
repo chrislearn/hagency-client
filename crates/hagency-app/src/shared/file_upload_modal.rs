@@ -63,7 +63,7 @@ script_mod! {
         show_bg: true,
         draw_bg +: {
             color: (COLOR_PRIMARY)
-            border_radius: 6.0
+            border_radius: mod.widgets.RINX_CARD_RADIUS
             border_size: 0.0
         }
 
@@ -287,7 +287,7 @@ script_mod! {
                 show_bg: true,
                 draw_bg +: {
                     color: (COLOR_TRANSPARENT)
-                    border_radius: 6.0
+                    border_radius: mod.widgets.RINX_CARD_RADIUS
                     border_size: 1.0,
                     border_color: (COLOR_SECONDARY_DARKER)
                 }

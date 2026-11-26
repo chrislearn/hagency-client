@@ -887,7 +887,7 @@ script_mod! {
         account := DesktopRailButton {
             draw_bg +: {
                 color_active: mod.widgets.RINX_FIELD
-                border_radius: 7
+                border_radius: mod.widgets.RINX_CONTROL_RADIUS
             }
             avatar := Avatar {width: 30 height: 30}
         }

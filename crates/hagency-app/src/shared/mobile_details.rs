@@ -18,7 +18,7 @@ script_mod! {
     mod.widgets.DetailRow = NavigationBarButton {
         width: Fill height: 56 flow: Right spacing: 12
         padding: Inset{left: 20 right: 20} align: Align{y: 0.5}
-        draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_SELECTED border_radius: 0}
+        draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_SELECTED}
         title := mod.widgets.DetailLabel {width: Fit max_lines: 1}
         value := mod.widgets.DetailLabel {
             width: Fill align: Align{x: 1} max_lines: 1 text_overflow: Ellipsis
@@ -34,7 +34,7 @@ script_mod! {
     }
     mod.widgets.DetailAction = NavigationBarButton {
         width: Fill height: 56 align: Align{x: 0.5 y: 0.5}
-        draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_SELECTED border_radius: 0}
+        draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_SELECTED}
         title := mod.widgets.DetailLabel {draw_text.color: mod.widgets.RINX_ACCENT}
     }
     mod.widgets.DetailHeader = SolidView {
@@ -62,13 +62,13 @@ script_mod! {
         width: 64 height: 64
         text_view +: {draw_bg +: {pixel: fn() {
             let sdf = Sdf2d.viewport(self.pos * self.rect_size)
-            sdf.box(0.0, 0.0, self.rect_size.x, self.rect_size.y, 5.0)
+            sdf.box(0.0, 0.0, self.rect_size.x, self.rect_size.y, mod.widgets.RINX_CONTROL_RADIUS)
             sdf.fill(self.color)
             return sdf.result
         }}}
         img_view +: {img +: {draw_bg +: {pixel: fn() {
             let sdf = Sdf2d.viewport(self.pos * self.rect_size)
-            sdf.box(0.0, 0.0, self.rect_size.x, self.rect_size.y, 5.0)
+            sdf.box(0.0, 0.0, self.rect_size.x, self.rect_size.y, mod.widgets.RINX_CONTROL_RADIUS)
             sdf.fill(self.get_color())
             return sdf.result
         }}}}

@@ -18,7 +18,7 @@ script_mod! {
         align: Align{x: 0.5 y: 0.5}
         pill := RoundedView {
             width: Fit height: Fit padding: Inset{left: 5 right: 5 top: 1 bottom: 1}
-            draw_bg +: {color: RINX_FIELD border_radius: RBX_RADIUS_PILL}
+            draw_bg +: {color: RINX_FIELD border_radius: RINX_CONTROL_RADIUS}
             label_count := RinxLabel {
                 width: Fit height: Fit padding: 0
                 flow: Flow.Right{wrap: false}
@@ -27,7 +27,7 @@ script_mod! {
         }
         dot := RoundedView {
             visible: false width: 10 height: 10
-            draw_bg +: {color: RINX_ACCENT border_radius: RBX_RADIUS_PILL}
+            draw_bg +: {color: RINX_ACCENT border_radius: 5}
         }
     }
 }

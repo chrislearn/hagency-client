@@ -34,7 +34,7 @@ script_mod! {
         show_bg: true,
         draw_bg +: {
             color: (COLOR_PRIMARY)
-            border_radius: 5.0
+            border_radius: mod.widgets.RINX_CARD_RADIUS
             border_color: (COLOR_SECONDARY)
             border_size: 2.0
             // shadow_color: #0006

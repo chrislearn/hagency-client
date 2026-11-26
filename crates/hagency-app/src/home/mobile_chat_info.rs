@@ -106,7 +106,7 @@ script_mod! {
                     row := NavigationBarButton {
                         width: Fill height: 56 flow: Right spacing: 8 padding: Inset{left: 16 right: 16}
                         align: Align{y: 0.5}
-                        draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_HOVER border_radius: 0}
+                        draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_HOVER border_radius: mod.widgets.RINX_CONTROL_RADIUS}
                         avatar := mod.widgets.MobileAvatar {width: 32 height: 32}
                         View {
                             width: Fill height: Fit flow: Down spacing: 2 padding: 0
@@ -129,7 +129,7 @@ script_mod! {
                     row := NavigationBarButton {
                         width: Fill height: 56 flow: Right spacing: 10
                         padding: Inset{left: 20 right: 20} align: Align{y: 0.5}
-                        draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_HOVER border_radius: 0}
+                        draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_HOVER border_radius: mod.widgets.RINX_CONTROL_RADIUS}
                         title := RinxLabel {
                             width: Fill max_lines: 1 text_overflow: Ellipsis
                             draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: mod.widgets.RINX_UI_SIZE}}

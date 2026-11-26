@@ -206,7 +206,7 @@ script_mod! {
 
                 show_bg: true
                 draw_bg +: {
-                    border_radius: 4.0
+                    border_radius: mod.widgets.RINX_CARD_RADIUS
                     color: (COLOR_IMAGE_VIEWER_META_BACKGROUND)
                 }
 
@@ -297,7 +297,7 @@ script_mod! {
                 show_bg: true
                 draw_bg +: {
                     color: (COLOR_IMAGE_VIEWER_META_BACKGROUND),
-                    border_radius: 4.0
+                    border_radius: mod.widgets.RINX_CARD_RADIUS
                 }
                 padding: Inset{ left: 7, top: 4, bottom: 4, right: 7}
 

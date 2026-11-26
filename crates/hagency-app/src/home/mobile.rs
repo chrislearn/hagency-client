@@ -30,18 +30,20 @@ script_mod! {
     mod.widgets.MobileAvatar = Avatar {
         width: 48 height: 48
         text_view +: {draw_bg +: {
+            avatar_radius: uniform(mod.widgets.RINX_CONTROL_RADIUS)
             pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size)
-                sdf.box(0.0, 0.0, self.rect_size.x, self.rect_size.y, 5.0)
+                sdf.box(0.0, 0.0, self.rect_size.x, self.rect_size.y, self.avatar_radius)
                 sdf.fill(self.color)
                 return sdf.result
             }
         }
         }
         img_view +: {img +: {draw_bg +: {
+            avatar_radius: uniform(mod.widgets.RINX_CONTROL_RADIUS)
             pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size)
-                sdf.box(0.0, 0.0, self.rect_size.x, self.rect_size.y, 5.0)
+                sdf.box(0.0, 0.0, self.rect_size.x, self.rect_size.y, self.avatar_radius)
                 sdf.fill(self.get_color())
                 return sdf.result
             }
@@ -78,7 +80,7 @@ script_mod! {
         width: Fill height: 56
         flow: Right spacing: 16 padding: Inset{left: 20 right: 16}
         align: Align{y: 0.5}
-        draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_HOVER border_radius: 0}
+        draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_HOVER border_radius: mod.widgets.RINX_CONTROL_RADIUS}
         icon := Icon {
             icon_walk: Walk{width: 24 height: 24}
             draw_icon +: {color: mod.widgets.RINX_ACCENT svg: ICON_PEOPLE}
@@ -157,7 +159,7 @@ script_mod! {
                                 width: Fill height: 60 flow: Right spacing: 14 padding: Inset{left: 16 right: 16}
                                 align: Align{y: 0.5}
                                 draw_bg +: {
-                                    color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_SELECTED border_radius: 0
+                                    color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_SELECTED border_radius: mod.widgets.RINX_CONTROL_RADIUS
                                 }
                                 avatar := mod.widgets.MobileAvatar {width: 40 height: 40}
                                 name := RinxLabel {
@@ -168,7 +170,7 @@ script_mod! {
                                 agent_badge := RoundedView {
                                     visible: false width: Fit height: 20 padding: Inset{left: 6 right: 6}
                                     align: Align{x: 0.5 y: 0.5}
-                                    draw_bg +: {color: mod.widgets.RBX_ACCENT_SOFT border_radius: 4}
+                                    draw_bg +: {color: mod.widgets.RBX_ACCENT_SOFT border_radius: mod.widgets.RINX_CONTROL_RADIUS}
                                     RinxLabel {
                                         padding: 0 text: #(crate::i18n::tr("Agent")) i18n_text: "Agent"
                                         draw_text +: {color: mod.widgets.RBX_ACCENT text_style: theme.font_bold{font_size: mod.widgets.RINX_META_SIZE}}
@@ -204,7 +206,7 @@ script_mod! {
                             group_row := NavigationBarButton {
                                 width: Fill height: 72 flow: Right spacing: 14 padding: Inset{left: 16 right: 16}
                                 align: Align{y: 0.5}
-                                draw_bg +: {color_hover: mod.widgets.RINX_BORDER border_radius: 0}
+                                draw_bg +: {color_hover: mod.widgets.RINX_BORDER border_radius: mod.widgets.RINX_CONTROL_RADIUS}
                                 avatar := mod.widgets.MobileAvatar {width: 48 height: 48}
                                 name := RinxLabel {
                                     width: Fill max_lines: 1 text_overflow: Ellipsis

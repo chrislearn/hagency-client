@@ -20,7 +20,7 @@ script_mod! {
             margin: Inset{top: 12}
             padding: 12
             show_bg: true
-            draw_bg +: { color: mod.widgets.RINX_FIELD border_radius: 4.0 }
+            draw_bg +: { color: mod.widgets.RINX_FIELD border_radius: mod.widgets.RINX_CARD_RADIUS }
             message := RinxLabel {
                 width: Fill, height: Fit
                 flow: Flow.Right{wrap: true}

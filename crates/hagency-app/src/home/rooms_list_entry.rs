@@ -81,7 +81,7 @@ script_mod! {
                                 pill_bg +: {
                                     margin: Inset{top: 1}
                                     padding: Inset{ left: 4.5, right: 3.0, bottom: -3.5, top: -3.5 }
-                                    draw_bg +: { border_radius: 4.5 }
+                                    draw_bg +: { border_radius: mod.widgets.RINX_CONTROL_RADIUS }
                                     avatar +: {
                                         width: 13.0, height: 13.0,
                                         text_view +: {
@@ -138,7 +138,7 @@ script_mod! {
             color_selected_hover: instance(RBX_BG_PRESSED)
             border_color: instance(#0000)
             border_size: uniform(0.0)
-            border_radius: uniform(6.0)
+            border_radius: uniform(mod.widgets.RINX_CONTROL_RADIUS)
             border_inset: uniform(vec4(0.0))
 
             get_color: fn() -> vec4 {
@@ -203,11 +203,13 @@ script_mod! {
         mobile: true
         height: max(72, 72 * RINX_TEXT_SCALE) padding: 0 spacing: 0 flow: Overlay clip_x: true
         draw_bg +: {
-            border_radius: 0
+            border_radius: mod.widgets.RINX_CONTROL_RADIUS
             color: mod.widgets.RINX_SURFACE color_hover: mod.widgets.RINX_HOVER color_selected: mod.widgets.RINX_SELECTED
             pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size)
                 sdf.rect(0.0, 0.0, self.rect_size.x, self.rect_size.y)
+                sdf.fill(self.color)
+                sdf.box(0.0, 0.0, self.rect_size.x, self.rect_size.y, self.border_radius)
                 sdf.fill(self.get_color())
                 sdf.rect(76.0, self.rect_size.y - 0.5, self.rect_size.x - 76.0, 0.5)
                 sdf.fill(mod.widgets.RINX_BORDER)
@@ -257,7 +259,7 @@ script_mod! {
                 invite_badge := RoundedView {
                     visible: false width: Fit height: Fit padding: Inset{left: 5 right: 5 top: 1 bottom: 1}
                     align: Align{x: 0.5 y: 0.5}
-                    draw_bg +: {color: RINX_WARNING_BG border_radius: RBX_RADIUS_PILL}
+                    draw_bg +: {color: RINX_WARNING_BG border_radius: mod.widgets.RINX_CONTROL_RADIUS}
                     RinxLabel {text: "!" padding: 0 draw_text +: {color: RINX_WARNING_FG text_style: RBX_TEXT_BADGE {}}}
                 }
             }

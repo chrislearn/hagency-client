@@ -40,7 +40,7 @@ script_mod! {
             show_bg: true,
             draw_bg +: {
                 color: (RBX_ACCENT_SOFT)
-                border_radius: 6.0
+                border_radius: mod.widgets.RINX_CONTROL_RADIUS
             }
 
             avatar := Avatar {

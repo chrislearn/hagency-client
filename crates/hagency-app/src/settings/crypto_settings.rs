@@ -15,7 +15,7 @@ script_mod! {
         margin: Inset{top: 16 bottom: 20}
         padding: 14
         show_bg: true
-        draw_bg +: {color: mod.widgets.RINX_FIELD border_radius: 4.0}
+        draw_bg +: {color: mod.widgets.RINX_FIELD border_radius: mod.widgets.RINX_CARD_RADIUS}
         View {
             width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 10
             RinxLabel {

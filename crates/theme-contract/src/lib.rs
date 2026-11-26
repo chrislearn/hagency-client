@@ -617,7 +617,8 @@ mod tests {
         tokens.insert("shape.surface.radius".into(), dimension(10.));
         let mut output = String::new();
         makepad::append_makepad(&mut output, &tokens).unwrap();
-        assert!(output.contains("corner_radius = 10.0\n"));
+        assert!(output.contains("octo_shape_surface_radius = 10.0\n"));
+        assert!(output.contains("container_corner_radius = 5.0\n"));
         let css = css::variables(&tokens).unwrap();
         assert!(css.contains("--octo-shape-surface-radius:10.0px;"));
         assert!(css.contains("--octo-color-content-primary:#000000;"));

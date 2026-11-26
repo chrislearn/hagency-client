@@ -29,7 +29,7 @@ script_mod! {
             show_bg: true
             draw_bg +: {
                 color: (COLOR_SECONDARY)
-                border_radius: 4.0
+                border_radius: mod.widgets.RINX_CARD_RADIUS
             }
 
             wallet_name_input := RobrixTextInput {

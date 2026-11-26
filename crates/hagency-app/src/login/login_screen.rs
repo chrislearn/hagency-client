@@ -181,7 +181,7 @@ script_mod! {
                                         color_down: mod.widgets.RINX_PRESSED
                                         border_size: 1
                                         border_color: mod.widgets.RINX_BORDER
-                                        border_radius: 5
+                                        border_radius: mod.widgets.RINX_CONTROL_RADIUS
                                     }
                                     text: #(crate::i18n::tr("Edit")) i18n_text: "Edit"
                                 }

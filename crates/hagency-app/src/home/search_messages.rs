@@ -20,7 +20,7 @@ script_mod! {
             color: (COLOR_BG_DISABLED)
             // color: (COLOR_ROBRIX_PURPLE) // or `color: (COLOR_ACTIVE_PRIMARY)`
             // color_hover: (COLOR_PRIMARY_DARKER) // make it whiter (this value is mixed in with `color`)
-            border_radius: 4.0
+            border_radius: mod.widgets.RINX_CONTROL_RADIUS
             border_color: (COLOR_SECONDARY)
             border_size: 1.0
         }

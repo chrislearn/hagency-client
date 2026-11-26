@@ -187,7 +187,7 @@ script_mod! {
                     RinxLabel {text: #(crate::i18n::tr("Small moments, shared with friends")) i18n_text: "Small moments, shared with friends" draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: mod.widgets.RINX_UI_SIZE}}}
                 }
                 Post := NavigationBarButton {width: Fill height: Fit flow: Right padding: 16 spacing: 12 align: Align{x: 0.0 y: 0.0}
-                    draw_bg +: {color_hover: mod.widgets.RINX_HOVER border_radius: 0}
+                    draw_bg +: {color_hover: mod.widgets.RINX_HOVER}
                     post_avatar := MobileAvatar {width: 38 height: 38}
                     View {width: Fill height: Fit flow: Down spacing: 10
                     post_author := RinxLabel {width: Fill max_lines: 1 text_overflow: Ellipsis draw_text +: {color: mod.widgets.RINX_ACCENT text_style: theme.font_bold{font_size: mod.widgets.RINX_HEADING_SIZE}}}

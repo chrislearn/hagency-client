@@ -71,7 +71,7 @@ makepad_widgets::script_mod! {
         View {width: Fill height: Fit spacing: 6 align: Align{y: 0.5}
             number := Small {width: Fill}
             priority_badge := RoundedView {width: Fit height: Fit padding: Inset{left:7 right:7 top:3 bottom:3}
-                draw_bg +: {color:mod.widgets.RINX_PANEL_BG border_radius:5.0}
+                draw_bg +: {color:mod.widgets.RINX_PANEL_BG border_radius:mod.widgets.RINX_CONTROL_RADIUS}
                 priority := Small {width: Fit}
             }
             drag_handle := View {width: 22 height: 26 align: Align{x: 1.0 y: 0.5} cursor: MouseCursor.Move
@@ -94,7 +94,7 @@ makepad_widgets::script_mod! {
             marker := RoundedView {width: 8 height: 8 draw_bg +: {color: mod.widgets.RINX_MUTED border_radius: 4.0}}
             heading := Text {width: Fill max_lines:1 text_overflow:Ellipsis draw_text.text_style: RBX_TEXT_CARD_TITLE {}}
             count_badge := RoundedView {width:Fit height:Fit padding:Inset{left:8 right:8 top:3 bottom:3}
-                draw_bg +: {color:mod.widgets.RINX_SURFACE border_radius:6.0}
+                draw_bg +: {color:mod.widgets.RINX_SURFACE border_radius:mod.widgets.RINX_CONTROL_RADIUS}
                 count := Small {width: Fit}
             }
             add := RinxGhostButton {width:RINX_ICON_BUTTON_SIZE height:RINX_ICON_BUTTON_SIZE padding:0 text:"+"}
@@ -102,7 +102,7 @@ makepad_widgets::script_mod! {
         cards := PortalList {width: Fill height: Fill capture_overload: false
             Card := mod.widgets.KanbanCard {margin: Inset{right:14 bottom:RINX_SPACE_3}}
             Empty := RoundedView {width: Fill height: 104 margin:Inset{right:14} padding: 16 align:Align{x:0.5 y:0.5}
-                draw_bg +: {color:mod.widgets.RINX_SURFACE border_color:mod.widgets.RINX_BORDER border_size:1.0 border_radius:10.0}
+                draw_bg +: {color:mod.widgets.RINX_SURFACE border_color:mod.widgets.RINX_BORDER border_size:1.0 border_radius:mod.widgets.RINX_CARD_RADIUS}
                 Hint {width:Fill align:Align{x:0.5} text: #(crate::i18n::tr("No tasks here yet")) i18n_text: "No tasks here yet"}
             }
             More := View {width: Fill height: Fit padding:Inset{bottom:12} margin: Inset{right:14}
@@ -194,7 +194,7 @@ makepad_widgets::script_mod! {
         // Kept out of normal layout; the board draws it in a pass-wide modal overlay.
         inspector_host := View {visible:false
         notifications_panel := RoundedView {visible:false width:420 height:Fill flow:Down padding:20 spacing:12
-            draw_bg +: {color:mod.widgets.RINX_SURFACE border_color:mod.widgets.RINX_BORDER border_size:1.0 border_radius:10.0}
+            draw_bg +: {color:mod.widgets.RINX_SURFACE border_color:mod.widgets.RINX_BORDER border_size:1.0 border_radius:mod.widgets.RINX_CARD_RADIUS}
             View {width:Fill height:Fit spacing:10 align:Align{y:0.5}
                 Text {width:Fill flow:Flow.Right{wrap:true} text:#(crate::i18n::tr("Project notifications · assignments, comments and changes")) i18n_text:"Project notifications · assignments, comments and changes"}
                 notifications_close := RinxIconButton {width:32 height:32 draw_icon.svg:ICON_CLOSE}
@@ -213,7 +213,7 @@ makepad_widgets::script_mod! {
             notifications_older := Action {visible:false text:#(crate::i18n::tr("Older notifications")) i18n_text:"Older notifications"}
         }
             column_settings := RoundedView {visible:false width:760 height:620 padding:20 flow:Down spacing:14
-                draw_bg +: {color:mod.widgets.RINX_SURFACE border_radius:12.0 border_size:1.0 border_color:mod.widgets.RINX_BORDER}
+                draw_bg +: {color:mod.widgets.RINX_SURFACE border_radius:mod.widgets.RINX_CARD_RADIUS border_size:1.0 border_color:mod.widgets.RINX_BORDER}
                 View {width:Fill height:40 spacing:10 align:Align{y:0.5}
                     Text {width:Fill text:#(crate::i18n::tr("Manage columns")) i18n_text:"Manage columns" draw_text.text_style:theme.font_bold{font_size:mod.widgets.RINX_SECTION_SIZE}}
                     save_columns := RinxPrimaryButton {height:36 text:#(crate::i18n::tr("Save changes")) i18n_text:"Save changes"}
@@ -260,7 +260,7 @@ makepad_widgets::script_mod! {
             }
 
             inspector := RoundedView {visible: false width: 760 height: 700 padding: 18 flow: Down spacing: 12
-                draw_bg +: {color: mod.widgets.RINX_SURFACE border_radius: 12.0 border_size: 1.0 border_color: mod.widgets.RINX_BORDER}
+                draw_bg +: {color: mod.widgets.RINX_SURFACE border_radius: mod.widgets.RINX_CARD_RADIUS border_size: 1.0 border_color: mod.widgets.RINX_BORDER}
                 View {width: Fill height: 40 spacing: 8 align: Align{y: 0.5}
                     detail_heading := Text {width: Fill max_lines:1 text_overflow:Ellipsis draw_text.text_style: theme.font_bold{font_size: mod.widgets.RINX_SECTION_SIZE}}
                     save := RinxPrimaryButton {width: 82 height: 38 text: #(crate::i18n::tr("Save")) i18n_text: "Save"}
@@ -271,7 +271,7 @@ makepad_widgets::script_mod! {
                 dialog_retry := Action {visible:false text:#(crate::i18n::tr("Retry original save")) i18n_text:"Retry original save"}
                 reload_latest := RinxGhostButton {visible: false width: Fill height:36 text: #(crate::i18n::tr("Discard draft and load latest")) i18n_text: "Discard draft and load latest"}
                 detail_tabs := RoundedView {width:Fill height:40 spacing:4 padding:3
-                    draw_bg +: {color:mod.widgets.RINX_PANEL_BG border_radius:9.0}
+                    draw_bg +: {color:mod.widgets.RINX_PANEL_BG border_radius:mod.widgets.RINX_CONTROL_RADIUS}
                     detail_tab := RinxGhostButton {width:Fill height:34 padding:0 text:#(crate::i18n::tr("Task details")) i18n_text:"Task details"}
                     discussion_tab := RinxGhostButton {width:Fill height:34 padding:0 text:#(crate::i18n::tr("Discussion")) i18n_text:"Discussion"}
                 }
@@ -320,7 +320,7 @@ makepad_widgets::script_mod! {
                         }
                     }
                     calendar := RoundedView {visible:false width:Fill height:Fit padding:10 spacing:4 flow:Down
-                        draw_bg +: {color:mod.widgets.RINX_PANEL_BG border_radius:10.0 border_color:mod.widgets.RINX_BORDER border_size:1.0}
+                        draw_bg +: {color:mod.widgets.RINX_PANEL_BG border_radius:mod.widgets.RINX_CARD_RADIUS border_color:mod.widgets.RINX_BORDER border_size:1.0}
                         View {width:Fill height:32 spacing:4 align:Align{y:0.5}
                             calendar_prev := RinxGhostButton {width:32 height:30 padding:0 text:"‹"}
                             calendar_month := Text {width:Fill align:Align{x:0.5 y:0.5}}
@@ -398,7 +398,7 @@ makepad_widgets::script_mod! {
                     Text {text: #(crate::i18n::tr("Description")) i18n_text: "Description"}
                     description_editor := Composer {}
                     attachments_section := RoundedView {width:Fill height:Fit flow:Down spacing:10 padding:12
-                        draw_bg +: {color:mod.widgets.RINX_SURFACE border_color:mod.widgets.RINX_BORDER border_size:1.0 border_radius:10.0}
+                        draw_bg +: {color:mod.widgets.RINX_SURFACE border_color:mod.widgets.RINX_BORDER border_size:1.0 border_radius:mod.widgets.RINX_CARD_RADIUS}
                         View {width:Fill height:Fit align:Align{y:0.5}
                             Text {width:Fill text:#(crate::i18n::tr("Attachments")) i18n_text:"Attachments"}
                             upload_attachment := Action {text:#(crate::i18n::tr("Add file")) i18n_text:"Add file"}
@@ -417,7 +417,7 @@ makepad_widgets::script_mod! {
                             }
                         }
                         attachment_delete := RoundedView {visible:false width:Fill height:Fit flow:Down spacing:8 padding:10
-                            draw_bg +: {color:mod.widgets.RINX_PANEL_BG border_color:mod.widgets.RINX_BORDER border_size:1.0 border_radius:8.0}
+                            draw_bg +: {color:mod.widgets.RINX_PANEL_BG border_color:mod.widgets.RINX_BORDER border_size:1.0 border_radius:mod.widgets.RINX_CARD_RADIUS}
                             delete_filename := Text {width:Fill max_lines:2}
                             Hint {draw_text.color:RINX_DANGER_FG text:#(crate::i18n::tr("Delete this attachment? Images in descriptions and comments will become unavailable.")) i18n_text:"Delete this attachment? Images in descriptions and comments will become unavailable."}
                             View {width:Fill height:Fit spacing:8
@@ -480,7 +480,7 @@ makepad_widgets::script_mod! {
             tooltip_label +: {visible:false}
         }}
         drag_preview := Tooltip {abs_pos:vec2(0,0) content := RoundedShadowView {width:Fit height:Fit padding:0
-            draw_bg +: {color:mod.widgets.RINX_SURFACE border_radius:8.0 shadow_radius:16.0 shadow_offset:vec2(0,4) shadow_color:RBX_SHADOW}
+            draw_bg +: {color:mod.widgets.RINX_SURFACE border_radius:mod.widgets.RINX_CARD_RADIUS shadow_radius:16.0 shadow_offset:vec2(0,4) shadow_color:RBX_SHADOW}
             tooltip_label := RinxLabel {visible:false}
             floating := mod.widgets.KanbanCard {width:226 margin:0 cursor:MouseCursor.Move
                 draw_bg +: {border_color:mod.widgets.RINX_ACCENT border_size:2.0}

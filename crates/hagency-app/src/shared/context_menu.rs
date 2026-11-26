@@ -66,7 +66,7 @@ script_mod! {
         show_bg: true
         draw_bg +: {
             color: (COLOR_PRIMARY)
-            border_radius: 5.0
+            border_radius: mod.widgets.RINX_CARD_RADIUS
             border_size: 1.0
             border_color: mod.widgets.RINX_BORDER
         }

@@ -80,7 +80,7 @@ script_mod! {
                         matrix_link_view +: {
                             matrix_link +: {
                                 pill_bg +: {
-                                    draw_bg +: { border_radius: 5.0 }
+                                    draw_bg +: { border_radius: mod.widgets.RINX_CONTROL_RADIUS }
                                     avatar +: {
                                         width: 13.53, height: 13.53,
                                         text_view +: {
@@ -133,7 +133,7 @@ script_mod! {
             border_color: mod.widgets.RINX_BORDER
             border_color_hover: mod.widgets.RINX_BORDER
             border_color_down: mod.widgets.RINX_BORDER
-            border_radius: 4.0
+            border_radius: mod.widgets.RINX_CONTROL_RADIUS
         }
     }
 
@@ -210,7 +210,7 @@ script_mod! {
             cancel_reply_button := RobrixNegativeIconButton {
                 width: RINX_ICON_BUTTON_SIZE height: RINX_ICON_BUTTON_SIZE padding: 0 spacing: 0 icon_walk: Walk{width: 16 height: 16}
                 margin: Inset{left: 5, right: 0},
-                draw_bg.border_radius: 4.0
+                draw_bg.border_radius: mod.widgets.RINX_CONTROL_RADIUS
                 draw_icon.svg: (ICON_CLOSE)
             }
         }
@@ -240,7 +240,7 @@ script_mod! {
         }
         panel := RoundedView {
             width: Fill height: Fit flow: Down spacing: 3 padding: 8
-            draw_bg +: {color: mod.widgets.RINX_FIELD border_radius: 4}
+            draw_bg +: {color: mod.widgets.RINX_FIELD border_radius: mod.widgets.RINX_CARD_RADIUS}
             header := View {
                 width: Fill height: Fit flow: Right spacing: 4
                 replying_label := RinxLabel {

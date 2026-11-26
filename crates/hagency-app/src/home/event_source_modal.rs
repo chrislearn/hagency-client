@@ -11,8 +11,6 @@ script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
 
-    mod.widgets.VIEW_SOURCE_MODAL_BORDER_RADIUS = 6.0
-
     // A small icon button for copying content
     mod.widgets.CopyButton = RinxIconButton {
         width: RINX_ICON_BUTTON_SIZE height: RINX_ICON_BUTTON_SIZE padding: 0 spacing: 0 icon_walk: Walk{width: 16 height: 16}
@@ -46,7 +44,7 @@ script_mod! {
         show_bg: true
         draw_bg +: {
             color: (COLOR_PRIMARY)
-            border_radius: mod.widgets.VIEW_SOURCE_MODAL_BORDER_RADIUS
+            border_radius: mod.widgets.RINX_CARD_RADIUS
             border_size: 0.0
         }
 
@@ -193,7 +191,7 @@ script_mod! {
                 show_bg: true
                 draw_bg +: {
                     color: (COLOR_TRANSPARENT)
-                    border_radius: mod.widgets.VIEW_SOURCE_MODAL_BORDER_RADIUS,
+                    border_radius: mod.widgets.RINX_CARD_RADIUS,
                     border_size: 1.25,
                     border_color: (COLOR_SECONDARY)
                 }

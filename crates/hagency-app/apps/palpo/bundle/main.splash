@@ -51,7 +51,7 @@ fn control_text(control){
 }
 // Dynamic render closures resolve the current host prototypes on every reapply.
 mod.widgets.PalpoCard = RoundedView{width: Fill height: Fit flow: Down padding: 16 spacing: 10
-    draw_bg +: {color: mod.widgets.RINX_SURFACE border_color: mod.widgets.RINX_BORDER border_size: 1 border_radius: theme.corner_radius}}
+    draw_bg +: {color: mod.widgets.RINX_SURFACE border_color: mod.widgets.RINX_BORDER border_size: 1 border_radius: mod.widgets.RINX_CARD_RADIUS}}
 
 fn draw_page(){ ui.navigation.set_visible(!P.room_board) ui.content.render() ui.navigation.render() ui.status.set_text(P.notice) }
 fn call(service, args, complete){

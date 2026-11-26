@@ -241,7 +241,7 @@ script_mod! {
         show_bg: true
         draw_bg +: {
             color: mod.widgets.COLOR_THREAD_SUMMARY_BG
-            border_radius: 4
+            border_radius: mod.widgets.RINX_CONTROL_RADIUS
             border_size: 1.5
             border_color: mod.widgets.COLOR_THREAD_SUMMARY_BORDER
         }
@@ -455,7 +455,7 @@ script_mod! {
         }
         bubble := RoundedView {
             width: Fill height: Fit flow: Down padding: 10
-            draw_bg +: {color: mod.widgets.RINX_INCOMING border_radius: theme.corner_radius}
+            draw_bg +: {color: mod.widgets.RINX_INCOMING border_radius: mod.widgets.RINX_CARD_RADIUS}
             message := HtmlOrPlaintext {
                 selectable: true
                 plaintext_view +: {pt_label +: {draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: mod.widgets.MOBILE_MESSAGE_FONT_SIZE}}}}

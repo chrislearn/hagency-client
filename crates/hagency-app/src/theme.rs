@@ -112,7 +112,9 @@ impl Selection {
         ] {
             sheet.theme.push_str(&format!("\nmod.theme.color_{role} = #x{value}\n"));
         }
-        sheet.theme.push_str("\nmod.theme.corner_radius = 8.0\n");
+        octosense_theme_contract::makepad::append_surface_radius(&mut sheet.theme, 6.0);
+        // Platform sheets can override these widget defaults after the theme is installed.
+        sheet.widgets.push_str("\nmod.widgets.Button.draw_bg.border_radius = mod.theme.corner_radius\nmod.widgets.TextInput.draw_bg.border_radius = mod.theme.corner_radius\ntrue\n");
         let (accent, on_accent) = match (self.accent, dark) {
             (Accent::Teal, false) => ("09616f", "ffffff"),
             (Accent::Teal, true) => ("72d3df", "103239"),
@@ -246,8 +248,9 @@ pub fn snapshot_for_vm(vm: &mut ScriptVm) -> Snapshot {
     let radius = vm
         .bx
         .heap
-        .value(theme, id!(corner_radius).into(), NoTrap)
+        .value(theme, id!(octo_shape_surface_radius).into(), NoTrap)
         .as_number()
+        .or_else(|| vm.bx.heap.value(theme, id!(container_corner_radius).into(), NoTrap).as_number().map(|r| r * 2.0))
         .unwrap_or(6.);
     // Installation precedes widget reapply. Include resolved values so a read
     // between those steps cannot make consumers cache the old palette as new.
@@ -461,8 +464,8 @@ pub fn script_mod(vm: &mut ScriptVm) {
         mod.widgets.RINX_GLYPH_SIZE = #(points(20.))
         mod.widgets.RINX_BUTTON_HEIGHT = #(if cfg!(any(target_os = "android", target_os = "ios", target_env = "ohos")) { s.control_height.max(44. * s.text_scale) } else { (36. * s.text_scale).max(s.control_height * 36. / 44.) })
         mod.widgets.RINX_ICON_BUTTON_SIZE = #(if cfg!(any(target_os = "android", target_os = "ios", target_env = "ohos")) {44. * s.text_scale} else {32. * s.text_scale})
-        mod.widgets.RINX_CONTROL_RADIUS = #(s.radius * 0.75)
-        mod.widgets.RINX_CARD_RADIUS = #(s.radius * 1.25)
+        mod.widgets.RINX_CONTROL_RADIUS = #(s.radius / 3.0)
+        mod.widgets.RINX_CARD_RADIUS = #(s.radius / 2.0)
         mod.widgets.RINX_CHIP_HEIGHT = #(if cfg!(any(target_os = "android", target_os = "ios", target_env = "ohos")) {44. * s.text_scale} else {24. * s.text_scale})
         mod.widgets.RINX_SPACING = #(s.spacing_scale)
         mod.widgets.RINX_CONTROL_HEIGHT = #(if cfg!(any(target_os = "android", target_os = "ios", target_env = "ohos")) {s.control_height.max(44. * s.text_scale)} else {(36. * s.text_scale).max(s.control_height * 36. / 44.)})
@@ -827,6 +830,30 @@ pub(crate) mod tests {
                 assert!(icon.size.y > 0.0);
                 assert!((face.pos.y + face.size.y * 0.5 - icon.pos.y - icon.size.y * 0.5).abs() < 0.1,
                     "dialog {path:?}, {label}: face {face:?}, icon {icon:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn compact_corner_roles_follow_the_installed_platform_sheet() {
+        for family in [DesktopStyle::Macos, DesktopStyle::Windows, DesktopStyle::Ios, DesktopStyle::Android] {
+            for appearance in [Appearance::Light, Appearance::Dark] {
+                let mut cx = Cx::new(Box::new(|_, _| {}));
+                cx.with_vm(|vm| {
+                    let selection = Selection { appearance, accent: Accent::Teal };
+                    desktop_style::install(vm, selection.stylesheet(family));
+                    makepad_widgets::script_mod(vm);
+                    script_mod(vm);
+                    assert_eq!(snapshot_for_vm(vm).radius, 6.);
+                    for value in [
+                        script_eval!(vm, {mod.widgets.RINX_CONTROL_RADIUS}),
+                        script_eval!(vm, {mod.theme.corner_radius}),
+                    ] {
+                        assert_eq!(value.as_number(), Some(2.));
+                    }
+                    assert_eq!(script_eval!(vm, {mod.widgets.RINX_CARD_RADIUS}).as_number(), Some(3.));
+                    assert_eq!(script_eval!(vm, {mod.theme.container_corner_radius}).as_number(), Some(3.));
+                });
             }
         }
     }

@@ -205,7 +205,7 @@ script_mod! {
             // Writing view controls, as in the redesigned editor atlas.
             write_controls := View {visible: false width: Fit height: Fill flow: Right align: Align{y: 0.5} spacing: 8
                 write_style := mod.widgets.ArticleIconButton {draw_icon.color: mod.widgets.RINX_ACCENT draw_bg +: {border_size: 1.0 border_color: mod.widgets.RINX_BORDER} draw_icon +: {svg: crate_resource("self://resources/icons/article_palette.svg")}}
-                RoundedView {width: Fit height: 48 flow: Right padding: 2 spacing: 0 draw_bg +: {color: mod.widgets.RINX_SURFACE border_radius: 6.0}
+                RoundedView {width: Fit height: 48 flow: Right padding: 2 spacing: 0 draw_bg +: {color: mod.widgets.RINX_SURFACE border_radius: mod.widgets.RINX_CONTROL_RADIUS}
                     write_mode_source := mod.widgets.ArticleIconButton {draw_icon +: {svg: ICON_EDIT}}
                     write_mode_split := mod.widgets.ArticleIconButton {draw_icon +: {svg: crate_resource("self://resources/icons/article_split.svg")}}
                     write_mode_preview := mod.widgets.ArticleIconButton {draw_icon +: {svg: crate_resource("self://resources/icons/eye_open.svg")}}
@@ -256,7 +256,7 @@ script_mod! {
                 // Atlas article-list: thumbnail, title, status line and a chevron.
                 Entry := NavigationBarButton {width: Fill height: 104 flow: Right align: Align{y: 0.5} spacing: 14 padding: Inset{left: 4 right: 4 top: 10 bottom: 10} draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_SELECTED}
                     // "Aa" shows through while there is no cover.
-                    RoundedView {width: 84 height: 84 flow: Overlay align: Align{x: 0.5 y: 0.5} draw_bg +: {color: mod.widgets.RINX_FIELD border_radius: 4.0}
+                    RoundedView {width: 84 height: 84 flow: Overlay align: Align{x: 0.5 y: 0.5} draw_bg +: {color: mod.widgets.RINX_FIELD border_radius: mod.widgets.RINX_CONTROL_RADIUS}
                         RinxLabel {text: "Aa" draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_bold{font_size: mod.widgets.RINX_DISPLAY_SIZE}}}
                         thumbnail := Image {width: Fill height: Fill fit: ImageFit.CropToFill}
                     }
@@ -361,7 +361,7 @@ script_mod! {
                         // Phone width: formatting within thumb reach, as in the mobile atlas.
                         write_bottom := View {visible: false width: Fill height: Fit flow: Down padding: Inset{left: 12 right: 12 bottom: 8} spacing: 6
                             write_saved_small := mod.widgets.ArticleLabel {draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: mod.widgets.RINX_BODY_SIZE}}}
-                            RoundedView {width: Fill height: 44 flow: Right align: Align{x: 0.5 y: 0.5} padding: Inset{left: 6 right: 6} draw_bg +: {color: mod.widgets.RINX_SURFACE border_size: 1.0 border_color: mod.widgets.RINX_BORDER border_radius: 6.0}
+                            RoundedView {width: Fill height: 44 flow: Right align: Align{x: 0.5 y: 0.5} padding: Inset{left: 6 right: 6} draw_bg +: {color: mod.widgets.RINX_SURFACE border_size: 1.0 border_color: mod.widgets.RINX_BORDER border_radius: mod.widgets.RINX_CONTROL_RADIUS}
                                 wb_bold := mod.widgets.ArticleTool {width: Fill draw_icon +: {svg: crate_resource("self://resources/icons/article_bold.svg")}}
                                 wb_italic := mod.widgets.ArticleTool {width: Fill draw_icon +: {svg: crate_resource("self://resources/icons/article_italic.svg")}}
                                 wb_heading := mod.widgets.ArticleTool {width: Fill draw_icon +: {svg: crate_resource("self://resources/icons/article_heading.svg")}}
@@ -375,14 +375,14 @@ script_mod! {
                     }
                     // Shown while image files are dragged over the source pane.
                     write_drop := RoundedView {visible: false width: Fill height: Fill margin: 10 flow: Down align: Align{x: 0.5 y: 0.5} spacing: 8
-                        draw_bg +: {color: mod.widgets.RINX_SELECTED border_size: 2.0 border_color: mod.widgets.RINX_ACCENT border_radius: 10.0}
+                        draw_bg +: {color: mod.widgets.RINX_SELECTED border_size: 2.0 border_color: mod.widgets.RINX_ACCENT border_radius: mod.widgets.RINX_CARD_RADIUS}
                         write_drop_title := RinxLabel {draw_text +: {color: mod.widgets.RINX_ACCENT text_style: theme.font_bold{font_size: mod.widgets.RINX_TITLE_SIZE}}}
                         RinxLabel {text: #(crate::i18n::tr("Compressed automatically · saved on this device")) i18n_text: "Compressed automatically · saved on this device" draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: mod.widgets.RINX_BODY_SIZE}}}
                     }
                 }
                 write_divider := SolidView {width: 1 height: Fill draw_bg.color: mod.widgets.RINX_BORDER}
                 write_preview_pane := SolidView {width: Fill height: Fill flow: Down align: Align{x: 0.5} padding: Inset{top: 16 bottom: 16} draw_bg.color: mod.widgets.RINX_PAGE
-                    write_paper := RoundedView {width: 420 height: Fill flow: Down padding: Inset{left: 24 right: 24 top: 24 bottom: 8} draw_bg +: {color: mod.widgets.RINX_SURFACE border_size: 1.0 border_color: mod.widgets.RINX_BORDER border_radius: 4.0}
+                    write_paper := RoundedView {width: 420 height: Fill flow: Down padding: Inset{left: 24 right: 24 top: 24 bottom: 8} draw_bg +: {color: mod.widgets.RINX_SURFACE border_size: 1.0 border_color: mod.widgets.RINX_BORDER border_radius: mod.widgets.RINX_CARD_RADIUS}
                         write_list := PortalList {width: Fill height: Fill
                             Title := View {width: Fill height: Fit padding: Inset{bottom: 16}
                                 write_preview_title := mod.widgets.ArticleLabel {draw_text.text_style: theme.font_bold{font_size: mod.widgets.RINX_DISPLAY_SIZE}}
@@ -416,18 +416,18 @@ script_mod! {
           }
           // Table size picker (⊞), placed under the button that opened it.
           write_table_popup := View {visible: false width: Fill height: Fill flow: Down
-            write_table_card := RoundedView {width: Fit height: Fit flow: Down padding: 14 spacing: 10 draw_bg +: {color: mod.widgets.RINX_SURFACE border_size: 1.0 border_color: mod.widgets.RINX_BORDER border_radius: 8.0}
+            write_table_card := RoundedView {width: Fit height: Fit flow: Down padding: 14 spacing: 10 draw_bg +: {color: mod.widgets.RINX_SURFACE border_size: 1.0 border_color: mod.widgets.RINX_BORDER border_radius: mod.widgets.RINX_CARD_RADIUS}
               mod.widgets.ArticleLabel {width: Fit text: #(crate::i18n::tr("Insert table")) i18n_text: "Insert table" draw_text.text_style: theme.font_bold{font_size: mod.widgets.RINX_SECTION_SIZE}}
               write_table_picker := mod.widgets.TableSizePicker {}
             }
           }
           // Phone preview: opens the style sheet.
           write_style_fab_box := View {visible: false width: Fill height: Fill align: Align{x: 1.0 y: 1.0} padding: Inset{right: 16 bottom: 64}
-            write_style_fab := mod.widgets.ArticleIconButton {draw_icon.color: mod.widgets.RINX_ACCENT draw_bg +: {border_size: 1.0 border_color: mod.widgets.RINX_BORDER border_radius: 22.0} draw_icon +: {svg: crate_resource("self://resources/icons/article_palette.svg")}}
+            write_style_fab := mod.widgets.ArticleIconButton {draw_icon.color: mod.widgets.RINX_ACCENT draw_bg +: {border_size: 1.0 border_color: mod.widgets.RINX_BORDER border_radius: mod.widgets.RINX_CONTROL_RADIUS} draw_icon +: {svg: crate_resource("self://resources/icons/article_palette.svg")}}
           }
           // Phone style sheet (atlas: theme-sheet). Tapping a style previews it; 应用 keeps it, × restores the previous one.
           write_theme_sheet := SolidView {visible: false width: Fill height: Fill flow: Down align: Align{y: 1.0} draw_bg.color: #x00000055
-            RoundedView {width: Fill height: Fit flow: Down padding: Inset{left: 16 right: 16 top: 8 bottom: 20} spacing: 12 draw_bg +: {color: mod.widgets.RINX_SURFACE border_radius: 12.0}
+            RoundedView {width: Fill height: Fit flow: Down padding: Inset{left: 16 right: 16 top: 8 bottom: 20} spacing: 12 draw_bg +: {color: mod.widgets.RINX_SURFACE border_radius: mod.widgets.RINX_CARD_RADIUS}
               View {width: Fill height: Fit align: Align{x: 0.5} RoundedView {width: 36 height: 4 draw_bg +: {color: mod.widgets.RINX_BORDER border_radius: 2.0}}}
               View {width: Fill height: 44 flow: Right align: Align{y: 0.5}
                 mod.widgets.ArticleLabel {width: Fill text: #(crate::i18n::tr("Article style")) i18n_text: "Article style" draw_text.text_style: theme.font_bold{font_size: mod.widgets.RINX_TITLE_SIZE}}
@@ -452,16 +452,16 @@ script_mod! {
           }
           // Phone insert-image sheet (atlas: insert-image). Camera and clipboard are not offered: Rinx cannot capture or paste images here yet.
           write_image_sheet := SolidView {visible: false width: Fill height: Fill flow: Down align: Align{y: 1.0} draw_bg.color: #x00000055
-            RoundedView {width: Fill height: Fit flow: Down padding: Inset{left: 16 right: 16 top: 8 bottom: 24} spacing: 12 draw_bg +: {color: mod.widgets.RINX_SURFACE border_radius: 12.0}
+            RoundedView {width: Fill height: Fit flow: Down padding: Inset{left: 16 right: 16 top: 8 bottom: 24} spacing: 12 draw_bg +: {color: mod.widgets.RINX_SURFACE border_radius: mod.widgets.RINX_CARD_RADIUS}
               View {width: Fill height: Fit align: Align{x: 0.5} RoundedView {width: 36 height: 4 draw_bg +: {color: mod.widgets.RINX_BORDER border_radius: 2.0}}}
               View {width: Fill height: 44 flow: Right align: Align{y: 0.5}
                 mod.widgets.ArticleLabel {width: Fill text: #(crate::i18n::tr("Insert image")) i18n_text: "Insert image" draw_text.text_style: theme.font_bold{font_size: mod.widgets.RINX_TITLE_SIZE}}
                 image_sheet_close := mod.widgets.ArticleIconButton {draw_icon +: {svg: ICON_CLOSE}}
               }
-              RoundedView {width: Fill height: Fit flow: Down draw_bg +: {color: mod.widgets.RINX_SURFACE border_size: 1.0 border_color: mod.widgets.RINX_BORDER border_radius: 8.0}
+              RoundedView {width: Fill height: Fit flow: Down draw_bg +: {color: mod.widgets.RINX_SURFACE border_size: 1.0 border_color: mod.widgets.RINX_BORDER border_radius: mod.widgets.RINX_CARD_RADIUS}
                 image_sheet_pick := mod.widgets.ArticleIconButton {width: Fill height: 56 draw_icon +: {svg: ICON_ADD_PHOTO}}
               }
-              RoundedView {width: Fill height: 56 flow: Right align: Align{y: 0.5} padding: Inset{left: 16 right: 8} draw_bg +: {color: mod.widgets.RINX_SURFACE border_size: 1.0 border_color: mod.widgets.RINX_BORDER border_radius: 8.0}
+              RoundedView {width: Fill height: 56 flow: Right align: Align{y: 0.5} padding: Inset{left: 16 right: 8} draw_bg +: {color: mod.widgets.RINX_SURFACE border_size: 1.0 border_color: mod.widgets.RINX_BORDER border_radius: mod.widgets.RINX_CONTROL_RADIUS}
                 mod.widgets.ArticleLabel {width: Fill text: #(crate::i18n::tr("Lay out multiple images automatically")) i18n_text: "Lay out multiple images automatically" draw_text.text_style: theme.font_regular{font_size: mod.widgets.RINX_BODY_SIZE}}
                 image_sheet_layout := ToggleFlat {text: "" draw_bg +: {size: 21 color_active: mod.widgets.RINX_ACCENT border_color_active: mod.widgets.RINX_ACCENT mark_color_active: mod.widgets.RINX_SURFACE mark_color_active_hover: mod.widgets.RINX_SURFACE}}
               }
@@ -470,13 +470,13 @@ script_mod! {
           }
           // Desktop: confirms images added by dropping or choosing (atlas: paste-images).
           write_toast_box := View {visible: false width: Fill height: Fill align: Align{x: 0.5 y: 1.0} padding: Inset{bottom: 56}
-            RoundedView {width: Fit height: 40 align: Align{y: 0.5} padding: Inset{left: 18 right: 18} draw_bg +: {color: mod.widgets.RINX_FIELD border_radius: 20.0}
+            RoundedView {width: Fit height: 40 align: Align{y: 0.5} padding: Inset{left: 18 right: 18} draw_bg +: {color: mod.widgets.RINX_FIELD border_radius: mod.widgets.RINX_CARD_RADIUS}
               write_toast := RinxLabel {draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular{font_size: mod.widgets.RINX_BODY_SIZE}}}
             }
           }
           // Desktop publish sheet (atlas: publish-sheet): cover, summary and chat, then 发布.
           write_sheet := SolidView {visible: false width: Fill height: Fill align: Align{x: 0.5 y: 0.5} draw_bg.color: #x00000055
-            RoundedView {width: 520 height: Fit flow: Down padding: Inset{left: 22 right: 22 top: 18 bottom: 18} spacing: 8 draw_bg +: {color: mod.widgets.RINX_SURFACE border_radius: 8.0}
+            RoundedView {width: 520 height: Fit flow: Down padding: Inset{left: 22 right: 22 top: 18 bottom: 18} spacing: 8 draw_bg +: {color: mod.widgets.RINX_SURFACE border_radius: mod.widgets.RINX_CARD_RADIUS}
               View {width: Fill height: 44 flow: Right align: Align{y: 0.5}
                 mod.widgets.ArticleLabel {width: Fill text: #(crate::i18n::tr("Publish article")) i18n_text: "Publish article" draw_text.text_style: theme.font_bold{font_size: mod.widgets.RINX_TITLE_SIZE}}
                 sheet_close := mod.widgets.ArticleIconButton {draw_icon +: {svg: ICON_CLOSE}}
@@ -490,7 +490,7 @@ script_mod! {
               mod.widgets.ArticleLabel {text: #(crate::i18n::tr("Summary")) i18n_text: "Summary" draw_text.text_style: theme.font_bold{font_size: mod.widgets.RINX_HEADING_SIZE}}
               sheet_summary := mod.widgets.ArticleInput {height: mod.widgets.RINX_CONTROL_HEIGHT empty_text: #(crate::i18n::tr("One line about this article")) i18n_empty_text: "One line about this article"}
               mod.widgets.ArticleLabel {text: #(crate::i18n::tr("Publish to")) i18n_text: "Publish to" draw_text.text_style: theme.font_bold{font_size: mod.widgets.RINX_HEADING_SIZE}}
-              RoundedView {width: Fill height: 138 draw_bg +: {color: mod.widgets.RINX_SURFACE border_size: 1.0 border_color: mod.widgets.RINX_BORDER border_radius: 6.0}
+              RoundedView {width: Fill height: 138 draw_bg +: {color: mod.widgets.RINX_SURFACE border_size: 1.0 border_color: mod.widgets.RINX_BORDER border_radius: mod.widgets.RINX_CARD_RADIUS}
                 sheet_rooms := PortalList {width: Fill height: Fill
                   Chat := mod.widgets.ArticleChatRow {height: 44 spacing: 10 avatar +: {width: 28 height: 28 draw_bg +: {border_radius: 14.0} initial +: {draw_text +: {text_style: theme.font_bold{font_size: mod.widgets.RINX_HEADING_SIZE}}}} name +: {draw_text +: {text_style: theme.font_regular{font_size: mod.widgets.RINX_BODY_SIZE}}} radio +: {width: 18 height: 18 draw_bg +: {border_radius: 9.0}} }
                 }

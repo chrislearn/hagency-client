@@ -30,7 +30,7 @@ script_mod! {
         show_bg: true
         draw_bg +: {
             color: mod.widgets.RINX_DANGER_BG
-            border_radius: 8.0
+            border_radius: mod.widgets.RINX_CARD_RADIUS
             border_color: mod.widgets.RINX_DANGER_FG
             border_size: 1.0
         }

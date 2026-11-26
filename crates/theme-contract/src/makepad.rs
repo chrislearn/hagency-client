@@ -1,6 +1,16 @@
 //! Trusted Makepad stylesheet emission from validated semantic values.
 use super::*;
 
+/// Convert the visual surface radius (logical px) to Makepad SDF box units.
+/// Controls use two thirds of the surface radius. Sdf2d.box doubles its radius argument.
+pub fn append_surface_radius(theme: &mut String, radius: f64) {
+    theme.push_str(&format!(
+        "\nmod.theme.octo_shape_surface_radius = {radius:?}\nmod.theme.corner_radius = {:?}\nmod.theme.container_corner_radius = {:?}\n",
+        radius / 3.0,
+        radius / 2.0,
+    ));
+}
+
 pub fn append_makepad(theme: &mut String, tokens: &Tokens) -> Result<(), String> {
     validate_resolved(tokens)?;
     for (role, token) in tokens {
@@ -56,12 +66,9 @@ pub fn append_makepad(theme: &mut String, tokens: &Tokens) -> Result<(), String>
             theme.push_str(&format!("mod.theme.{key} = #x{}\n", hex(&tokens[role])?));
         }
     }
+    append_surface_radius(theme, tokens["shape.surface.radius"].value["value"].as_f64().unwrap());
     for (role, keys) in [
-        (
-            "shape.surface.radius",
-            &["corner_radius", "container_corner_radius"][..],
-        ),
-        ("metrics.control.height", &["octo_control_height"]),
+        ("metrics.control.height", &["octo_control_height"][..]),
         ("metrics.reading.width", &["octo_reading_width"]),
         ("metrics.page.gutter", &["octo_page_gutter"]),
         ("motion.duration", &["octo_motion_ms"]),

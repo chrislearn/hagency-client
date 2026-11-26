@@ -35,7 +35,7 @@ script_mod! {
                 color: (COLOR_BG_ACCEPT_GREEN)
                 border_color: (COLOR_FG_ACCEPT_GREEN)
                 border_size: 1.0
-                border_radius: 4.0
+                border_radius: mod.widgets.RINX_CARD_RADIUS
             }
             RinxLabel {
                 width: Fill, height: Fit
@@ -62,7 +62,7 @@ script_mod! {
                 color: (COLOR_BG_DANGER_RED)
                 border_color: (COLOR_FG_DANGER_RED)
                 border_size: 1.0
-                border_radius: 4.0
+                border_radius: mod.widgets.RINX_CARD_RADIUS
             }
             RinxLabel {
                 width: Fill, height: Fit

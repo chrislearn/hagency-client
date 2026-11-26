@@ -334,7 +334,7 @@ script_mod! {
                 width: Fill height: Fill
                 Entry := NavigationBarButton {
                     width: Fill height: 96 flow: Right padding: 12 spacing: 12 align: Align{y: 0.5}
-                    draw_bg +: {color_hover: mod.widgets.RINX_SURFACE color_active: mod.widgets.RINX_SELECTED border_radius: 0}
+                    draw_bg +: {color_hover: mod.widgets.RINX_SURFACE color_active: mod.widgets.RINX_SELECTED border_radius: mod.widgets.RINX_CONTROL_RADIUS}
                     thumbnail := TextOrImage {visible: false width: 64 height: 64
                         image_view +: {height: Fill image +: {height: Fill fit: ImageFit.Smallest}}
                         text_view +: {height: Fill label +: {max_lines: 2 draw_text.text_style.font_size: mod.widgets.RINX_META_SIZE}}

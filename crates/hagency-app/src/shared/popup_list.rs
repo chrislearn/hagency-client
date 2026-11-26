@@ -135,7 +135,7 @@ script_mod! {
         padding: 0,
         draw_bg +: {
             direction: uniform(0.0), // Direction of the progress bar: 0.0 is right to left, 1.0 is top to bottom.
-            border_radius:uniform(4.),
+            border_radius: uniform(mod.widgets.RINX_CONTROL_RADIUS),
             border_size:uniform(1.0),
             progress_bar_color: uniform(#00000080), //Black with 50% opacity.
             // Display progress bar when there is auto_dismissal_duration.
@@ -246,7 +246,7 @@ script_mod! {
         flow: Overlay
         show_bg: true,
         draw_bg +: {
-            border_radius: uniform(4.0)
+            border_radius: uniform(mod.widgets.RINX_CARD_RADIUS)
             border_color: instance(mod.widgets.RINX_INK)
             border_size: uniform(2.0)
             color: instance(mod.widgets.RINX_SURFACE)

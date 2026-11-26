@@ -242,9 +242,9 @@ script_mod! {
     mod.widgets.SPACE_XXL = 24 * mod.widgets.RINX_SPACING
 
     // Border radius constants
-    mod.widgets.RADIUS_SM = theme.corner_radius * 0.67
-    mod.widgets.RADIUS_MD = theme.corner_radius * 1
-    mod.widgets.RADIUS_LG = theme.corner_radius * 1.33
+    mod.widgets.RADIUS_SM = mod.widgets.RINX_CONTROL_RADIUS
+    mod.widgets.RADIUS_MD = mod.widgets.RINX_CONTROL_RADIUS
+    mod.widgets.RADIUS_LG = mod.widgets.RINX_CARD_RADIUS
 
     // Settings screen colors
     mod.widgets.COLOR_DROPDOWN_TEXT = mod.widgets.RINX_INK

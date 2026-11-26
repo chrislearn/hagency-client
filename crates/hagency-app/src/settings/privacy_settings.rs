@@ -136,7 +136,7 @@ script_mod! {
             show_bg: true,
             draw_bg +: {
                 color: mod.widgets.RINX_FIELD
-                border_radius: 4.0
+                border_radius: mod.widgets.RINX_CARD_RADIUS
             }
             assistant_rooms_list := FlatList {
                 width: Fill,
@@ -179,7 +179,7 @@ script_mod! {
             show_bg: true,
             draw_bg +: {
                 color: mod.widgets.RINX_FIELD
-                border_radius: 4.0
+                border_radius: mod.widgets.RINX_CARD_RADIUS
             }
 
             blocked_users_list := FlatList {

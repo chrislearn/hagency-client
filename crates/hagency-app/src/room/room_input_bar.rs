@@ -336,7 +336,7 @@ script_mod! {
                             draw_text.color: mod.widgets.RINX_INK
                             draw_bg +: {
                                 color: mod.widgets.RINX_SURFACE color_hover: mod.widgets.RINX_SURFACE color_focus: mod.widgets.RINX_SURFACE
-                                color_empty: mod.widgets.RINX_SURFACE border_radius: 5
+                                color_empty: mod.widgets.RINX_SURFACE border_radius: mod.widgets.RINX_CONTROL_RADIUS
                             }
                         }
                     }

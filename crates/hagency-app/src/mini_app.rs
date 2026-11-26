@@ -164,7 +164,7 @@ script_mod! {
         visible: false width: Fill{max: 440} height: Fit
         open_mini_app := NavigationBarButton {
             width: Fill height: Fit flow: Down spacing: 10 padding: 4
-            draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_HOVER border_radius: 4}
+            draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_HOVER border_radius: mod.widgets.RINX_CARD_RADIUS}
             card_title := RinxLabel {
                 width: Fill flow: Flow.Right{wrap: true} max_lines: 3
                 draw_text +: {color: mod.widgets.RINX_INK text_style: RBX_TEXT_BODY_STRONG {}}

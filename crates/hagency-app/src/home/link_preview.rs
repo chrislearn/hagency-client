@@ -89,7 +89,7 @@ script_mod! {
                     border_color: mod.widgets.RINX_BORDER
                     border_color_hover: mod.widgets.RINX_BORDER
                     border_color_down: mod.widgets.RINX_BORDER
-                    border_radius: 4.0
+                    border_radius: mod.widgets.RINX_CONTROL_RADIUS
                 }
                 text: #(crate::i18n::tr("Show more links")) i18n_text: "Show more links"
             }
@@ -119,7 +119,7 @@ script_mod! {
                     border_color: mod.widgets.RINX_BORDER
                     border_color_hover: mod.widgets.RINX_BORDER
                     border_color_down: mod.widgets.RINX_BORDER
-                    border_radius: 4.0
+                    border_radius: mod.widgets.RINX_CONTROL_RADIUS
                 }
                 text: #(crate::i18n::tr("Show fewer links")) i18n_text: "Show fewer links"
             }
@@ -135,7 +135,7 @@ script_mod! {
                 color: mod.widgets.RINX_SURFACE
                 border_color: mod.widgets.RINX_BORDER
                 border_size: 1.0
-                border_radius: 8.0
+                border_radius: mod.widgets.RINX_CARD_RADIUS
             }
             summary := View {
                 width: Fill height: Fit flow: Right spacing: 12

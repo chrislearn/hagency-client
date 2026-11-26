@@ -136,7 +136,7 @@ script_mod! {
         show_bg: true
         draw_bg +: {
             color: (mod.widgets.RBX_WARNING_BG)
-            border_radius: (mod.widgets.RBX_RADIUS_SM)
+            border_radius: mod.widgets.RINX_CARD_RADIUS
             border_size: 1.0
             border_color: (mod.widgets.RBX_WARNING_FG)
         }
@@ -164,7 +164,7 @@ script_mod! {
                 show_bg: true
                 draw_bg +: {
                     color: (mod.widgets.RBX_BG_SURFACE)
-                    border_radius: (mod.widgets.RBX_RADIUS_PILL)
+                    border_radius: mod.widgets.RINX_CONTROL_RADIUS
                 }
                 status_label := RinxLabel {
                     width: Fit, height: Fit

@@ -23,7 +23,7 @@ script_mod! {
     mod.widgets.InlineNotice = set_type_default() do #(InlineNotice::register_widget(vm)) {
         ..mod.widgets.RoundedView
         visible: false width: Fill height: Fit flow: Down spacing: 8 padding: 14
-        draw_bg +: {color: RINX_DANGER_BG border_color: RINX_DANGER_FG border_size: 1 border_radius: 8}
+        draw_bg +: {color: RINX_DANGER_BG border_color: RINX_DANGER_FG border_size: 1 border_radius: mod.widgets.RINX_CARD_RADIUS}
         header := View {width: Fill height: Fit flow: Right spacing: 10 align: Align{y: 0.5}
             symbol := Icon {icon_walk: Walk{width: 20 height: 20} draw_icon +: {svg: ICON_WARNING color: RINX_DANGER_FG}}
             title := RinxLabel {width: Fill height: Fit flow: Flow.Right{wrap: true} draw_text +: {color: RINX_DANGER_FG text_style: theme.font_bold{font_size: RINX_HEADING_SIZE}}}

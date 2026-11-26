@@ -15,7 +15,7 @@ script_mod! {
             draw_bg +: {
                 color: #0000 color_focus: #0000
                 color_hover: RINX_WARNING_BG color_down: RINX_WARNING_BG
-                border_radius: 12 border_size: 1
+                border_radius: mod.widgets.RINX_CONTROL_RADIUS border_size: 1
                 border_color: RINX_WARNING_FG border_color_hover: RINX_WARNING_FG
                 border_color_down: RINX_WARNING_FG border_color_focus: RINX_WARNING_FG
             }
@@ -27,7 +27,7 @@ script_mod! {
         panel: RoundedView {
             width: 304 height: Fit flow: Down spacing: 10 padding: 14
             show_bg: true
-            draw_bg +: {color: RINX_SURFACE border_color: RINX_BORDER border_size: 1 border_radius: 8}
+            draw_bg +: {color: RINX_SURFACE border_color: RINX_BORDER border_size: 1 border_radius: mod.widgets.RINX_CARD_RADIUS}
             current := RinxHint {width: Fill height: Fit flow: Flow.Right{wrap: true}}
             version := RinxLabel {width: Fill height: Fit flow: Flow.Right{wrap: true}}
             status := RinxHint {width: Fill height: Fit flow: Flow.Right{wrap: true}}

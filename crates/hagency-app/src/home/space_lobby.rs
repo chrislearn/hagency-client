@@ -70,7 +70,7 @@ script_mod! {
             color_active: instance(COLOR_ACTIVE_PRIMARY)
             border_size: uniform(0.0)
             border_color: instance(#0000)
-            border_radius: uniform(4.0)
+            border_radius: uniform(mod.widgets.RINX_CONTROL_RADIUS)
             border_inset: uniform(vec4(0.0))
 
             get_color: fn() -> vec4 {
@@ -343,7 +343,7 @@ script_mod! {
                     show_bg: true
                     draw_bg +: {
                         color: mod.widgets.RINX_SELECTED
-                        border_radius: 3.0
+                        border_radius: mod.widgets.RINX_CONTROL_RADIUS
                         border_size: 0.75
                         border_color: (COLOR_INFO_BLUE)
                     }
@@ -381,7 +381,7 @@ script_mod! {
             show_bg: true
             draw_bg +: {
                 color: mod.widgets.RINX_FIELD
-                border_radius: 4.0
+                border_radius: mod.widgets.RINX_CONTROL_RADIUS
                 border_size: 0
             }
 

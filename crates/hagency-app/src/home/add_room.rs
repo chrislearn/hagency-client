@@ -102,7 +102,7 @@ script_mod! {
                     row := NavigationBarButton {
                         width: Fill height: 73 flow: Down spacing: 7 align: Align{x: 0 y: 0.5}
                         padding: Inset{left: 20 right: 20 top: 14 bottom: 12}
-                        draw_bg +: {color_hover: mod.widgets.RINX_BORDER color_active: mod.widgets.RINX_BORDER border_radius: 0}
+                        draw_bg +: {color_hover: mod.widgets.RINX_BORDER color_active: mod.widgets.RINX_BORDER border_radius: mod.widgets.RINX_CONTROL_RADIUS}
                         name := DetailLabel {width: Fill padding: 0 max_lines: 1 text_overflow: Ellipsis}
                         description := DetailLabel {
                             width: Fill padding: 0 max_lines: 1 text_overflow: Ellipsis
@@ -126,7 +126,7 @@ script_mod! {
                 show_bg: true
                 draw_bg +: {
                     color: (COLOR_PRIMARY)
-                    border_radius: 4.0
+                    border_radius: mod.widgets.RINX_CARD_RADIUS
                     border_size: 1.0
                     border_color: (COLOR_BG_DISABLED)
                     // shadow_color: #0005

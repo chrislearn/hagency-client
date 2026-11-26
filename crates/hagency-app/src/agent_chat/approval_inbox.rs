@@ -60,7 +60,7 @@ script_mod! {
         status := RinxLabel {width: Fill height: Fit flow: Flow.Right{wrap: true} draw_text.color: mod.widgets.RINX_INK}
         empty_state := RoundedView {
             visible: false width: Fill{max: 880} height: Fit flow: Down padding: 20 spacing: 12
-            draw_bg +: {color: mod.widgets.RINX_SURFACE border_color: mod.widgets.RINX_BORDER border_size: 1 border_radius: mod.widgets.RINX_CONTROL_RADIUS}
+            draw_bg +: {color: mod.widgets.RINX_SURFACE border_color: mod.widgets.RINX_BORDER border_size: 1 border_radius: mod.widgets.RINX_CARD_RADIUS}
             empty_title := RinxLabel {width: Fill height: Fit flow: Flow.Right{wrap: true} text: #(crate::i18n::tr("No approval chats found")) i18n_text: "No approval chats found" draw_text.text_style: theme.font_bold {font_size: mod.widgets.RINX_HEADING_SIZE}}
             empty_description := RinxLabel {width: Fill height: Fit flow: Flow.Right{wrap: true} draw_text.color: mod.widgets.RINX_MUTED}
             empty_help := RinxHint {width: Fill height: Fit flow: Flow.Right{wrap: true} text: #(crate::i18n::tr("Only private approval chats you have joined and that are verified for your account appear here. Ordinary group chats do not appear. If you receive an invitation to an Agent approval chat, join it and refresh.")) i18n_text: "Only private approval chats you have joined and that are verified for your account appear here. Ordinary group chats do not appear. If you receive an invitation to an Agent approval chat, join it and refresh."}

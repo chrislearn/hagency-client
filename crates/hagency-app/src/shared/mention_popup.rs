@@ -39,7 +39,7 @@ script_mod! {
         margin: Inset{left: 4, right: 4}
         padding: Inset{left: 8, right: 8}
         show_bg: true, cursor: MouseCursor.Hand
-        draw_bg +: { color: #00000000, border_radius: 5.0 }
+        draw_bg +: { color: #00000000, border_radius: mod.widgets.RINX_CONTROL_RADIUS }
         avatar := Avatar {
             width: 24, height: 24
             text_view +: {text +: {draw_text.text_style.font_size: mod.widgets.RINX_UI_SIZE}}
@@ -102,7 +102,7 @@ script_mod! {
                 show_bg: true
                 draw_bg +: {
                     color: mod.widgets.RINX_SURFACE
-                    border_radius: 8.0
+                    border_radius: mod.widgets.RINX_CARD_RADIUS
                     border_size: 1.0
                     border_color: mod.widgets.RINX_BORDER
                     shadow_color: #0002

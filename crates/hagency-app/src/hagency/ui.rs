@@ -649,7 +649,7 @@ script_mod! {
         }
         SidebarCard := View {width:Fill height:Fit flow:Down margin:Inset{bottom:4}
             open := NavigationBarButton {width:Fill height:Fit flow:Down padding:Inset{left:8 right:8 top:10 bottom:10} spacing:5
-                draw_bg +: {color_hover:mod.widgets.RINX_HOVER color_active:mod.widgets.RINX_SELECTED border_radius:6}
+                draw_bg +: {color_hover:mod.widgets.RINX_HOVER color_active:mod.widgets.RINX_SELECTED border_radius:mod.widgets.RINX_CONTROL_RADIUS}
                 title := Text {max_lines:2 text_overflow:Ellipsis draw_text.text_style: RBX_TEXT_BODY_STRONG {}}
                 summary := RinxLabel {width:Fill height:Fit flow:Flow.Right{wrap:false} max_lines:1 text_overflow:Ellipsis draw_text +: {color:mod.widgets.RINX_MUTED text_style:theme.font_regular{font_size:mod.widgets.RINX_UI_SIZE}}}
                 badge_row := View {width:Fill height:Fit flow:Flow.Right{wrap:true} spacing:4
@@ -816,7 +816,7 @@ script_mod! {
         }
         workspace_welcome := View {visible:false width:Fill height:Fill flow:Down align:Align{x:0.5 y:0.5} padding:24
             welcome_content := View {width:Fill{max:480} height:Fit flow:Down spacing:16 align:Align{x:0.5}
-                welcome_symbol := RoundedView {width:56 height:56 align:Align{x:0.5 y:0.5} draw_bg +: {color:mod.widgets.RBX_ACCENT_SOFT border_radius:12}
+                welcome_symbol := RoundedView {width:56 height:56 align:Align{x:0.5 y:0.5} draw_bg +: {color:mod.widgets.RBX_ACCENT_SOFT border_radius:mod.widgets.RINX_CARD_RADIUS}
                     project_symbol := View {width:26 height:26 Icon {icon_walk:Walk{width:26 height:26} draw_icon +: {svg:ICON_HIERARCHY color:mod.widgets.RINX_ACCENT}}}
                     agent_symbol := View {visible:false width:26 height:26 Icon {icon_walk:Walk{width:26 height:26} draw_icon +: {svg:ICON_ROBOT color:mod.widgets.RINX_ACCENT}}}
                 }
