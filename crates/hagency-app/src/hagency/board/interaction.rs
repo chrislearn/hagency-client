@@ -42,9 +42,6 @@ impl Widget for ProjectBoard {
                     self.clear_quick_create(cx);
                 }
                 self.cancel_drag(cx);
-                self.view
-                    .label(cx, ids!(drag_notice))
-                    .set_visible(cx, false);
                 self.view.redraw(cx);
             }
             _ => (),
@@ -173,7 +170,6 @@ impl Widget for ProjectBoard {
                                 drag.moved |= (abs - drag.start).length() > 6.0;
                                 if drag.moved {
                                     self.drag_frame = cx.new_next_frame();
-                                    self.view.label(cx, ids!(drag_notice)).set_visible(cx, true);
                                     self.view.redraw(cx);
                                 }
                             }
@@ -237,9 +233,6 @@ impl Widget for ProjectBoard {
                                     }
                                 }
                             }
-                            self.view
-                                .label(cx, ids!(drag_notice))
-                                .set_visible(cx, false);
                             self.view.redraw(cx);
                         }
                         _ => (),

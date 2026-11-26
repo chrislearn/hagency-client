@@ -323,7 +323,12 @@ impl ProjectBoard {
         let request = nonce();
         self.save_request = request;
         self.saving = true;
-        self.notice(cx, tr("Saving changes…"));
+        let message = if matches!(self.pending, Some(BoardAction::Move { .. })) {
+            ""
+        } else {
+            tr("Saving changes…")
+        };
+        self.notice(cx, message);
         self.sync_controls(cx);
         crate::sliding_sync::spawn_async_task(async move {
             let result = service
@@ -724,12 +729,13 @@ impl ProjectBoard {
         self.view
             .button(cx, ids!(save))
             .set_text(cx, tr(if self.saving { "Saving…" } else { "Save" }));
-        self.view.label(cx,ids!(sync_status)).set_visible(cx,self.offline || self.read_only || self.saving);
+        let show_saving_text = self.saving && !matches!(self.pending, Some(BoardAction::Move { .. }));
+        self.view.label(cx, ids!(sync_status)).set_visible(cx, self.offline || self.read_only || show_saving_text);
         self.view.label(cx, ids!(sync_status)).set_text(
             cx,
             tr(if self.loading {
                 "Refreshing…"
-            } else if self.saving {
+            } else if show_saving_text {
                 "Saving…"
             } else if self.offline {
                 "Offline · showing last confirmed board"
@@ -1181,7 +1187,9 @@ impl ProjectBoard {
                 }
                 self.notice(
                     cx,
-                    if was_attachment {
+                    if matches!(saved_action, Some(BoardAction::Move { .. })) {
+                        ""
+                    } else if was_attachment {
                         tr("Attachment updated. Save or post your draft when ready.")
                     } else {
                         tr("Changes saved")

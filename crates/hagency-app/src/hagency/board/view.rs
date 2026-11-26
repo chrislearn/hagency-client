@@ -477,7 +477,6 @@ makepad_widgets::script_mod! {
                 }
             }
         }
-        drag_notice := Small {visible: false text: #(crate::i18n::tr("Drop on a column to move. Use the task menu for precise placement.")) i18n_text: "Drop on a column to move. Use the task menu for precise placement."}
         drop_marker := Tooltip {abs_pos:vec2(0,0) content +: {width:226 height:3 padding:0
             draw_bg +: {color:mod.widgets.RINX_ACCENT border_size:0.0 border_radius:1.5}
             tooltip_label +: {visible:false}

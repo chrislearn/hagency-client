@@ -15,9 +15,7 @@ impl ProjectBoard {
             });
             self.drag_frame = cx.new_next_frame();
         }
-        self.view
-            .label(cx, ids!(drag_notice))
-            .set_visible(cx, false);
+
         self.view.redraw(cx);
     }
 

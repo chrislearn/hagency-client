@@ -1242,6 +1242,27 @@ fn unchanged_overdue_card_does_not_schedule_another_frame() {
 }
 
 #[test]
+fn moving_a_card_keeps_save_feedback_quiet_and_surfaces_failure() {
+    for result in [Ok(json!({})), Err("board_neighbours_changed".to_owned())] {
+        let (mut cx, mut board) = panel();
+        populate(&mut board);
+        board.move_task(&mut cx, task("card", "todo"), "doing", Position::Between, None, None);
+        assert!(matches!(board.pending, Some(BoardAction::Move { .. })));
+        board.saving = true;
+        board.sync_controls(&mut cx);
+        assert!(!board.view.label(&cx, ids!(sync_status)).visible());
+        let failed = result.is_err();
+        board.apply_saved(&mut cx, &Saved {
+            identity: board.identity.clone(), project: board.project.clone(),
+            epoch: board.epoch, request: board.save_request, result,
+        });
+        assert!(!board.saving);
+        assert_eq!(board.view.label(&cx, ids!(notice)).visible(), failed);
+        assert!(!board.view.label(&cx, ids!(sync_status)).visible());
+    }
+}
+
+#[test]
 fn idle_board_has_no_drag_overlay_redraw_loop() {
     let (mut cx, mut board) = panel();
     populate(&mut board);
