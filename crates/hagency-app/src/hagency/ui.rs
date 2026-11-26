@@ -747,7 +747,8 @@ script_mod! {
             }
         }
         agent_sidebar_divider := SolidView {visible:false width:1 height:Fill draw_bg.color:mod.widgets.RINX_DIVIDER}
-        main_content := View {width:Fill height:Fill flow:Down padding:RINX_SPACE_6 spacing:RINX_SPACE_4
+        main_content := SolidView {width:Fill height:Fill flow:Down padding:RINX_SPACE_6 spacing:RINX_SPACE_4
+        draw_bg.color:mod.widgets.RINX_CONTENT_BG
         panel_header := View {width:Fill height:Fit margin:Inset{right:12} spacing:RINX_SPACE_3 align:Align{y:0.5}
             title_row := View {width:Fill height:Fit spacing:8 align:Align{y:0.5}
             title_group := View {width:Fill height:Fit{min:32} spacing:8 align:Align{y:0.5}

@@ -164,7 +164,7 @@ script_mod! {
                     width: #(DESKTOP_NAVIGATION_WIDTH) height: Fill flow: Overlay
                     persistent_sidebar := mod.widgets.RoomsSideBar {width: Fill height: Fill}
                     View {width: Fill height: Fill flow: Right align: Align{x: 1.0}
-                        View {width: 1 height: Fill show_bg: true draw_bg.color: mod.widgets.RINX_DIVIDER}
+                        SolidView {width: 1 height: Fill draw_bg.color: mod.widgets.RINX_DIVIDER}
                     }
                 }
 
@@ -185,8 +185,8 @@ script_mod! {
                         CachedWidget {project_tree := ProjectTree {}}
                     }
                     }
-                    View {width: Fill height: Fill flow: Right align: Align{x: 1.0}
-                        View {width: 1 height: Fill show_bg: true draw_bg.color: mod.widgets.RINX_DIVIDER}
+                    View {width: Fill height: Fill flow: Overlay align: Align{x: 1.0}
+                        SolidView {width: 1 height: Fill draw_bg.color: mod.widgets.RINX_DIVIDER}
                         context_resize := SidebarResizeHandle {}
                     }
                 }

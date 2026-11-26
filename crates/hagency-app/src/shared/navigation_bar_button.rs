@@ -87,10 +87,12 @@ script_mod! {
                     self.rect_size.y - (self.border_inset.y + self.border_inset.w + inset * 2.0),
                     max(1.0, self.border_radius)
                 )
-                sdf.fill_keep(self.get_color())
                 let line = max(self.border_size, 2.0 * self.focus)
                 if line > 0.0 {
+                    sdf.fill_keep(self.get_color())
                     sdf.stroke(self.border_color.mix(self.color_focus, self.focus), line)
+                } else {
+                    sdf.fill(self.get_color())
                 }
                 if self.rail_indicator > 0.0 {
                     sdf.box(0.0, 8.0, 2.0, self.rect_size.y - 16.0, 1.0)
