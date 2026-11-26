@@ -6018,3 +6018,9 @@ Desktop work branch pins the older native/ engine layout at1953981; current Clie
   current text of an encrypted private Agent message. Persist the original run
   route before submission and keep uncertain receipts for reconciliation. The
   existing Matrix runtime seals and posts the answer.
+
+- **Client desktop navigation, 2026-11-26:** The global rail is 64 logical
+  pixels wide and uses the shared right-side tooltips. Saved navigation widths
+  and collapsed flags are still readable for compatibility. The adjacent
+  workspace column has its own resize preference. The Projects, My Agents,
+  and Chats icons open their existing creation menus on a secondary click.

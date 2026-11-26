@@ -18,7 +18,7 @@ pub struct AppPreferences {
     /// * If `true`, each opened room gets its own dock tab (the classic Robrix layout).
     #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
     pub tabbed_chats: bool,
-    /// Keep the desktop's global navigation as an icon rail.
+    /// Saved by earlier versions that allowed expanding the desktop navigation.
     #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
     pub desktop_sidebar_collapsed: bool,
     /// Preferred desktop composer card height in logical pixels. None keeps automatic sizing.
@@ -96,10 +96,6 @@ impl AppPreferences {
         let height = valid_composer_height(self.composer_height);
         cx.global::<AppPreferencesGlobal>().0.composer_height = height;
         cx.redraw_all();
-    }
-    pub fn on_desktop_sidebar_collapsed_changed(&self, cx: &mut Cx) {
-        cx.global::<AppPreferencesGlobal>().0.desktop_sidebar_collapsed = self.desktop_sidebar_collapsed;
-        cx.action(AppPreferencesAction::DesktopSidebarCollapsedChanged(self.desktop_sidebar_collapsed));
     }
     /// Broadcasts the current `view_mode` to listening widgets.
     ///
@@ -228,7 +224,6 @@ impl AppPreferences {
     pub fn broadcast_all(&self, cx: &mut Cx) {
         self.on_view_mode_changed(cx);
         self.on_tabbed_chats_changed(cx);
-        self.on_desktop_sidebar_collapsed_changed(cx);
         self.on_composer_height_changed(cx);
         self.on_sidebar_widths_changed(cx);
         self.on_speech_changed(cx);
@@ -468,7 +463,6 @@ pub enum AppPreferencesAction {
     SpeechChanged,
     ViewModeChanged(ViewModeOverride),
     TabbedChatsChanged(bool),
-    DesktopSidebarCollapsedChanged(bool),
     SendOnEnterChanged(bool),
     UiZoomChanged(UiZoom),
 }

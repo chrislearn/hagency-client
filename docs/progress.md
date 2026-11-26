@@ -15789,3 +15789,19 @@ encrypted Client message to the runtime server. Remote Codex returned
 and Client ledger confirmed the same original execution ID. The first fixture
 used executor-device delivery and could not receive via the encrypted inbox.
 Client now checks the advertised inbox capability before enabling the route.
+
+## 2026-11-26 — Client desktop icon navigation
+
+Changed the desktop main navigation to a 64-pixel rail with centered icons,
+hover labels, and an accent on the current page. The footer contains
+approvals, settings, and the account avatar. Verified 31 tests covering the
+desktop and mobile layouts, tooltip events, shortcut menus, and approvals.
+The logged-in macOS preview rendered the icon rail, selected Projects icon,
+unread badge, and footer. Pointer automation did not trigger navigation in the
+native window, including its existing workspace buttons. The widget tests
+verified navigation actions and right-side tooltip events.
+
+The sidebar buttons now share a 40 × 40 logical-pixel hit area. The primary
+order is Projects, Chats, Contacts, and My Agents, followed by Mini apps.
+The layout test checks the rendered button bounds, top-to-bottom order,
+and hover labels. All 31 relevant tests passed.

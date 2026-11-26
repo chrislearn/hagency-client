@@ -670,10 +670,24 @@ script_mod! {
         selectable:false keep_invisible:false
     }
     mod.widgets.GlobalApprovalInbox = #(approval_discovery::GlobalApprovalInbox::register_widget(vm)) {
-        width: Fill height: Fit flow: Down
+        width: Fill height: Fit flow: Down align: Align{x: 0.5}
         open_approval_inbox := RinxGhostButton {width:Fill height:40 align:Align{x:0 y:0.5} padding:Inset{left:12 right:8}
             text:#(crate::i18n::tr("Approvals")) i18n_text:"Approvals"
             draw_icon.svg:crate_resource("self://resources/icons/bell.svg") icon_walk:Walk{width:18 height:18} spacing:10}
+        open_approval_icon := DesktopRailButton {
+            visible: false flow: Overlay
+            tooltip_text: #(crate::i18n::tr("Approvals"))
+            nav_icon := Icon {
+                icon_walk: Walk{width: 18 height: 18}
+                draw_icon +: {svg: crate_resource("self://resources/icons/bell.svg") color: mod.widgets.RINX_INK}
+            }
+            View {width: Fill height: Fill align: Align{x: 1.0 y: 0.0}
+                padding: Inset{right: 4 top: 5}
+                approval_indicator := RoundedView {visible: false width: 7 height: 7
+                    draw_bg +: {color: mod.widgets.RINX_ACCENT border_radius: 4}
+                }
+            }
+        }
         inbox_popup := Modal {
             content := SmallModal {width:580 height:560 flow:Down spacing:10
                 inbox_header := View {width:Fill height:32 flow:Right spacing:6 align:Align{y:0.5}

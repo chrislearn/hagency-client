@@ -125,6 +125,10 @@ script_mod! {
             }
         }
     }
+    mod.widgets.DesktopRailButton = mod.widgets.NavigationBarButton {
+        width: 40 height: 40 align: Center
+        draw_bg +: {color_hover: mod.widgets.RINX_HOVER}
+    }
 }
 
 /// A unified base button widget used by the `NavigationTabBar` and `SpacesBar`.
