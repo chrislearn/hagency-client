@@ -349,6 +349,7 @@ impl MatchEvent for App {
     }
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+        crate::hagency::project_order::handle_actions(cx, actions);
         crate::shared::attachment_download::handle_share_actions(actions);
         for evicted in actions.iter().filter_map(|action|action.downcast_ref::<crate::sliding_sync::TimelineCacheEvicted>()) {
             crate::home::room_screen::release_cached_history(&evicted.0,evicted.1);

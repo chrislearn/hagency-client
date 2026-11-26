@@ -1,5 +1,6 @@
 use super::*;
 use ::hagency::project_board::BoardAction;
+use crate::hagency::project_order::{OrderKind, ProjectOrder};
 
 /// Only authenticated Agent ownership metadata establishes nesting. Unknown
 /// identities retain their own row, never a guessed owner based on the MXID.
@@ -42,6 +43,13 @@ impl HagencyPanel {
         self.run(cx,Target::Rooms,Command::ProjectRooms {project_id});
     }
     pub(super) fn open_project_rooms(&mut self,cx:&mut Cx) {
+        self.refresh_project_order(cx);
+        if self.project(cx).is_some_and(|project| ProjectOrder::waiting_for_initial(cx, &self.identity, &project)) {
+            self.wanted_open_rooms = true;
+            self.project_section(cx, ids!(rooms_section));
+            self.view.label(cx, ids!(rooms_empty_status)).set_text(cx, crate::i18n::tr("Loading…"));
+            return;
+        }
         if self.open_first_project_room(cx) {self.wanted_open_rooms=false;return;}
         self.wanted_open_rooms=true;self.project_section(cx,ids!(rooms_section));
         self.view.label(cx,ids!(rooms_empty_status)).set_text(cx,crate::i18n::tr("Loading…"));
@@ -56,7 +64,7 @@ impl HagencyPanel {
         self.auto_default_project=Some(project);
         self.view.drop_down(cx,ids!(creation_source)).set_selected_item(cx,0);
         self.view.text_input(cx,ids!(creation_name)).set_text(cx,"General");
-        self.view.label(cx,ids!(rooms_empty_status)).set_text(cx,crate::i18n::tr("Creating the default Room…"));
+        self.view.label(cx,ids!(rooms_empty_status)).set_text(cx,crate::i18n::tr("Creating the first Room…"));
         self.create_matrix(cx);
     }
     fn board_controls(&self,cx:&Cx)->WidgetRef {self.view.project_board(cx,ids!(board)).controls(cx)}
@@ -82,17 +90,48 @@ impl HagencyPanel {
             self.run(cx,Target::ProjectHome,Command::ProjectBoard {project_id,action:BoardAction::Overview});
         }
     }
+    pub(super) fn apply_project_order(&mut self, cx: &mut Cx) {
+        let Some(project) = self.project(cx) else { return };
+        let order = ProjectOrder::cached(cx, &self.identity, &project);
+        order.sort_by_id(OrderKind::Boards, &mut self.board_catalog, |board| string(board, "id"));
+        let index = self.selected_board.as_ref().and_then(|id| self.board_catalog.iter().position(|board| board["id"] == *id))
+            .or_else(|| (!ProjectOrder::waiting_for_initial(cx, &self.identity, &project)).then_some(0));
+        self.selected_board = index.and_then(|i| self.board_catalog.get(i)).and_then(|board| board["id"].as_str()).map(str::to_owned);
+        let boards = self.board_controls(cx).drop_down(cx, ids!(boards));
+        boards.set_labels(cx, self.board_catalog.iter().map(|board| {
+            let name = string(board, "name");
+            if name == "Main Board" { crate::i18n::tr(name).to_owned() } else { name.to_owned() }
+        }).collect());
+        boards.set_selected_item(cx, index.unwrap_or(0));
+        let selected_room = self.selected(cx, ids!(rooms), &self.rooms);
+        self.apply_project_room_order(cx, &order, selected_room.as_ref());
+        self.view.redraw(cx);
+    }
+
+    pub(super) fn resume_project_order_navigation(&mut self, cx: &mut Cx) {
+        if !self.active || self.page != Page::Projects || !self.view.view(cx, ids!(project_detail)).visible() { return; }
+        if self.view.view(cx, ids!(board_section)).visible() && self.selected_board.is_some() {
+            self.project_section(cx, ids!(board_section));
+        } else if self.wanted_open_rooms && self.view.view(cx, ids!(rooms_section)).visible() {
+            self.open_project_rooms(cx);
+        }
+    }
+
+    pub(super) fn apply_project_room_order(&mut self, cx: &mut Cx, order: &ProjectOrder, selected: Option<&Value>) {
+        order.sort_by_id(OrderKind::Rooms, &mut self.rooms, |room| string(room, "roomId"));
+        self.labels(cx, ids!(rooms), "Select a Room", &self.rooms, "roomId");
+        if let Some(id) = selected.and_then(|room| room["roomId"].as_str())
+            && let Some(index) = self.rooms.iter().position(|room| room["roomId"] == id) {
+            self.view.drop_down(cx, ids!(rooms)).set_selected_item(cx, index + 1);
+        }
+    }
+
     pub(super) fn apply_project_home(&mut self,cx:&mut Cx,target:Target,value:&Value) {
         if value["projectId"].as_str()!=self.project(cx).as_deref() {return;}
+        self.refresh_project_order(cx);
         self.board_catalog=array(value,"boards");
-        self.board_catalog.sort_by_key(|b|(b["isDefault"]!=true,string(b,"name").to_lowercase(),string(b,"id").to_owned()));
-        let wanted=value["createdBoardId"].as_str().map(str::to_owned).or_else(||self.wanted_board.take()).or_else(||self.selected_board.clone());
-        let index=wanted.as_deref().and_then(|id|self.board_catalog.iter().position(|b|b["id"]==id)).unwrap_or(0);
-        self.selected_board=self.board_catalog.get(index).and_then(|b|b["id"].as_str()).map(str::to_owned);
-        self.board_controls(cx).drop_down(cx,ids!(boards)).set_labels(cx,self.board_catalog.iter().map(|b|{
-            let name=string(b,"name");let name=if name=="Main Board" {crate::i18n::tr(name)}else{name};if b["isDefault"]==true {format!("{name} · {}",crate::i18n::tr("default"))}else{name.into()}
-        }).collect());
-        self.board_controls(cx).drop_down(cx,ids!(boards)).set_selected_item(cx,index);
+        self.selected_board=value["createdBoardId"].as_str().map(str::to_owned).or_else(||self.wanted_board.take()).or_else(||self.selected_board.clone());
+        self.apply_project_order(cx);
         if matches!(target,Target::BoardCreated) {
             self.board_creation=None;
             self.board_creation_open=false;
@@ -112,7 +151,7 @@ impl HagencyPanel {
             self.wanted_new_room=false;
             self.open_room_creation(cx);
         }
-        if self.wanted_open_rooms && matches!(target,Target::ProjectHome) {self.open_project_rooms(cx);}
+        if self.wanted_open_rooms && self.view.view(cx, ids!(rooms_section)).visible() && matches!(target,Target::ProjectHome) {self.open_project_rooms(cx);}
         if self.wanted_access && matches!(target,Target::ProjectHome) {
             self.wanted_access=false;
             if self.project_home["canManagePolicy"]==true {self.load_permissions(cx,false);}
@@ -152,10 +191,6 @@ impl HagencyPanel {
 
         self.view.button(cx,ids!(new_room)).set_visible(cx,detail && self.project_home["canCreateRoom"]==true && !archived);
         self.view.label(cx,ids!(rooms_hint)).set_text(cx,crate::i18n::tr(if self.rooms.is_empty() {"No Rooms yet. Add a Room to start a conversation."}else{"Choose a discussion Room to open it or manage its members."}));
-        let is_default=self.board_catalog.iter().any(|b|b["id"].as_str()==self.selected_board.as_deref() && b["isDefault"]==true);
-        self.board_controls(cx).view(cx,ids!(default_badge)).set_visible(cx,detail && is_default);
-        self.board_controls(cx).button(cx,ids!(set_default)).set_visible(cx,admin && !archived && self.project_home["navigationRevision"].is_i64() && self.selected_board.is_some() && !is_default);
-        self.board_controls(cx).button(cx,ids!(set_default)).set_enabled(cx,!self.busy);
         let room_selected=self.selected(cx,ids!(rooms),&self.rooms).is_some();
         self.view.button(cx,ids!(room_permissions)).set_visible(cx,self.room_can_manage && room_selected);
     }
@@ -186,13 +221,6 @@ impl HagencyPanel {
             } else {self.selected_board=self.board_catalog.get(index).and_then(|b|b["id"].as_str()).map(str::to_owned);self.project_section(cx,ids!(board_section));self.render_project_controls(cx);}
             return true;
         }
-        if self.board_controls(cx).button(cx,ids!(set_default)).clicked(actions) {
-            if !self.busy && self.project_home["canManagePolicy"]==true && self.project_home["archived"]!=true
-                && let (Some(project_id),Some(target_id),Some(expected_revision))=(self.project(cx),self.selected_board.clone(),self.project_home["navigationRevision"].as_i64()) {
-                self.run(cx,Target::NavigationDefaultChanged,Command::ProjectBoard {project_id,action:BoardAction::SetNavigationDefault {kind:"board".into(),target_id,expected_revision}});
-            }
-            return true;
-        }
         if self.board_controls(cx).button(cx,ids!(create_board)).clicked(actions) {
             if self.busy || self.project_home["archived"]==true || !self.view.project_board(cx,ids!(board)).can_switch(cx) {return true;}
             let Some(project_id)=self.project(cx) else {return true;};
@@ -221,13 +249,13 @@ mod tests {
             let panel=HagencyPanel::script_from_value(vm,value);assert!(vm.take_errors().is_empty());panel})
     }
     #[test]
-    fn rooms_open_the_visible_default_without_waiting_for_sdk_cache_and_never_show_management() {
+    fn rooms_open_the_first_accessible_item_in_order_without_waiting_for_sdk_cache() {
         let mut cx=Cx::new(Box::new(|_,_|{}));let mut p=panel(&mut cx);
         p.identity="owner".into();p.projects=vec![json!({"id":"project","name":"Project","spaceId":"!space:test","active":true})];p.labels(&mut cx,ids!(projects),"Select a Project",&p.projects,"id");p.view.drop_down(&cx,ids!(projects)).set_selected_item(&mut cx,1);
-        p.rooms=vec![json!({"roomId":"!default:test","active":true,"membership":"join","isDefault":true}),json!({"roomId":"!other:test","active":true,"membership":"join"})];
+        p.rooms=vec![json!({"roomId":"!left:test","active":true,"membership":"leave"}),json!({"roomId":"!first:test","active":true,"membership":"join"}),json!({"roomId":"!other:test","active":true,"membership":"join","isDefault":true})];
         let actions=cx.capture_actions(|cx|p.open_project_rooms(cx));
-        assert!(actions.iter().any(|a|a.downcast_ref::<crate::home::project_tree::ProjectSelectionChanged>().is_some_and(|s|s.target==crate::home::project_tree::ProjectSelection::Room(matrix_sdk::ruma::room_id!("!default:test").into()))));
-        assert!(actions.iter().filter_map(|a|a.as_widget_action()).any(|a|matches!(a.cast::<crate::home::rooms_list::RoomsListAction>(),crate::home::rooms_list::RoomsListAction::Selected(crate::app::SelectedRoom::JoinedRoom {room_name_id}) if room_name_id.room_id().as_str()=="!default:test")),"a joined directory result must open directly without an SDK-dependent join prompt");
+        assert!(actions.iter().any(|a|a.downcast_ref::<crate::home::project_tree::ProjectSelectionChanged>().is_some_and(|s|s.target==crate::home::project_tree::ProjectSelection::Room(matrix_sdk::ruma::room_id!("!first:test").into()))));
+        assert!(actions.iter().filter_map(|a|a.as_widget_action()).any(|a|matches!(a.cast::<crate::home::rooms_list::RoomsListAction>(),crate::home::rooms_list::RoomsListAction::Selected(crate::app::SelectedRoom::JoinedRoom {room_name_id}) if room_name_id.room_id().as_str()=="!first:test")),"a joined directory result must open directly without an SDK-dependent join prompt");
         assert!(!actions.iter().any(|a|a.downcast_ref::<crate::app::AppStateAction>().is_some()),"do not reclassify trusted directory membership through generic RoomId navigation");
         assert!(!p.wanted_open_rooms);assert!(p.auto_default_project.is_none());
         p.rooms.clear();p.has_registered_rooms=Some(true);p.project_home=json!({"canCreateRoom":true,"archived":false});p.open_project_rooms(&mut cx);
@@ -246,6 +274,38 @@ mod tests {
         let actions=cx.capture_actions(|cx|p.apply(cx,Target::Rooms,&json!({"rooms":[{"roomId":"!new:test","name":"Invited Room","active":true,"membership":"invite","isDefault":true}],"hasRegisteredRooms":true,"navigationRevision":2})));
         assert!(actions.iter().filter_map(|a|a.as_widget_action()).any(|a|matches!(a.cast::<crate::home::rooms_list::RoomsListAction>(),crate::home::rooms_list::RoomsListAction::Selected(crate::app::SelectedRoom::InvitedRoom {room_name_id}) if room_name_id.room_id().as_str()=="!new:test")));
     }
+    #[test]
+    fn ordered_boards_and_rooms_open_first_and_keep_selections_by_id() {
+        use crate::hagency::project_order::seed_for_test;
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut panel = panel(&mut cx);
+        panel.identity = "account".into();
+        panel.projects = vec![json!({"id":"project", "spaceId":"!space:test"})];
+        panel.labels(&mut cx, ids!(projects), "Select a Project", &panel.projects, "id");
+        panel.view.drop_down(&cx, ids!(projects)).set_selected_item(&mut cx, 1);
+        seed_for_test(&mut cx, "account", "project", &["beta","alpha"], &["!b:test","!a:test"]);
+        let overview = json!({"projectId":"project","boards":[
+            {"id":"alpha","name":"Alpha","isDefault":true}, {"id":"beta","name":"Beta"}
+        ]});
+        panel.apply_project_home(&mut cx, Target::ProjectHome, &overview);
+        assert_eq!(panel.selected_board.as_deref(), Some("beta"));
+        panel.apply(&mut cx, Target::Rooms, &json!({"rooms":[
+            {"roomId":"!a:test","active":true,"membership":"join","isDefault":true},
+            {"roomId":"!b:test","active":true,"membership":"invite"}
+        ]}));
+        let actions = cx.capture_actions(|cx| { panel.open_first_project_room(cx); });
+        assert!(actions.iter().any(|action| action.downcast_ref::<crate::home::project_tree::ProjectSelectionChanged>()
+            .is_some_and(|selected| selected.target == crate::home::project_tree::ProjectSelection::Room(matrix_sdk::ruma::room_id!("!b:test").into()))));
+
+        panel.view.drop_down(&cx, ids!(rooms)).set_selected_item(&mut cx, 1);
+        seed_for_test(&mut cx, "account", "project", &["alpha","beta"], &["!a:test","!b:test"]);
+        panel.apply_project_order(&mut cx);
+        assert_eq!(panel.selected_board.as_deref(), Some("beta"));
+        assert_eq!(panel.board_controls(&cx).drop_down(&cx, ids!(boards)).selected_item(), 1);
+        assert_eq!(panel.selected(&mut cx, ids!(rooms), &panel.rooms).unwrap()["roomId"], "!b:test");
+        assert_eq!(panel.view.drop_down(&cx, ids!(rooms)).selected_item(), 2);
+    }
+
     #[test]
     fn archive_icon_switching_uses_registered_resources_without_script_errors() {
         let mut cx=Cx::new(Box::new(|_,_|{}));let mut p=panel(&mut cx);

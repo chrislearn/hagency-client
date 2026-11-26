@@ -15,6 +15,8 @@ mod file_history;
 mod recovery;
 mod crypto;
 mod project_navigation;
+mod project_order_sync;
+mod project_order_editor;
 mod model_resources;
 #[cfg(debug_assertions)]
 mod preview;
@@ -69,7 +71,6 @@ enum Target {
     ProjectHome,
     BoardCreated,
     ProjectArchived,
-    NavigationDefaultChanged,
     Rooms,
     Spaces,
     Agents,
@@ -665,6 +666,23 @@ script_mod! {
             empty_message := Text {text: #(crate::i18n::tr("No Projects yet. Create a Project to start a shared workspace.")) i18n_text: "No Projects yet. Create a Project to start a shared workspace."}
         }
     }
+    mod.widgets.ProjectOrderList = #(project_order_editor::ProjectOrderList::register_widget(vm)) {
+        ..mod.widgets.FlatList
+        width:Fill height:Fit flow:Down
+        scroll_bars +: {show_scroll_x:false show_scroll_y:false}
+        Item := View {width:Fill height:40 flow:Overlay
+            body := View {width:Fill height:Fill flow:Right spacing:10 align:Align{y:0.5}
+                handle := View {width:32 height:Fill align:Align{x:0.5 y:0.5} cursor:MouseCursor.Move
+                    Icon {icon_walk:Walk{width:16 height:16} draw_icon +: {svg:crate_resource("self://resources/icons/menu.svg") color:mod.widgets.RINX_MUTED}}
+                }
+                name := RinxLabel {width:Fill max_lines:1 text_overflow:Ellipsis}
+            }
+            before := SolidView {visible:false width:Fill height:2 draw_bg.color:mod.widgets.RINX_ACCENT}
+            after := View {visible:false width:Fill height:Fill align:Align{y:1.0}
+                SolidView {width:Fill height:2 draw_bg.color:mod.widgets.RINX_ACCENT}
+            }
+        }
+    }
     mod.widgets.ApprovalInboxRows = #(approval_discovery::ApprovalRows::register_widget(vm)) {
         ..mod.widgets.PortalList
         selectable:false keep_invisible:false
@@ -749,6 +767,7 @@ script_mod! {
                         rooms_tab := Action {height:32 padding:Inset{left:10 right:10}text: #(crate::i18n::tr("Rooms")) i18n_text: "Rooms"}
                         members_tab := Action {height:32 padding:Inset{left:10 right:10}text: #(crate::i18n::tr("Members")) i18n_text: "Members"}
                         permissions_tab := Action {height:32 padding:Inset{left:10 right:10}text: #(crate::i18n::tr("Access")) i18n_text: "Access"}
+                        project_settings_tab := Action {visible:false height:32 text:#(crate::i18n::tr("Project settings")) i18n_text:"Project settings"}
                         archive_project := RinxIconButton {visible:false width:32 height:32 draw_icon.svg:crate_resource("self://resources/icons/archive_box.svg")}
                     }
         }
@@ -813,6 +832,23 @@ script_mod! {
                     board_section := View {visible: false width: Fill height: Fill flow: Down spacing: 8
                         board := ProjectBoard {}
                     }
+                    project_settings_section := View {visible:false width:Fill height:Fit flow:Down spacing:RINX_SPACE_4 padding:Inset{top:12}
+                        order_hint := RinxHint {width:Fill text:#(crate::i18n::tr("Drag items within each list to change their order in the project sidebar.")) i18n_text:"Drag items within each list to change their order in the project sidebar."}
+                        order_error := View {visible:false width:Fill height:Fit spacing:8 align:Align{y:0.5}
+                            Text {width:Fill text:#(crate::i18n::tr("Could not load the project order.")) i18n_text:"Could not load the project order."}
+                            retry_order := Action {text:#(crate::i18n::tr("Retry")) i18n_text:"Retry"}
+                        }
+                        RinxCard {width:Fill height:Fit flow:Down spacing:6 padding:12
+                            Text {text:#(crate::i18n::tr("Boards")) i18n_text:"Boards" draw_text.text_style:RBX_TEXT_BODY_STRONG {}}
+                            board_order_list := mod.widgets.ProjectOrderList {}
+                            no_boards := RinxHint {text:#(crate::i18n::tr("No boards yet.")) i18n_text:"No boards yet."}
+                        }
+                        RinxCard {width:Fill height:Fit flow:Down spacing:6 padding:12
+                            Text {text:#(crate::i18n::tr("Rooms")) i18n_text:"Rooms" draw_text.text_style:RBX_TEXT_BODY_STRONG {}}
+                            room_order_list := mod.widgets.ProjectOrderList {}
+                            no_rooms := RinxHint {text:#(crate::i18n::tr("No rooms yet.")) i18n_text:"No rooms yet."}
+                        }
+                    }
                     overview_section := View {width:Fill height:Fit flow:Down spacing:20 padding:Inset{top:12 bottom:20}
                         project_details := RinxHint {visible:false}
                         overview_archived := RinxHint {visible:false text:#(crate::i18n::tr("Archived Project · boards are read only")) i18n_text:"Archived Project · boards are read only"}
@@ -830,7 +866,7 @@ script_mod! {
                             Text {text:#(crate::i18n::tr("Boards")) i18n_text:"Boards" draw_text.text_style:theme.font_bold{font_size:mod.widgets.RINX_BODY_SIZE}}
                             overview_boards := FlatList {width:Fill height:Fit flow:Flow.Right{wrap:true} spacing:8
                                 scroll_bars +: {show_scroll_x:false show_scroll_y:false}
-                                Board := View {width:Fit height:32 spacing:6 align:Align{y:0.5} open_board := RinxGhostButton {height:32 draw_icon.svg:ICON_SQUARES} default_badge := mod.widgets.RinxDefaultBadge {visible:false label +: {i18n_text:"default"}}}
+                                Board := View {width:Fit height:32 spacing:6 align:Align{y:0.5} open_board := RinxGhostButton {height:32 draw_icon.svg:ICON_SQUARES}}
                             }
                         }
                         RinxCard {width:Fill height:Fit flow:Down spacing:14 padding:16
@@ -1450,6 +1486,7 @@ pub struct HagencyPanel {
     #[rust] runtime_list_loading:bool,
     #[rust] display_blocked:bool,
     #[rust] detail_scroll_key:String,
+    #[rust] order_scroll_frame: NextFrame,
     #[rust]
     agents_loaded: bool,
     #[rust] projects_loaded:bool,
@@ -2181,7 +2218,8 @@ impl HagencyPanel {
         let topic=string(&p,"topic");
         self.view.label(cx,ids!(project_details)).set_text(cx,topic);
         self.view.label(cx,ids!(project_details)).set_visible(cx,!topic.is_empty());
-        self.rooms.clear();self.has_registered_rooms=None;
+        self.rooms.clear();self.has_registered_rooms=None;self.wanted_open_rooms=false;
+        self.refresh_project_order(cx);
         self.labels(cx, ids!(rooms), "Select a Room", &self.rooms, "roomId");
         self.view.label(cx, ids!(room_details)).set_text(cx, "");
         self.run(
@@ -2321,6 +2359,7 @@ impl HagencyPanel {
             ids!(rooms_section),
             ids!(members_section),
             ids!(permissions_section),
+            ids!(project_settings_section),
         ] {
             self.view.view(cx, id).set_visible(cx, id == selected);
         }
@@ -2330,6 +2369,7 @@ impl HagencyPanel {
             (ids!(rooms_tab), ids!(rooms_section)),
             (ids!(members_tab), ids!(members_section)),
             (ids!(permissions_tab), ids!(permissions_section)),
+            (ids!(project_settings_tab), ids!(project_settings_section)),
         ] {
             let mut button = self.view.button(cx, tab);
             if section == selected {
@@ -3254,10 +3294,6 @@ impl HagencyPanel {
                 }
             }
             Target::ProjectHome | Target::BoardCreated => self.apply_project_home(cx,target,value),
-            Target::NavigationDefaultChanged => {
-                cx.action(crate::home::project_tree::ProjectTreeChanged {identity:self.identity.clone()});
-                self.load_project_home(cx);
-            }
             Target::ProjectArchived => {
                 if let Some(project)=self.project(cx) {self.wanted_project=Some(project);}
                 cx.action(crate::home::project_tree::ProjectTreeChanged {identity:self.identity.clone()});
@@ -3277,10 +3313,11 @@ impl HagencyPanel {
                         "roomId",
                     );
                 } else {
+                    let selected_room = self.selected(cx, ids!(rooms), &self.rooms);
                     self.rooms = array(value, "rooms");
-                    self.rooms.sort_by_key(|r|(r["isDefault"]!=true,string(r,"name").to_lowercase(),string(r,"roomId").to_owned()));
                     self.has_registered_rooms=value["hasRegisteredRooms"].as_bool();
-                    self.labels(cx, ids!(rooms), "Select a Room", &self.rooms, "roomId");
+                    let order = self.project(cx).map(|p| crate::hagency::project_order::ProjectOrder::cached(cx, &self.identity, &p)).unwrap_or_default();
+                    self.apply_project_room_order(cx, &order, selected_room.as_ref());
                     if let Some((project_id, section)) = self.wanted_project_section.take()
                         && let Some(project) = self.selected(cx, ids!(projects), &self.projects)
                         && string(&project, "id") == project_id
@@ -4077,6 +4114,7 @@ impl Widget for HagencyPanel {
         self.view.project_board(cx,ids!(board)).bind_scope(cx,&self.identity,project.as_deref(),self.selected_board.as_deref(),board_active);
         self.project_toolbar_tooltips(cx,event);
         self.view.handle_event(cx, event, scope);
+        self.scroll_project_order_drag(cx, event);
         if !self.active {
             return;
         }
@@ -4150,6 +4188,9 @@ impl Widget for HagencyPanel {
             return;
         };
         for action in actions {
+            if let Some(changed) = action.downcast_ref::<crate::hagency::project_order::ProjectOrderChanged>() {
+                self.on_project_order_changed(cx, changed);
+            }
             if let Some(done)=action.downcast_ref::<ledger::Selected>() {
                 self.accept_ledger_selection(cx,done);
             }
@@ -4264,7 +4305,7 @@ impl Widget for HagencyPanel {
                             if matches!(done.target,Target::ListService | Target::Runtime | Target::RuntimeSetup) {runtime_diagnostic(error)} else {visible_error(error)}
                         };
                         if !matches!(done.target,Target::ConfigurationStatus | Target::ModelSaved) {self.show_failure(cx,done.target,error,&message);}
-                        if matches!(done.target,Target::ProjectArchived|Target::NavigationDefaultChanged) {self.load_project_home(cx);}
+                        if matches!(done.target,Target::ProjectArchived) {self.load_project_home(cx);}
                         if matches!(done.target,Target::Runtime | Target::RuntimeSetup) {
                             let current=Ok(self.agent_service_state.clone());
                             let mut summary=runtime_service_description(Some(&current),self.agent(cx).as_deref().unwrap_or(""));
@@ -4471,10 +4512,13 @@ impl Widget for HagencyPanel {
             self.run(cx, Target::ScopeChanged, command);
             return;
         }
+        if self.handle_project_order_actions(cx, actions) {return;}
         if self.handle_project_navigation(cx,actions) {return;}
         if self.view.button(cx, ids!(board_tab)).clicked(actions) {
             if !self.view.project_board(cx,ids!(board)).can_switch(cx) {return;}
-            self.selected_board=self.board_catalog.first().and_then(|b|b["id"].as_str()).map(str::to_owned);
+            self.refresh_project_order(cx);
+            self.selected_board = None;
+            self.apply_project_order(cx);
             self.project_section(cx,ids!(board_section));return;
         }
         if self.view.button(cx, ids!(overview_tab)).clicked(actions) {
@@ -5217,6 +5261,7 @@ impl Widget for HagencyPanel {
         }
     }
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.sync_project_order_editor(cx);
         let allocated=cx.peek_walk_turtle(walk).size.x;
         let desktop=crate::home::home_screen::effective_is_desktop(cx);
         let split=desktop && self.page==Page::Agents && allocated>=600.0;
@@ -5285,7 +5330,6 @@ impl Widget for HagencyPanel {
                 let Some(mut list)=step.borrow_mut::<FlatList>() else {continue;};
                 for board in &self.board_catalog {
                     let Some(row)=list.item(cx,LiveId::from_str(string(board,"id")),id!(Board)) else {continue;};
-                    row.view(cx,ids!(default_badge)).set_visible(cx,board["isDefault"]==true);
                     let name=string(board,"name");row.button(cx,ids!(open_board)).set_text(cx,if name=="Main Board" {crate::i18n::tr(name)}else{name});
                     row.draw_all(cx,scope);
                 }

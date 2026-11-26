@@ -4,6 +4,7 @@ use makepad_widgets::*;
 use matrix_sdk::{Client, RoomState, ruma::{OwnedRoomId, OwnedUserId}};
 use crate::{hagency::{backend::Service, model::Command, ui::{HagencyAction, ProjectDetailSection}}, sliding_sync::{get_client, spawn_async_task}, utils::RoomNameId};
 use crate::shared::navigation_bar_button::NavigationBarButtonWidgetExt;
+use crate::hagency::project_order::{self, OrderKind, ProjectOrder, ProjectOrderChanged};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -35,8 +36,6 @@ script_mod! {
                 }
             }
             tools := View {width:Fill height:32 spacing:6 align:Align{x:1.0 y:0.5}
-                default_badge := mod.widgets.RinxDefaultBadge {visible:false label +: {i18n_text:"default"}}
-                set_default := RinxGhostButton {visible:false height:32 text:#(crate::i18n::tr("Set as default")) i18n_text:"Set as default"}
                 search := NavigationBarButton {width:32 height:32 padding:8 tooltip_below:true tooltip_text:#(crate::i18n::tr("Search Chat History")) Icon {icon_walk:Walk{width:16 height:16} draw_icon +: {svg:ICON_SEARCH color:mod.widgets.RINX_INK}}}
                 media := NavigationBarButton {width:32 height:32 padding:8 tooltip_below:true tooltip_text:#(crate::i18n::tr("Shared Attachments")) Icon {icon_walk:Walk{width:16 height:16} draw_icon +: {svg:ICON_ADD_ATTACHMENT color:mod.widgets.RINX_INK}}}
                 refresh := RinxIconButton {width:32 height:32 draw_icon.svg:crate_resource("self://resources/icons/article_refresh.svg")}
@@ -56,9 +55,18 @@ impl Pin {
     }
 }
 #[derive(Clone, Debug)]
-struct Navigation {title:String, project:Option<String>, parent:Option<RoomNameId>, rooms:Vec<RoomNameId>, can_add:bool, can_manage:bool, default_room:Option<OwnedRoomId>, revision:i64, archived:bool}
+struct Navigation {
+    title: String,
+    project: Option<ProjectSpace>,
+    parent: Option<RoomNameId>,
+    rooms: Vec<RoomNameId>,
+    can_add: bool,
+    can_manage: bool,
+}
+#[derive(Clone, Debug)]
+struct ProjectSpace { id: String, space: String }
 #[derive(Debug)]
-struct Loaded {pin:Pin, request:u64, identity:String, mutation:bool, result:Result<Navigation,String>}
+struct Loaded {pin:Pin, request:u64, identity:String, result:Result<Navigation,String>}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum RoomNavigationAction {Search, Media, Info, Members}
 
@@ -69,19 +77,18 @@ async fn load(client:&Client, service:&Service, current:&OwnedRoomId)->Result<Na
     let mut project_rooms=HashSet::new();let mut project_spaces=HashSet::new();let mut context=None;
     for project in projects.iter().filter(|p|p["active"]==true) {
         let id=project["id"].as_str().ok_or("invalid_project_response")?;
-        project_spaces.insert(project["spaceId"].as_str().ok_or("invalid_project_response")?.to_owned());
+        let space = project["spaceId"].as_str().ok_or("invalid_project_response")?;
+        project_spaces.insert(space.to_owned());
         let value=service.execute(Command::ProjectRooms {project_id:id.into()}).await?;
         let records=value["rooms"].as_array().ok_or("invalid_project_response")?;
         let ids=records.iter().filter(|r|r["active"]==true).map(|r|r["roomId"].as_str().ok_or("invalid_project_response")).collect::<Result<Vec<_>,_>>()?;
         project_rooms.extend(ids.iter().map(|id|(*id).to_owned()));
         if ids.contains(&current.as_str()) {
             if context.is_some() {return Err("ambiguous_room_project".into());}
-            let default_room=records.iter().find(|r|r["isDefault"]==true).and_then(|r|r["roomId"].as_str()).and_then(|id|id.parse().ok());
             let overview=service.execute(Command::ProjectBoard {project_id:id.into(),action: ::hagency::project_board::BoardAction::Overview}).await?;
-            context=Some(Navigation {title:project["name"].as_str().unwrap_or(id).into(),project:Some(id.into()),parent:None,
-                rooms:project_room_names(records,default_room.as_ref()).into_iter().filter(|name|client.get_room(name.room_id()).is_none_or(|room|!room.is_space() && room.direct_targets().is_empty())).collect(),
-                default_room,revision:value["navigationRevision"].as_i64().unwrap_or(-1),
-                can_add:overview["canCreateRoom"]==true && overview["archived"]!=true,can_manage:overview["canManagePolicy"]==true,archived:overview["archived"]==true});
+            context=Some(Navigation {title:project["name"].as_str().unwrap_or(id).into(),project:Some(ProjectSpace {id:id.into(),space:space.into()}),parent:None,
+                rooms:project_room_names(records).into_iter().filter(|name|client.get_room(name.room_id()).is_none_or(|room|!room.is_space() && room.direct_targets().is_empty())).collect(),
+                can_add:overview["canCreateRoom"]==true && overview["archived"]!=true,can_manage:overview["canManagePolicy"]==true});
         }
     }
     if let Some(context)=context {return Ok(context);}
@@ -98,19 +105,19 @@ async fn load(client:&Client, service:&Service, current:&OwnedRoomId)->Result<Na
         let can_add=super::space_management::can_add_room(client,parent.room_id()).await;
         (Some(RoomNameId::from_room(&parent).await),children,can_add)
     }else {(None,client.joined_rooms().into_iter().filter(|r|!r.is_space() && r.direct_targets().is_empty()).map(|r|r.room_id().to_string()).collect(),true)};
-    let rooms=room_names(client,candidates.into_iter().filter(|id|!project_rooms.contains(id)),None).await;
-    Ok(Navigation {title:parent.as_ref().map_or_else(||crate::i18n::tr("Chats").into(),|p|p.display().into_owned()),project:None,parent,rooms,can_add,can_manage:false,default_room:None,revision:-1,archived:false})
+    let rooms=room_names(client,candidates.into_iter().filter(|id|!project_rooms.contains(id))).await;
+    Ok(Navigation {title:parent.as_ref().map_or_else(||crate::i18n::tr("Chats").into(),|p|p.display().into_owned()),project:None,parent,rooms,can_add,can_manage:false})
 }
-fn project_room_names(records:&[serde_json::Value],default_room:Option<&OwnedRoomId>)->Vec<RoomNameId> {
+fn project_room_names(records:&[serde_json::Value])->Vec<RoomNameId> {
     let mut seen=HashSet::new();let mut rooms=Vec::new();
     for record in records.iter().filter(|r|r["active"]==true && matches!(r["membership"].as_str(),Some("join"|"invite"))) {
         let Some(id)=record["roomId"].as_str().and_then(|id|id.parse::<OwnedRoomId>().ok()).filter(|id|seen.insert(id.clone())) else {continue;};
         let room=record["name"].as_str().filter(|name|!name.trim().is_empty()).map(|name|RoomNameId::new(matrix_sdk::RoomDisplayName::Named(name.into()),id.clone())).unwrap_or_else(||RoomNameId::empty(id));
         rooms.push(room);
     }
-    rooms.sort_by_key(|r|(default_room!=Some(r.room_id()),r.display().to_lowercase(),r.room_id().clone()));rooms
+    rooms
 }
-async fn room_names(client:&Client, ids:impl IntoIterator<Item=String>, default_room:Option<&OwnedRoomId>)->Vec<RoomNameId> {
+async fn room_names(client:&Client, ids:impl IntoIterator<Item=String>)->Vec<RoomNameId> {
     let mut seen=HashSet::new();let mut rooms=Vec::new();
     for id in ids {
         if let Ok(id)=matrix_sdk::ruma::RoomId::parse(id) && seen.insert(id.clone())
@@ -119,7 +126,7 @@ async fn room_names(client:&Client, ids:impl IntoIterator<Item=String>, default_
             rooms.push(RoomNameId::from_room(&room).await);
         }
     }
-    rooms.sort_by_key(|r|(default_room!=Some(r.room_id()),r.display().to_lowercase(),r.room_id().clone()));rooms
+    rooms.sort_by_key(|r|(r.display().to_lowercase(),r.room_id().clone()));rooms
 }
 
 #[derive(Script, ScriptHook, Widget)]
@@ -134,13 +141,10 @@ pub struct RoomNavigation {
 }
 impl RoomNavigation {
     fn current(&self)->bool {self.pin.as_ref().is_some_and(Pin::current) && Service::existing_current().is_some_and(|s|s.identity()==self.identity)}
-    fn request(&mut self,cx:&mut Cx,command:Option<crate::hagency::model::Command>) {
+    fn request(&mut self,cx:&mut Cx) {
         let (Some(pin),Some(client))=(self.pin.clone(),get_client()) else {return;};
         if !pin.current() {return;}
-        // Only an explicit mutation may establish the local owner. Rendering,
-        // refresh and response validation observe an already-running service.
-        let service=if command.is_some() {Service::for_current().ok()} else {Service::existing_current()};
-        let Some(service)=service else {
+        let Some(service)=Service::existing_current() else {
             self.request=self.request.wrapping_add(1);self.identity.clear();self.busy=false;self.data=None;
             self.view.label(cx,ids!(status)).set_text(cx,crate::i18n::tr("The local service is not running for this account."));
             self.view.label(cx,ids!(status)).set_visible(cx,true);self.sync(cx);self.view.redraw(cx);return;
@@ -150,12 +154,9 @@ impl RoomNavigation {
         self.identity=service.identity();let identity=self.identity.clone();self.busy=true;
         self.view.widget(cx,ids!(loading)).set_visible(cx,true);
         spawn_async_task(async move {
-            let mutation=command.is_some();
-            let result=tokio::time::timeout(std::time::Duration::from_secs(30),async {
-                if let Some(command)=command {service.execute(command).await?;Cx::post_action(super::project_tree::ProjectTreeChanged {identity:identity.clone()});}
-                load(&client,&service,&pin.room).await
-            }).await.unwrap_or_else(|_|Err("room_discovery_unavailable".into()));
-            Cx::post_action(Loaded {pin,request,identity,mutation,result});
+            let result=tokio::time::timeout(std::time::Duration::from_secs(30),load(&client,&service,&pin.room))
+                .await.unwrap_or_else(|_|Err("room_discovery_unavailable".into()));
+            Cx::post_action(Loaded {pin,request,identity,result});
         });self.view.redraw(cx);
     }
     fn set_room(&mut self,cx:&mut Cx,room:Option<&RoomNameId>)->bool {
@@ -167,20 +168,27 @@ impl RoomNavigation {
             self.view.label(cx,ids!(heading)).set_text(cx,&room.map_or_else(||crate::i18n::tr("Chats").into(),|r|r.display().into_owned()));
             self.view.drop_down(cx,ids!(rooms)).set_labels(cx,vec![room.map_or_else(||crate::i18n::tr("Select a Room").into(),|r|r.display().into_owned())]);
             self.view.drop_down(cx,ids!(rooms)).set_selected_item(cx,0);
-            self.view.label(cx,ids!(status)).set_visible(cx,false);self.request(cx,None);
+            self.view.label(cx,ids!(status)).set_visible(cx,false);self.request(cx);
         }
         self.pin.is_some()
     }
+    fn update_room_selector(&mut self, cx: &mut Cx) {
+        let Some(data) = &mut self.data else { return };
+        if let Some(project) = &data.project {
+            let order = ProjectOrder::cached(cx, &self.identity, &project.id);
+            order.sort_by_id(OrderKind::Rooms, &mut data.rooms, |room| room.room_id().as_str());
+        }
+        let rooms = self.view.drop_down(cx, ids!(rooms));
+        rooms.set_labels(cx, data.rooms.iter().map(|room| room.display().into_owned()).collect());
+        let index = data.rooms.iter().position(|r| Some(r.room_id()) == self.pin.as_ref().map(|p| &p.room)).unwrap_or(0);
+        rooms.set_selected_item(cx, index);
+    }
+
     fn sync(&self,cx:&mut Cx) {
         let data=self.data.as_ref();
         for (id,visible) in [(ids!(boards),data.is_some_and(|d|d.project.is_some())),(ids!(overview),data.is_some_and(|d|d.project.is_some() || d.parent.is_some())),(ids!(access),data.is_some_and(|d|d.can_manage))] {
             let button=self.view.button(cx,id);if button.visible()!=visible {button.set_visible(cx,visible);}
         }
-        let is_default=data.is_some_and(|d|d.default_room.as_ref()==self.pin.as_ref().map(|p|&p.room) && d.default_room.is_some());
-        let badge=self.view.view(cx,ids!(default_badge));if badge.visible()!=is_default {badge.set_visible(cx,is_default);}
-        let set=self.view.button(cx,ids!(set_default));let show=data.is_some_and(|d|d.can_manage && !d.archived && d.project.is_some() && d.revision>=0) && !is_default;
-        if set.visible()!=show {set.set_visible(cx,show);}let enabled=!self.busy && self.current();
-        if set.borrow().is_some_and(|b|b.enabled()!=enabled) {set.set_enabled(cx,enabled);}
         let add=self.view.view(cx,ids!(add_holder));let visible=data.is_some_and(|d|d.can_add);
         if add.visible()!=visible {add.set_visible(cx,visible);}
         let selector=self.view.drop_down(cx,ids!(rooms));let disabled=self.busy || !self.current() || data.is_none();
@@ -203,23 +211,29 @@ impl Widget for RoomNavigation {
                         Ok(data)=>{
                             self.announced=false;self.data=Some(data.clone());
                             self.view.label(cx,ids!(heading)).set_text(cx,&data.title);
-                            self.view.drop_down(cx,ids!(rooms)).set_labels(cx,data.rooms.iter().map(|r|if data.default_room.as_ref()==Some(r.room_id()) {format!("{} · {}",r.display(),crate::i18n::tr("default"))}else{r.display().into_owned()}).collect());
-                            let index=data.rooms.iter().position(|r|Some(r.room_id())==self.pin.as_ref().map(|p|&p.room)).unwrap_or(0);
-                            self.view.drop_down(cx,ids!(rooms)).set_selected_item(cx,index);
+                            if let Some(project) = &data.project {
+                                project_order::refresh(cx, &self.identity, &project.id, &project.space);
+                            }
+                            self.update_room_selector(cx);
                             self.view.label(cx,ids!(status)).set_visible(cx,false);
                         }
-                        Err(_)=>{self.data=None;self.view.label(cx,ids!(status)).set_text(cx,crate::i18n::tr(if loaded.mutation {"Could not set default. Refresh to retry."}else{"Could not load Rooms. Refresh to retry."}));self.view.label(cx,ids!(status)).set_visible(cx,true);}
+                        Err(_)=>{self.data=None;self.view.label(cx,ids!(status)).set_text(cx,crate::i18n::tr("Could not load Rooms. Refresh to retry."));self.view.label(cx,ids!(status)).set_visible(cx,true);}
                     }
                     self.sync(cx);self.view.redraw(cx);
                 }
+                if let Some(change) = action.downcast_ref::<ProjectOrderChanged>()
+                    && change.identity == self.identity && self.current()
+                    && self.data.as_ref().and_then(|data| data.project.as_ref()).is_some_and(|project| project.id == change.project) {
+                    self.update_room_selector(cx);
+                }
                 if action.downcast_ref::<super::room_settings::RoomSettingsChanged>().is_some_and(|changed|self.pin.as_ref().is_some_and(|pin|pin.room==*changed.0.room_id())) {
-                    self.request(cx,None);
+                    self.request(cx);
                 }
                 if action.downcast_ref::<super::space_management::SpaceManagementChanged>().is_some() || action.downcast_ref::<super::project_tree::ProjectTreeChanged>().is_some() {
-                    if !self.busy {self.request(cx,None);}
+                    if !self.busy {self.request(cx);}
                 }
             }
-            if self.view.button(cx,ids!(refresh)).clicked(actions) && !self.busy {self.request(cx,None);}
+            if self.view.button(cx,ids!(refresh)).clicked(actions) && !self.busy {self.request(cx);}
             if !self.pin.as_ref().is_some_and(Pin::current) {return;}
             for (id,action) in [(ids!(search),RoomNavigationAction::Search),(ids!(media),RoomNavigationAction::Media),(ids!(info),RoomNavigationAction::Info)] {
                 if self.view.navigation_bar_button(cx,id).clicked(actions) {cx.widget_action(self.widget_uid(),action);}
@@ -234,22 +248,17 @@ impl Widget for RoomNavigation {
                 && let Some(sdk)=get_client().and_then(|c|c.get_room(room.room_id())) {
                 let selected=match sdk.state() {RoomState::Joined=>Some(crate::app::SelectedRoom::JoinedRoom {room_name_id:room.clone()}),RoomState::Invited=>Some(crate::app::SelectedRoom::InvitedRoom {room_name_id:room.clone()}),_=>None};
                 if let Some(selected)=selected {
-                    if let Some(project_id)=&data.project {cx.action(super::project_tree::ProjectSelectionChanged {identity:self.identity.clone(),project_id:project_id.clone(),target:super::project_tree::ProjectSelection::Room(room.room_id().clone())});}
+                    if let Some(project)=&data.project {cx.action(super::project_tree::ProjectSelectionChanged {identity:self.identity.clone(),project_id:project.id.clone(),target:super::project_tree::ProjectSelection::Room(room.room_id().clone())});}
                     cx.widget_action(self.widget_uid(),super::rooms_list::RoomsListAction::Selected(selected));
                 }
             }
-            if self.view.button(cx,ids!(set_default)).clicked(actions) && data.can_manage && !data.archived && data.revision>=0 && !self.busy
-                && let (Some(project_id),Some(pin))=(data.project.clone(),self.pin.clone()) {
-                let command=Command::ProjectBoard {project_id,action: ::hagency::project_board::BoardAction::SetNavigationDefault {kind:"room".into(),target_id:pin.room.to_string(),expected_revision:data.revision}};
-                self.request(cx,Some(command));return;
-            }
             if self.view.navigation_bar_button(cx,ids!(add)).clicked(actions) && data.can_add && !self.busy {
-                if let Some(project_id)=&data.project {cx.action(HagencyAction::NewRoom {project_id:project_id.clone()});}
+                if let Some(project)=&data.project {cx.action(HagencyAction::NewRoom {project_id:project.id.clone()});}
                 else {cx.action(super::space_management::SpaceManagementAction::CreateRoom {parent:data.parent.clone()});}
             }
             for (id,section) in [(ids!(overview),ProjectDetailSection::Overview),(ids!(boards),ProjectDetailSection::Board),(ids!(members),ProjectDetailSection::Members),(ids!(access),ProjectDetailSection::Access)] {
                 if !self.view.button(cx,id).clicked(actions) {continue;}
-                if let Some(project_id)=&data.project {cx.action(HagencyAction::ProjectSection {project_id:project_id.clone(),section});}
+                if let Some(project)=&data.project {cx.action(HagencyAction::ProjectSection {project_id:project.id.clone(),section});}
                 else if id==ids!(members) {cx.widget_action(self.widget_uid(),RoomNavigationAction::Members);}
                 else if let Some(parent)=&data.parent {cx.action(crate::app::AppStateAction::NavigateToRoom {room_to_close:None,destination_room:crate::room::BasicRoomDetails::RoomId(parent.clone())});}
             }
@@ -262,10 +271,10 @@ impl Widget for RoomNavigation {
         if let Some(mut header)=self.view.view(cx,ids!(header)).borrow_mut() {header.layout.flow=if width<760.0 {Flow::Down}else{Flow::right()};}
         if let Some(mut tabs)=self.view.view(cx,ids!(tabs)).borrow_mut() {tabs.walk.width=if width<760.0 {Size::fill()}else{Size::fit()};}
         if let Some(mut toolbar)=self.view.view(cx,ids!(toolbar)).borrow_mut() {toolbar.layout.flow=if width<600.0 {Flow::Down}else{Flow::right()};}
-        if !self.announced && self.current() && let (Some(data),Some(pin))=(&self.data,&self.pin) && let Some(project_id)=&data.project {
+        if !self.announced && self.current() && let (Some(data),Some(pin))=(&self.data,&self.pin) && let Some(project)=&data.project {
             // Only a drawn Room can own sidebar selection. A late response to a
             // cached/hidden Room must never steal it from the active Board.
-            cx.action(super::project_tree::ProjectSelectionChanged {identity:self.identity.clone(),project_id:project_id.clone(),target:super::project_tree::ProjectSelection::Room(pin.room.clone())});
+            cx.action(super::project_tree::ProjectSelectionChanged {identity:self.identity.clone(),project_id:project.id.clone(),target:super::project_tree::ProjectSelection::Room(pin.room.clone())});
             self.announced=true;
         }
         self.sync(cx);self.view.draw_walk(cx,scope,walk)
@@ -302,14 +311,27 @@ mod tests {
             {"roomId":"!left:test","name":"Hidden","active":true,"membership":"leave"},
             {"roomId":"!inactive:test","name":"Inactive","active":false,"membership":"join"}
         ]);
-        let rooms=project_room_names(records.as_array().unwrap(),Some(&matrix_sdk::ruma::room_id!("!new:test").into()));
-        assert_eq!(rooms.len(),2);assert_eq!(rooms[0].display(),"Renamed Room");
-        assert_eq!(rooms[0].room_id().as_str(),"!new:test");
+        let rooms=project_room_names(records.as_array().unwrap());
+        assert_eq!(rooms.len(),2);assert_eq!(rooms[0].display(),"A room");
+        assert_eq!(rooms[1].room_id().as_str(),"!new:test");
+
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut nav = widget(&mut cx);
+        nav.identity = "account".into();
+        nav.pin = Some(Pin {room:rooms[0].room_id().clone(),owner:matrix_sdk::ruma::user_id!("@owner:test").into(),origin:"https://test".into(),epoch:0});
+        nav.data = Some(Navigation {
+            project:Some(ProjectSpace { id:"p".into(), space:"!space:test".into() }), title:"Project".into(),
+            parent:None, rooms, can_add:false, can_manage:false,
+        });
+        crate::hagency::project_order::seed_for_test(&mut cx, "account", "p", &[], &["!new:test", "!old:test"]);
+        nav.update_room_selector(&mut cx);
+        assert_eq!(nav.data.as_ref().unwrap().rooms[0].room_id().as_str(), "!new:test");
+        assert_eq!(nav.view.drop_down(&cx, ids!(rooms)).selected_item(), 1);
     }
     #[test]
     fn room_header_uses_compact_rows_and_wraps_without_clipping_the_selector_or_tools() {
         let mut cx=Cx::new(Box::new(|_,_|{}));let mut nav=widget(&mut cx);
-        nav.data=Some(Navigation {title:"Project".into(),project:Some("p".into()),parent:None,rooms:vec![],can_add:true,can_manage:true,default_room:None,revision:0,archived:false});
+        nav.data=Some(Navigation {title:"Project".into(),project:Some(ProjectSpace {id:"p".into(),space:"!space:test".into()}),parent:None,rooms:vec![],can_add:true,can_manage:true});
         nav.view.label(&cx,ids!(heading)).set_text(&mut cx,"A long Project title that must leave space for its tabs");
         for width in [900.0,310.0] {
             draw(&mut cx,&mut nav,width);
@@ -337,7 +359,7 @@ mod tests {
         let mut cx=Cx::new(Box::new(|_,_|{}));let mut nav=widget(&mut cx);
         let pin=Pin {room:matrix_sdk::ruma::room_id!("!room:s").into(),owner:matrix_sdk::ruma::user_id!("@owner:s").into(),origin:"https://s/".into(),epoch:3};
         nav.pin=Some(pin.clone());nav.identity="owner-service".into();nav.request=8;
-        let mut loaded=Loaded {pin,request:8,identity:nav.identity.clone(),mutation:false,result:Err("unavailable".into())};
+        let mut loaded=Loaded {pin,request:8,identity:nav.identity.clone(),result:Err("unavailable".into())};
         assert!(nav.matches_response(&loaded));assert!(!nav.accepts(&loaded),"without the same live account, even a matching reply is refused");
         loaded.request=9;assert!(!nav.matches_response(&loaded));loaded.request=8;
         loaded.pin.room=matrix_sdk::ruma::room_id!("!other:s").into();assert!(!nav.matches_response(&loaded));loaded.pin.room=nav.pin.as_ref().unwrap().room.clone();

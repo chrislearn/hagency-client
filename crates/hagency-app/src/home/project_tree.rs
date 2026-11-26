@@ -5,6 +5,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedRoomId, OwnedUserId};
 use crate::{
     app::SelectedRoom,
+    hagency::project_order::{self, OrderKind, ProjectOrder, ProjectOrderChanged},
     logout::logout_confirm_modal::LogoutAction,
     shared::{
         navigation_bar_button::{NavigationBarButtonAction, NavigationBarButtonWidgetRefExt},
@@ -67,7 +68,6 @@ script_mod! {
                         width: Fill max_lines: 1 text_overflow: Ellipsis
                         draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: mod.widgets.RINX_UI_SIZE}}
                     }
-                    default_badge := mod.widgets.RinxDefaultBadge {visible:false label +: {i18n_text:"default"}}
                     unread := UnreadBadge {}
                 }
                 View {width:RINX_ICON_BUTTON_SIZE height:RINX_ICON_BUTTON_SIZE more := RinxMoreButton {visible:false}}
@@ -109,8 +109,12 @@ pub struct TreeProject {
     pub rooms: Vec<OwnedRoomId>,
     pub boards: Vec<(String,String)>,
     pub archived: bool,
-    pub default_board:Option<String>,
-    pub default_room:Option<OwnedRoomId>,
+}
+impl TreeProject {
+    fn apply_order(&mut self, order: &ProjectOrder) {
+        order.sort_by_id(OrderKind::Boards, &mut self.boards, |(id, _)| id.as_str());
+        order.sort_by_id(OrderKind::Rooms, &mut self.rooms, |id| id.as_str());
+    }
 }
 #[derive(Clone, Debug)]
 pub struct ProjectTreeSnapshot {
@@ -120,6 +124,13 @@ pub struct ProjectTreeSnapshot {
     pub service_identity: String,
     pub projects: Vec<TreeProject>,
     pub spaces:HashMap<OwnedRoomId,Vec<OwnedRoomId>>,
+}
+impl ProjectTreeSnapshot {
+    fn refresh_orders(&self, cx: &mut Cx) {
+        for project in &self.projects {
+            project_order::refresh(cx, &self.service_identity, &project.id, project.space.as_str());
+        }
+    }
 }
 #[derive(Clone, Debug)]
 pub(crate) struct TreeRoom {
@@ -207,10 +218,10 @@ fn tree_rows(
         }
         result.push(Row::Project(project.id.clone()));
         if expanded.contains(&project.id) || !query.is_empty() {
-            let mut visible = visible;
-            visible.sort_by_key(|id| (project.default_room.as_ref()!=Some(*id),joined[*id].name.display().to_lowercase(), (*id).clone()));
-            let mut boards:Vec<_>=project.boards.iter().collect();boards.sort_by_key(|(id,name)|(project.default_board.as_ref()!=Some(id),name.to_lowercase(),id.clone()));
-            result.extend(boards.into_iter().map(|(board,_)|Row::Board {project:project.id.clone(),board:board.clone()}));
+            result.extend(project.boards.iter().map(|(board, _)| Row::Board {
+                project: project.id.clone(),
+                board: board.clone(),
+            }));
             result.extend(visible.into_iter().map(|id| if joined[id].invited {Row::Invite(id.clone())}else{Row::Room(id.clone())}));
         }
     }
@@ -657,7 +668,6 @@ impl ProjectTree {
                             project_id: id.clone(),
                         })
                         .await?;
-                    let default_room=active_records(&rooms,"rooms")?.into_iter().find(|r|r["isDefault"]==true).and_then(|r|r["roomId"].as_str()).and_then(|s|s.parse().ok());
                     let rooms = active_records(&rooms, "rooms")?
                         .into_iter()
                         .map(|room| {
@@ -669,7 +679,6 @@ impl ProjectTree {
                         })
                         .collect::<Result<Vec<OwnedRoomId>, _>>()?;
                     let boards=service.execute(Command::ProjectBoard {project_id:id.clone(),action: ::hagency::project_board::BoardAction::Boards}).await?;
-                    let default_board=boards["boards"].as_array().and_then(|b|b.iter().find(|b|b["isDefault"]==true)).and_then(|b|b["id"].as_str()).map(str::to_owned);
                     let boards=boards["boards"].as_array().ok_or("invalid_board_response")?.iter().map(|b|Ok((b["id"].as_str().ok_or("invalid_board_response")?.to_owned(),b["name"].as_str().ok_or("invalid_board_response")?.to_owned()))).collect::<Result<Vec<_>,String>>()?;
                     projects.push(TreeProject {
                         id,
@@ -678,7 +687,6 @@ impl ProjectTree {
                         rooms,
                         boards,
                         archived: value["archived"]==true,
-                        default_board,default_room,
                     });
                 }
                 let mut spaces=HashMap::new();
@@ -726,7 +734,17 @@ impl ProjectTree {
         if topology_changed {
             self.unclassified_rooms.extend(rooms.iter().filter(|r|!self.rooms.iter().any(|old|old.name.room_id()==r.name.room_id())).map(|r|r.name.room_id().clone()));
         }
-        let projects:Vec<_>=self.snapshot.as_ref().map(|s|s.projects.as_slice()).unwrap_or_default().iter().filter(|p|self.mode==ProjectTreeMode::GroupChats || self.show_archived || !p.archived).cloned().collect();
+        let mut projects: Vec<_> = self.snapshot.iter()
+            .flat_map(|snapshot| &snapshot.projects)
+            .filter(|project| self.mode == ProjectTreeMode::GroupChats || self.show_archived || !project.archived)
+            .cloned()
+            .collect();
+        if self.mode == ProjectTreeMode::Projects && let Some(snapshot) = &self.snapshot {
+            for project in &mut projects {
+                let order = ProjectOrder::cached(cx, &snapshot.service_identity, &project.id);
+                project.apply_order(&order);
+            }
+        }
         let mut rows = workspace_rows(
             self.mode,
             &projects,
@@ -803,6 +821,15 @@ impl Widget for ProjectTree {
                     self.expand_navigation(cx, &navigation.identity, &navigation.project_id);
                 }
                 if action.downcast_ref::<super::space_management::SpaceManagementChanged>().is_some_and(|changed|Some(&changed.owner)==current_user_id().as_ref()) {self.refresh(cx);}
+                if let Some(changed) = action.downcast_ref::<ProjectOrderChanged>()
+                    && self.mode == ProjectTreeMode::Projects
+                    && self.snapshot.as_ref().is_some_and(|snapshot| {
+                        snapshot.service_identity == changed.identity
+                            && snapshot.projects.iter().any(|project| project.id == changed.project)
+                    })
+                {
+                    self.rebuild(cx);
+                }
                 if let Some(changed) = action.downcast_ref::<ProjectTreeChanged>()
                     && self.identity.as_ref() == Some(&changed.identity)
                 {
@@ -824,6 +851,7 @@ impl Widget for ProjectTree {
                                 }
                             }
                             if !self.refresh_again {self.unclassified_rooms.clear();}
+                            snapshot.refresh_orders(cx);
                             self.snapshot = Some(snapshot.clone());
                             if self.selection.is_none() && self.mode==ProjectTreeMode::Projects
                                 && let Some(room)=scope.data.get::<crate::app::AppState>().and_then(|s|s.selected_room.as_ref())
@@ -947,12 +975,6 @@ impl Widget for ProjectTree {
                     None
                 };
                 let board=if let Row::Board {project,board}=row {self.snapshot.as_ref().and_then(|s|s.projects.iter().find(|p|p.id==*project)).and_then(|p|p.boards.iter().find(|(id,_)|id==board))} else {None};
-                let is_default=match row {
-                    Row::Board {project,board}=>self.snapshot.as_ref().and_then(|s|s.projects.iter().find(|p|p.id==*project)).is_some_and(|p|p.default_board.as_ref()==Some(board)),
-                    Row::Room(id)|Row::Invite(id)=>self.snapshot.as_ref().is_some_and(|s|s.projects.iter().any(|p|p.default_room.as_ref()==Some(id))),
-                    _=>false,
-                };
-                item.view(cx,ids!(default_badge)).set_visible(cx,is_default);
                 item.view(cx,ids!(board_icon)).set_visible(cx,board.is_some());
                 item.view(cx,ids!(room_icon)).set_visible(cx,room.is_some_and(|r|!r.is_space));
                 let text = project
@@ -1078,6 +1100,7 @@ impl ProjectTreeRef {
             }
             let ids: HashSet<_> = snapshot.projects.iter().map(|p| p.id.clone()).chain(snapshot.spaces.keys().map(|id|format!("space:{id}"))).collect();
             inner.expanded.retain(|id| ids.contains(id));
+            snapshot.refresh_orders(cx);
             inner.snapshot = Some(snapshot);
             inner.rebuild(cx);
         }
@@ -1103,7 +1126,7 @@ mod tests {
     }
     fn project(value: &str, rooms: &[&str]) -> TreeProject {
         TreeProject {
-            boards: Vec::new(), archived: false, default_board:None,default_room:None,
+            boards: Vec::new(), archived: false,
             id: value.into(),
             space: id(&format!("space-{value}")),
             name: value.into(),
@@ -1122,10 +1145,22 @@ mod tests {
         assert_eq!(filtered,vec![(Row::Direct,0),(Row::Room(id("alice")),0),(Row::Room(id("alice-other")),0)]);
     }
     #[test]
-    fn default_children_are_first_and_navigation_selects_exactly_one_matching_row() {
-        let mut p=project("Work",&["Aroom","Zroom"]);p.boards=vec![("a".into(),"A board".into()),("z".into(),"Z board".into())];p.default_board=Some("z".into());p.default_room=Some(id("Zroom"));
-        let rows=tree_rows(&[p],&[room("Aroom"),room("Zroom")],&HashSet::from(["Work".into()]),"");
-        assert_eq!(rows[1],Row::Board {project:"Work".into(),board:"z".into()});assert_eq!(rows[3],Row::Room(id("Zroom")));
+    fn ordered_children_keep_board_and_room_groups_and_exact_navigation_targets() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        project_order::seed_for_test(&mut cx, "account", "Work", &["z"], &[id("Zroom").as_str()]);
+        let mut project = project("Work", &["Aroom", "Unavailable", "Zroom", "Zroom"]);
+        project.boards = vec![("a".into(), "A board".into()), ("z".into(), "Z board".into())];
+        project.apply_order(&ProjectOrder::cached(&cx, "account", "Work"));
+        let mut invited = room("Zroom");
+        invited.invited = true;
+        let rows = tree_rows(&[project], &[room("Aroom"), invited], &HashSet::from(["Work".into()]), "");
+        assert_eq!(rows, [
+            Row::Project("Work".into()),
+            Row::Board {project: "Work".into(), board: "z".into()},
+            Row::Board {project: "Work".into(), board: "a".into()},
+            Row::Invite(id("Zroom")),
+            Row::Room(id("Aroom")),
+        ]);
         for target in [ProjectSelection::Project,ProjectSelection::Board("z".into()),ProjectSelection::Room(id("Zroom"))] {
             let selection=ProjectSelectionChanged {identity:"account".into(),project_id:"Work".into(),target};assert_eq!(rows.iter().filter(|r|selection.matches(r)).count(),1);
             assert!(!selection.matches(&Row::Board {project:"Other".into(),board:"z".into()}));
@@ -1265,6 +1300,7 @@ mod tests {
         });
         let list = tree.view.portal_list(&cx, ids!(list));
         let row = list.item(&mut cx, 0, id!(Row));
+        assert!(row.widget(&cx, ids!(default_badge)).is_empty());
         let more = row.button(&cx, ids!(more));
         let navigation = row.navigation_bar_button(&cx, ids!(row));
         assert!(more.borrow().is_some());
