@@ -9,13 +9,23 @@ script_mod! {
     mod.widgets.RobrixNeutralIconButton = mod.widgets.RinxButton {text: ""}
     mod.widgets.RobrixPositiveIconButton = mod.widgets.RinxButton {
         text: ""
-        draw_bg +: {color: RINX_SUCCESS_BG color_focus: RINX_SUCCESS_BG color_hover: RINX_HOVER color_down: RINX_PRESSED}
+        draw_bg +: {
+            color: RINX_SUCCESS_BG color_focus: RINX_SUCCESS_BG color_hover: RINX_SUCCESS_BG color_down: RINX_SUCCESS_BG
+            border_color: RINX_CONTROL_BORDER
+            border_color_hover: RINX_SUCCESS_FG
+            border_color_down: RINX_INK border_color_focus: RINX_ACCENT
+        }
         draw_text +: {color: RINX_SUCCESS_FG color_hover: RINX_SUCCESS_FG color_down: RINX_SUCCESS_FG color_focus: RINX_SUCCESS_FG}
         draw_icon.color: RINX_SUCCESS_FG
     }
     mod.widgets.RobrixNegativeIconButton = mod.widgets.RinxButton {
         text: ""
-        draw_bg +: {color: RINX_DANGER_BG color_focus: RINX_DANGER_BG color_hover: RINX_HOVER color_down: RINX_PRESSED}
+        draw_bg +: {
+            color: RINX_DANGER_BG color_focus: RINX_DANGER_BG color_hover: RINX_DANGER_BG color_down: RINX_DANGER_BG
+            border_color: RINX_CONTROL_BORDER
+            border_color_hover: RINX_DANGER_FG
+            border_color_down: RINX_INK border_color_focus: RINX_ACCENT
+        }
         draw_text +: {color: RINX_DANGER_FG color_hover: RINX_DANGER_FG color_down: RINX_DANGER_FG color_focus: RINX_DANGER_FG}
         draw_icon.color: RINX_DANGER_FG
     }
@@ -29,7 +39,7 @@ script_mod! {
         align: Align{x: 0.5 y: 0.5}
         icon_walk: Walk{width: 16 height: 16}
         draw_icon +: {svg: ICON_MORE_HORIZ color: mod.widgets.RINX_INK preserve_viewbox: true}
-        draw_bg +: {border_radius: 5}
+        draw_bg +: {border_radius: RINX_CONTROL_RADIUS}
     }
     mod.widgets.RinxChatInfoButton = mod.widgets.RinxMoreButton {}
 

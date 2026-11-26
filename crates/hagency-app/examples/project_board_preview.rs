@@ -30,12 +30,7 @@ mod preview {
     }
     impl AppMain for Preview {
         fn script_mod(vm: &mut ScriptVm) -> ScriptValue {
-            makepad_widgets::theme_mod(vm);
-            script_eval!(vm,{mod.theme = mod.themes.light});
-            hagency_app::theme::init_standalone(vm);
-            makepad_widgets::widgets_mod(vm);
-            makepad_widgets::desktop_style::apply_widgets(vm);
-            hagency_app::app::register_widgets(vm);
+            hagency_app::app::register_standalone_widgets(vm);
             self::script_mod(vm)
         }
         fn handle_event(&mut self, cx: &mut Cx, event: &Event) {

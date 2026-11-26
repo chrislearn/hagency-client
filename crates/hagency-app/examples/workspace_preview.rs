@@ -151,13 +151,7 @@ mod preview {
     }
     impl AppMain for Preview {
         fn script_mod(vm: &mut ScriptVm) -> ScriptValue {
-            makepad_widgets::theme_mod(vm);
-            hagency_app::theme::init_standalone(vm);
-            #[cfg(any(target_os = "macos", target_os = "ios"))]
-            article_makepad::apple_fonts::install(vm);
-            makepad_widgets::widgets_mod(vm);
-            desktop_style::apply_widgets(vm);
-            hagency_app::app::register_widgets(vm);
+            hagency_app::app::register_standalone_widgets(vm);
             self::script_mod(vm)
         }
         fn handle_event(&mut self, cx: &mut Cx, event: &Event) {

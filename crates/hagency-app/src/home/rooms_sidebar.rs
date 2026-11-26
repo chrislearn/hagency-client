@@ -59,12 +59,11 @@ script_mod! {
 
             draw_bg.color: mod.widgets.RINX_RAIL_BG
 
-            sidebar_heading := View {width: Fill height: 56 flow: Right align: Align{y: 0.5} margin: Inset{left: 10 right: 10}
+            sidebar_heading := View {width: Fill height: 56 flow: Right align: Align{y: 0.5} margin: Inset{left: 8 right: 6}
                 sidebar_brand := View {
                     width: Fill height: Fill flow: Right align: Align{x: 0.5 y: 0.5}
-                    padding: Inset{left: 12}
                     sidebar_logo := RinxBrandLogo {}
-                    sidebar_title := RinxLabel {text: "Hagency" width: Fill height: Fit margin: Inset{left: 8} max_lines: 1 text_overflow: Ellipsis draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: mod.widgets.RINX_BRAND_SIZE}}}
+                    sidebar_title := RinxLabel {text: "Hagency" width: Fill height: Fit margin: Inset{left: 6} max_lines: 1 text_overflow: Ellipsis draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: mod.widgets.RINX_BRAND_SIZE}}}
                 }
                 toggle_sidebar := NavigationBarButton {width: 32 height: 32
                     tooltip_text: #(crate::i18n::tr("Collapse sidebar"))
@@ -362,9 +361,6 @@ impl Widget for RoomsSideBar {
         let in_titlebar = cx.global::<SidebarToggleInTitlebar>().0;
         let brand = self.view.view(cx, ids!(sidebar_brand));
         brand.set_visible(cx, !collapsed || in_titlebar);
-        if let Some(mut brand) = brand.borrow_mut() {
-            brand.layout.padding.left = if collapsed {0.0} else {12.0};
-        }
         if let Some(mut button) = fold.borrow_mut() {
             button.set_visible(cx, !in_titlebar);
             button.set_tooltip_text(crate::i18n::tr(if collapsed {"Expand sidebar"} else {"Collapse sidebar"}));

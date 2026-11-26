@@ -383,9 +383,9 @@ fn render_device_badge(cx: &mut Cx, badge: &WidgetRef, state: AgentDeviceState, 
             script_apply_eval!(cx, label, {draw_text +: {color: mod.widgets.RINX_SUCCESS_FG}});
         }
         AgentDeviceState::Other => {
-            script_apply_eval!(cx, badge, {draw_bg +: {color: mod.widgets.RINX_SELECTED}});
+            script_apply_eval!(cx, badge, {draw_bg +: {color: mod.widgets.RINX_INFO_BG}});
             let mut label = badge.label(cx, ids!(device_label));
-            script_apply_eval!(cx, label, {draw_text +: {color: mod.widgets.RINX_ACCENT}});
+            script_apply_eval!(cx, label, {draw_text +: {color: mod.widgets.RINX_INFO_FG}});
         }
         AgentDeviceState::Unassigned | AgentDeviceState::Unavailable => {
             script_apply_eval!(cx, badge, {draw_bg +: {color: mod.widgets.RINX_WARNING_BG}});
@@ -393,7 +393,7 @@ fn render_device_badge(cx: &mut Cx, badge: &WidgetRef, state: AgentDeviceState, 
             script_apply_eval!(cx, label, {draw_text +: {color: mod.widgets.RINX_WARNING_FG}});
         }
         AgentDeviceState::Checking => {
-            script_apply_eval!(cx, badge, {draw_bg +: {color: mod.widgets.RINX_HOVER}});
+            script_apply_eval!(cx, badge, {draw_bg +: {color: mod.widgets.RINX_FIELD}});
             let mut label = badge.label(cx, ids!(device_label));
             script_apply_eval!(cx, label, {draw_text +: {color: mod.widgets.RINX_MUTED}});
         }
@@ -600,8 +600,8 @@ script_mod! {
         icon_walk: Walk{width: 0 height: 0} spacing: 0
     }
     let Section = RinxSection {}
-    let DeviceBadge = RoundedView {width: Fit height: 24 align: Align{y:0.5} padding: Inset{left: 8 right: 8 top: 0 bottom: 0}
-        draw_bg +: {color: mod.widgets.RINX_HOVER border_radius: 8}
+    let DeviceBadge = RoundedView {width: Fit height: Fit align: Align{y:0.5} padding: Inset{left: 8 right: 8 top: 3 bottom: 3}
+        draw_bg +: {color: mod.widgets.RINX_FIELD border_radius: mod.widgets.RINX_CONTROL_RADIUS}
         device_label := RinxLabel {width: Fit height: Fit padding: 0 draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: mod.widgets.RINX_META_SIZE}}}
     }
     let OverviewMetric = RinxSection {width:Fill height:Fit{min:104} spacing:RINX_SPACE_3
@@ -611,15 +611,15 @@ script_mod! {
     let Cards = PortalList {width: Fill height: Fill
         Card := RinxListRow {margin: Inset{right: 12 bottom: RINX_SPACE_3}
             content := View {width: Fill height: Fit flow: Down spacing: RINX_SPACE_2
-                title := Text {draw_text.text_style: theme.font_bold{font_size: mod.widgets.RINX_TITLE_SIZE}}
+                title := Text {draw_text.text_style: RBX_TEXT_CARD_TITLE {}}
                 badge_row := View {width: Fill height: Fit flow: Flow.Right{wrap: true} spacing: 6
                     audience_badge := DeviceBadge {visible: false}
                     device_badge := DeviceBadge {visible: false}
                     runtime_badge := RinxGhostButton {
-                        visible: false width: Fit height: 24 padding: Inset{left: 8 right: 8 top: 0 bottom: 0}
+                        visible: false width: Fit height: RINX_CHIP_HEIGHT padding: Inset{left: 8 right: 8 top: 0 bottom: 0}
                         spacing: 0 icon_walk: Walk{width: 0 height: 0}
-                        draw_bg +: {color: RINX_HOVER color_hover: RINX_PRESSED border_radius: 8}
-                        draw_text +: {color: RINX_MUTED text_style: theme.font_regular{font_size: RINX_META_SIZE}}
+                        draw_bg +: {color: RINX_FIELD color_hover: RINX_HOVER color_down: RINX_PRESSED border_radius: RINX_CONTROL_RADIUS}
+                        draw_text +: {color: RINX_INK text_style: theme.font_regular{font_size: RINX_UI_SIZE}}
                     }
                 }
                 summary := Text {draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: mod.widgets.RINX_BODY_SIZE}}}
@@ -631,19 +631,19 @@ script_mod! {
             open := Action {text: #(crate::i18n::tr("View details")) i18n_text: "View details"}
         }
         SidebarCard := View {width:Fill height:Fit flow:Down margin:Inset{bottom:4}
-            open := NavigationBarButton {width:Fill height:Fit flow:Down padding:10 spacing:5
+            open := NavigationBarButton {width:Fill height:Fit flow:Down padding:Inset{left:8 right:8 top:10 bottom:10} spacing:5
                 draw_bg +: {color_hover:mod.widgets.RINX_HOVER color_active:mod.widgets.RINX_SELECTED border_radius:6}
-                title := Text {max_lines:2 text_overflow:Ellipsis draw_text.text_style:theme.font_bold{font_size:mod.widgets.RINX_UI_SIZE}}
-                summary := Text {max_lines:1 text_overflow:Ellipsis draw_text +: {color:mod.widgets.RINX_MUTED text_style:theme.font_regular{font_size:mod.widgets.RINX_META_SIZE}}}
+                title := Text {max_lines:2 text_overflow:Ellipsis draw_text.text_style: RBX_TEXT_BODY_STRONG {}}
+                summary := RinxLabel {width:Fill height:Fit flow:Flow.Right{wrap:false} max_lines:1 text_overflow:Ellipsis draw_text +: {color:mod.widgets.RINX_MUTED text_style:theme.font_regular{font_size:mod.widgets.RINX_UI_SIZE}}}
                 badge_row := View {width:Fill height:Fit flow:Flow.Right{wrap:true} spacing:4
                     audience_badge := DeviceBadge {visible:false}
                     device_badge := DeviceBadge {visible:false}
-                    runtime_badge := RinxGhostButton {visible:false height:24 width:Fit padding:Inset{left:6 right:6} icon_walk:Walk{width:0 height:0}}
-                    service_control := RobrixNeutralIconButton {visible:false width:Fit height:24 padding:Inset{left:6 right:6} spacing:4 icon_walk:Walk{width:14 height:14} draw_icon.svg:ICON_SERVICE_PLAY}
+                    runtime_badge := RinxGhostButton {visible:false height:RINX_CHIP_HEIGHT width:Fit padding:Inset{left:6 right:6} icon_walk:Walk{width:0 height:0}}
+                    service_control := RobrixNeutralIconButton {visible:false width:Fit height:RINX_CHIP_HEIGHT padding:Inset{left:6 right:6} spacing:4 icon_walk:Walk{width:14 height:14} draw_icon.svg:ICON_SERVICE_PLAY}
                 }
             }
         }
-        SidebarEmpty := View {width:Fill height:Fit padding:10 empty_message := Text {draw_text +: {color:mod.widgets.RINX_MUTED text_style:theme.font_regular{font_size:mod.widgets.RINX_META_SIZE}}}}
+        SidebarEmpty := View {width:Fill height:Fit padding:10 empty_message := Text {draw_text +: {color:mod.widgets.RINX_MUTED text_style:theme.font_regular{font_size:mod.widgets.RINX_UI_SIZE}}}}
         Filler := View {width: Fill height: 64}
         Empty := RinxSection {width: Fill height: Fit padding: RINX_SPACE_8 margin: Inset{right: 12}
             empty_message := Text {text: #(crate::i18n::tr("No Projects yet. Create a Project to start a shared workspace.")) i18n_text: "No Projects yet. Create a Project to start a shared workspace."}
@@ -667,9 +667,9 @@ script_mod! {
                 }
                 inbox_status := RinxLabel {width:Fill height:Fit max_lines:3 flow:Flow.Right{wrap:true}}
                 inbox_rows := mod.widgets.ApprovalInboxRows {width:Fill height:Fill
-                    Approval := View {width:Fill height:102 flow:Down padding:8 spacing:6
-                        approval_summary := RinxLabel {width:Fill height:Fit max_lines:2 text_overflow:Ellipsis}
-                        review_approval := RinxGhostButton {width:Fill height:32 text:#(crate::i18n::tr("Review exact request")) i18n_text:"Review exact request"}
+                    Approval := View {width:Fill height:Fit flow:Down padding:8 spacing:6
+                        approval_summary := RinxLabel {width:Fill height:Fit max_lines:2 flow:Flow.Right{wrap:true} text_overflow:Ellipsis}
+                        review_approval := RinxGhostButton {width:Fill height:RINX_BUTTON_HEIGHT text:#(crate::i18n::tr("Review exact request")) i18n_text:"Review exact request"}
                     }
                     Empty := RinxLabel {width:Fill height:50 text:#(crate::i18n::tr("No pending approvals on this device.")) i18n_text:"No pending approvals on this device."}
                 }
@@ -5306,6 +5306,8 @@ impl Widget for HagencyPanel {
             let rows = if self.page==Page::Projects {&self.projects}else{&self.agents};
             let indices:Vec<usize>=rows.iter().enumerate().filter(|(_,agent)|self.page==Page::Projects || self.agent_query.is_empty() || string(agent,"displayName").to_lowercase().contains(&self.agent_query) || string(agent,"puppetMxid").to_lowercase().contains(&self.agent_query)).map(|(index,_)|index).collect();
             if self.page==Page::Agents {self.visible_agent_indices=indices.clone();}
+            // The Agent sidebar has its own inset. The page gutter belongs to the Project cards.
+            let row_gutter = if self.page == Page::Agents { 0.0 } else { self.page_layout.map_or(24.0, |layout| layout.gutter) };
             let total=indices.len().max(1);
             if list.first_id() >= total {
                 list.set_first_id_and_scroll(0, 0.0);
@@ -5315,7 +5317,7 @@ impl Widget for HagencyPanel {
                 let Some(value)=indices.get(index).and_then(|index|rows.get(*index)) else {
                     let row=list.item(cx,index,if self.page==Page::Agents {if indices.is_empty() && index==0 {id!(SidebarEmpty)}else{id!(Filler)}}else{card_template(indices.len(),index)});
                     if let Some(mut view)=row.borrow_mut::<View>() {
-                        view.walk.margin.right=if self.page==Page::Agents {0.0}else{self.page_layout.map_or(24.0,|layout|layout.gutter)};
+                        view.walk.margin.right = row_gutter;
                     }
                     if indices.is_empty() && index==0 {
                         row.label(cx, ids!(empty_message)).set_text(
@@ -5332,7 +5334,7 @@ impl Widget for HagencyPanel {
                 };
                 let row=list.item(cx,index,if self.page==Page::Agents {id!(SidebarCard)}else{id!(Card)});
                 if let Some(mut view)=row.borrow_mut::<View>() {
-                    view.walk.margin.right=self.page_layout.map_or(24.0,|layout|layout.gutter);
+                    view.walk.margin.right = row_gutter;
                 }
                 let title = if self.page == Page::Projects {
                     string(value, "name")
@@ -5942,6 +5944,8 @@ mod tests {
                 assert!((sidebar.size.x-if panel.workspace_split {240.0}else{width}).abs()<1.0);
                 assert!(rect.pos.x>=sidebar.pos.x && rect.pos.x+rect.size.x<=sidebar.pos.x+sidebar.size.x);
                 let row=list.item(&mut cx,0,id!(SidebarCard));
+                assert!((row.area().rect(&cx).size.x - rect.size.x).abs() < 1.0, "Agent card uses the list's full width");
+                assert_eq!(row.label(&cx, ids!(summary)).borrow().unwrap().max_lines, 1, "Keep the account ID on one line");
                 let badges=row.view(&cx,ids!(badge_row)).area().rect(&cx);
                 for id in [ids!(audience_badge),ids!(device_badge),ids!(runtime_badge)] {
                     let badge=row.widget(&cx,id).area().rect(&cx);

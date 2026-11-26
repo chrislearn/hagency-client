@@ -28,4 +28,6 @@ pub fn script_mod(vm: &mut makepad_widgets::ScriptVm) {
 
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 pub mod apple_fonts;
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "windows", target_os = "linux"))]
+pub mod system_fonts;
 pub mod presentation;

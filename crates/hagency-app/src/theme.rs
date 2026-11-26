@@ -339,6 +339,18 @@ pub fn snapshot_for_vm(vm: &mut ScriptVm) -> Snapshot {
 }
 
 impl Snapshot {
+    /// Keep a theme's stroke when it already outlines the field clearly.
+    /// Otherwise strengthen it toward the theme's ink until it reaches 3:1.
+    fn control_border(&self) -> Vec4f {
+        for step in 0..=20 {
+            let stroke = mix(self.border, self.ink, step as f32 / 20.);
+            if [self.field, self.surface, self.page].into_iter().all(|bg| contrast(stroke, bg) >= 3.05) {
+                return stroke;
+            }
+        }
+        self.ink
+    }
+
     pub fn role(&self, name: &str) -> Vec4f {
         self.tokens
             .get(name)
@@ -387,6 +399,8 @@ pub fn script_mod(vm: &mut ScriptVm) {
         mod.widgets.RINX_ACCENT = #(s.accent)
         mod.widgets.RINX_ON_ACCENT = #(s.on_accent)
         mod.widgets.RINX_BORDER = #(s.border)
+        mod.widgets.RINX_CONTROL_BORDER = #(s.control_border())
+        mod.widgets.RINX_ON_DANGER = #(s.role("color.status.danger.background"))
         mod.widgets.RINX_HOVER = #(s.hover)
         mod.widgets.RINX_PRESSED = #(s.pressed)
         mod.widgets.RINX_CAPTION_HOVER = #(mix(s.page, s.ink, 0.12))
@@ -429,20 +443,22 @@ pub fn script_mod(vm: &mut ScriptVm) {
             .heap
             .set_value(widgets, LiveId::from_str(name).into(), value, NoTrap);
     }
+    // Makepad accepts points. Define the scale in logical pixels and apply
+    // the package/user text multiplier exactly once, including on theme reload.
+    let points = |pixels: f64| pixels * 0.75 * s.text_scale;
     script_eval!(vm, {
         mod.widgets.RINX_TEXT_SCALE = #(s.text_scale)
-        // TextStyle sizes are points: at 100%, 0.75 pt is one logical pixel.
-        mod.widgets.RINX_UI_SIZE = #(9.75 * s.text_scale) // 13 px navigation and controls
-        mod.widgets.RINX_BODY_SIZE = #(10.5 * s.text_scale) // 14 px reading text
-        mod.widgets.RINX_META_SIZE = #(9. * s.text_scale) // 12 px secondary text
-        mod.widgets.RINX_HEADING_SIZE = #(11.25 * s.text_scale) // 15 px pane headings
-        mod.widgets.RINX_SECTION_SIZE = #(12. * s.text_scale) // 16 px sections
-        mod.widgets.RINX_TITLE_SIZE = #(13.5 * s.text_scale) // 18 px page titles
-        mod.widgets.RINX_PAGE_TITLE_SIZE = #(18. * s.text_scale) // 24 px workspace titles
-        mod.widgets.RINX_BRAND_SIZE = #(13.5 * s.text_scale)
-        mod.widgets.RINX_DISPLAY_SIZE = #(21. * s.text_scale) // 28 px welcome / result headings
-        mod.widgets.RINX_DOCUMENT_SIZE = #(13.5 * s.text_scale) // 18 px article reading / editing
-        mod.widgets.RINX_GLYPH_SIZE = #(15. * s.text_scale) // 20 px symbolic toolbar glyphs
+        mod.widgets.RINX_META_SIZE = #(points(13.))
+        mod.widgets.RINX_UI_SIZE = #(points(15.))
+        mod.widgets.RINX_BODY_SIZE = #(points(16.))
+        mod.widgets.RINX_HEADING_SIZE = #(points(17.))
+        mod.widgets.RINX_SECTION_SIZE = #(points(19.))
+        mod.widgets.RINX_TITLE_SIZE = #(points(22.))
+        mod.widgets.RINX_PAGE_TITLE_SIZE = #(points(26.))
+        mod.widgets.RINX_BRAND_SIZE = #(points(20.))
+        mod.widgets.RINX_DISPLAY_SIZE = #(points(28.))
+        mod.widgets.RINX_DOCUMENT_SIZE = #(points(18.))
+        mod.widgets.RINX_GLYPH_SIZE = #(points(20.))
         mod.widgets.RINX_BUTTON_HEIGHT = #(if cfg!(any(target_os = "android", target_os = "ios", target_env = "ohos")) { s.control_height.max(44. * s.text_scale) } else { (36. * s.text_scale).max(s.control_height * 36. / 44.) })
         mod.widgets.RINX_ICON_BUTTON_SIZE = #(if cfg!(any(target_os = "android", target_os = "ios", target_env = "ohos")) {44. * s.text_scale} else {32. * s.text_scale})
         mod.widgets.RINX_CONTROL_RADIUS = #(s.radius * 0.75)
@@ -473,6 +489,11 @@ fn luminance(c: Vec4f) -> f32 {
         }
     };
     0.2126 * linear(c.x) + 0.7152 * linear(c.y) + 0.0722 * linear(c.z)
+}
+
+fn contrast(a: Vec4f, b: Vec4f) -> f32 {
+    let (a, b) = (luminance(a), luminance(b));
+    (a.max(b) + 0.05) / (a.min(b) + 0.05)
 }
 
 mod controls {
@@ -525,6 +546,15 @@ mod controls {
             text_style_bold_italic: theme.font_bold_italic{font_size: RINX_BODY_SIZE}
         }
         mod.widgets.RinxRadioButton = RadioButton {
+            draw_bg +: {
+                size: 16.0 border_size: 1.25
+                color: RINX_FIELD color_hover: RINX_HOVER color_down: RINX_PRESSED
+                color_focus: RINX_FIELD color_active: RINX_SELECTED color_disabled: RINX_FIELD
+                border_color: RINX_CONTROL_BORDER border_color_hover: RINX_MUTED
+                border_color_focus: RINX_ACCENT border_color_down: RINX_ACCENT
+                border_color_active: RINX_ACCENT border_color_disabled: RINX_BORDER
+                mark_color: #0000 mark_color_active: RINX_ACCENT
+            }
             draw_text +: {color: RINX_INK color_hover: RINX_INK color_active: RINX_INK color_focus: RINX_INK color_down: RINX_INK text_style: theme.font_regular{font_size: RINX_UI_SIZE}}
         }
         mod.widgets.RinxButton = ButtonFlat {
@@ -545,7 +575,7 @@ mod controls {
             draw_bg +: {
                 color: RINX_SURFACE color_focus: RINX_SURFACE color_hover: RINX_HOVER color_down: RINX_PRESSED
                 color_disabled: RINX_FIELD
-                border_color: RINX_BORDER border_color_hover: RINX_BORDER border_color_down: RINX_BORDER
+                border_color: RINX_CONTROL_BORDER border_color_hover: RINX_MUTED border_color_down: RINX_MUTED
                 border_color_focus: RINX_ACCENT border_color_disabled: RINX_BORDER
                 border_size: 1 border_radius: RINX_CONTROL_RADIUS
                 // One flat surface and one stroke; no inherited bevel/gradient states.
@@ -604,9 +634,9 @@ mod controls {
             height: RINX_CONTROL_HEIGHT padding: Inset{left: 10 * RINX_SPACING right: 10 * RINX_SPACING top: 7 bottom: 7}
             draw_bg +: {color: RINX_FIELD color_hover: RINX_FIELD color_focus: RINX_FIELD color_empty: RINX_FIELD
                 color_down: RINX_FIELD color_disabled: RINX_FIELD
-                border_color: RINX_BORDER border_color_hover: RINX_BORDER border_color_down: RINX_ACCENT border_color_focus: RINX_ACCENT border_color_empty: RINX_BORDER border_color_disabled: RINX_BORDER border_size: 1 border_radius: RINX_CONTROL_RADIUS
+                border_color: RINX_CONTROL_BORDER border_color_hover: RINX_MUTED border_color_down: RINX_ACCENT border_color_focus: RINX_ACCENT border_color_empty: RINX_CONTROL_BORDER border_color_disabled: RINX_BORDER border_size: 1 border_radius: RINX_CONTROL_RADIUS
                 color_2: vec4(-1, -1, -1, -1) border_color_2: vec4(-1, -1, -1, -1)}
-            draw_text +: {color: RINX_INK color_hover: RINX_INK color_focus: RINX_INK color_down: RINX_INK color_empty: RINX_MUTED color_disabled: RINX_DISABLED text_style: theme.font_regular{font_size: RINX_UI_SIZE}}
+            draw_text +: {color: RINX_INK color_hover: RINX_INK color_focus: RINX_INK color_down: RINX_INK color_empty: RINX_MUTED color_empty_hover: RINX_MUTED color_empty_focus: RINX_MUTED color_disabled: RINX_DISABLED text_style: theme.font_regular{font_size: RINX_UI_SIZE}}
             draw_cursor.color: RINX_ACCENT
         }
         mod.widgets.RinxCheckBox = CheckBox {
@@ -614,7 +644,7 @@ mod controls {
             label_walk +: {margin: Inset{left: 24}}
             draw_bg +: {size: 16 border_size: 1 border_radius: RINX_CONTROL_RADIUS
                 color: RINX_FIELD color_hover: RINX_HOVER color_down: RINX_PRESSED color_focus: RINX_FIELD color_active: RINX_ACCENT color_disabled: RINX_FIELD
-                border_color: RINX_BORDER border_color_hover: RINX_ACCENT border_color_focus: RINX_ACCENT border_color_down: RINX_ACCENT border_color_active: RINX_ACCENT border_color_disabled: RINX_BORDER
+                border_color: RINX_CONTROL_BORDER border_color_hover: RINX_ACCENT border_color_focus: RINX_ACCENT border_color_down: RINX_ACCENT border_color_active: RINX_ACCENT border_color_disabled: RINX_BORDER
                 mark_color: #0000 mark_color_hover: #0000 mark_color_down: #0000 mark_color_focus: #0000
                 mark_color_active: RINX_ON_ACCENT mark_color_active_hover: RINX_ON_ACCENT
                 pixel: fn() {
@@ -854,10 +884,9 @@ pub(crate) mod tests {
                         vm.with_reload(|vm| install(vm, Selection { appearance, accent }));
                     }
                     let s = snapshot_for_vm(vm);
-                    let contrast = |a, b| {
-                        let (a, b) = (luminance(a), luminance(b));
-                        (a.max(b) + 0.05) / (a.min(b) + 0.05)
-                    };
+                    for bg in [s.page, s.surface, s.field] {
+                        assert!(contrast(s.control_border(), bg) >= 3.0);
+                    }
                     for (ink, bg) in [
                         (s.ink, s.page),
                         (s.ink, s.surface),

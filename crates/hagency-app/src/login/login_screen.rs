@@ -63,14 +63,10 @@ script_mod! {
                         src: (mod.widgets.IMG_APP_LOGO),
                     }
 
-                    title := RinxLabel {
-                        width: Fit, height: Fit
-                        margin: Inset{ bottom: 5 }
-                        padding: 0,
-                        draw_text +: {
-                            color: (COLOR_TEXT)
-                            text_style: TITLE_TEXT {font_size: mod.widgets.RINX_PAGE_TITLE_SIZE}
-                        }
+                    title := RinxPageTitle {
+                        width: Fill, height: Fit
+                        align: Align{x: 0.5}
+                        flow: Flow.Right{wrap: true}
                         text: #(crate::i18n::tr("Sign in to Hagency")) i18n_text: "Sign in to Hagency"
                     }
 
@@ -96,11 +92,11 @@ script_mod! {
                                 color: mod.widgets.RINX_SURFACE
                                 border_size: 1
                                 border_color: mod.widgets.RINX_BORDER
-                                border_radius: 8
+                                border_radius: RINX_CARD_RADIUS
                             }
                             RinxLabel {
                                 width: Fill, height: Fit
-                                draw_text +: {color: COLOR_TEXT, text_style: REGULAR_TEXT {font_size: mod.widgets.RINX_BODY_SIZE}}
+                                draw_text +: {color: RINX_INK, text_style: RBX_TEXT_CARD_TITLE {}}
                                 text: #(crate::i18n::tr("Choose your Hagency server")) i18n_text: "Choose your Hagency server"
                             }
                             recent_servers_row := View {
@@ -164,7 +160,7 @@ script_mod! {
                                 color: mod.widgets.RINX_SURFACE
                                 border_size: 1
                                 border_color: mod.widgets.RINX_BORDER
-                                border_radius: 8
+                                border_radius: RINX_CARD_RADIUS
                             }
                             View {
                                 width: Fill, height: Fit, flow: Right
@@ -176,7 +172,7 @@ script_mod! {
                                 }
                                 edit_server_button := RobrixNeutralIconButton {
                                     height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
-                                    width: 52, spacing: 0
+                                    width: Fit, spacing: 0
                                     icon_walk: Walk{width: 0, height: 0}
                                     align: Align{x: 0.5, y: 0.5}
                                     draw_bg +: {
@@ -208,9 +204,9 @@ script_mod! {
                             visible: false
                             width: Fill, height: Fit
                             provider_list := PortalList {
-                                width: Fill, height: 48
+                                width: Fill, height: (RINX_BUTTON_HEIGHT + RINX_SPACE_2)
                                 Provider := View {
-                                    width: Fill, height: 48
+                                    width: Fill, height: (RINX_BUTTON_HEIGHT + RINX_SPACE_2)
                                     provider_button := RobrixIconButton {
                                         height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
                                         width: Fill, align: Align{x: 0.5, y: 0.5}
@@ -248,7 +244,7 @@ script_mod! {
                                 align: Align{x: 1.0, y: 0.5}
                                 password_input := RobrixTextInput {
                                     width: Fill, height: Fit
-                                    padding: Inset{top: 10, bottom: 10, left: 10, right: 38}
+                                    padding: Inset{top: 10, bottom: 10, left: 10, right: (RINX_ICON_BUTTON_SIZE + 8)}
                                     empty_text: #(crate::i18n::tr("Password")) i18n_empty_text: "Password"
                                     is_password: true
                                     autocapitalize: None
@@ -256,7 +252,7 @@ script_mod! {
                                     content_type: Password
                                 }
                                 View {
-                                    width: 38, height: Fill
+                                    width: (RINX_ICON_BUTTON_SIZE + 8), height: Fill
                                     align: Align{x: 0.5, y: 0.5}
                                     show_password_button := RinxIconButton {
                                         width: RINX_ICON_BUTTON_SIZE height: RINX_ICON_BUTTON_SIZE padding: 0 spacing: 0 icon_walk: Walk{width: 16 height: 16}
@@ -465,9 +461,9 @@ impl LoginScreen {
         let display_server = display_server.strip_suffix('/').unwrap_or(display_server);
         self.view.label(cx, ids!(selected_server)).set_text(cx, display_server);
         self.view.view(cx, ids!(provider_list_container)).set_visible(cx, has_sso && has_providers);
-        let height = (methods.providers.len().clamp(1, 4) * 48) as f64;
+        let visible_rows = methods.providers.len().clamp(1, 4) as f64;
         let mut list = self.view.portal_list(cx, ids!(provider_list));
-        script_apply_eval!(cx, list, {height: #(height)});
+        script_apply_eval!(cx, list, {height: (#(visible_rows) * (mod.widgets.RINX_BUTTON_HEIGHT + mod.widgets.RINX_SPACE_2))});
         self.view.button(cx, ids!(browser_login_button)).set_visible(cx, has_sso && !has_providers);
         self.view.button(cx, ids!(password_option_button)).set_visible(cx, has_sso && has_password);
         self.view.button(cx, ids!(register_option_button)).set_visible(cx, methods.browser_registration || (has_password && !methods.oauth_aware_preferred));

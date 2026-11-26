@@ -185,12 +185,16 @@ script_mod! {
                         text_input := RobrixTextInput {
                             empty_text: #(crate::i18n::tr("Write a message (in Markdown)…")) i18n_empty_text: "Write a message (in Markdown)…"
                             is_multiline: true,
-                            // Reserve the microphone's gutter so it never overlaps the draft.
-                            padding: Inset{top: 10, bottom: 10, left: 8, right: 48}
-                            // Borderless + transparent: the text sits directly on the
-                            // white composer card.
+                            // Keep the draft clear of the microphone at every control size.
+                            padding: Inset{top: 10 bottom: 10 left: 8 right: (RINX_ICON_BUTTON_SIZE + 12)}
+                            draw_text.text_style: MESSAGE_TEXT_STYLE {}
                             draw_bg +: {
-                                border_size: 0.0
+                                border_size: 1.0
+                                border_color: #0000
+                                border_color_empty: #0000
+                                border_color_hover: RBX_COMPOSER_STROKE
+                                border_color_focus: RBX_ACCENT
+                                border_color_down: RBX_ACCENT
                                 color: #0000
                                 color_hover: #0000
                                 color_focus: #0000
@@ -328,8 +332,8 @@ script_mod! {
                         margin: 0
                         text_input +: {
                             empty_text: #(crate::i18n::tr("Message")) i18n_empty_text: "Message"
-                            padding: Inset{left: 10 right: 35 top: 10 bottom: 10}
-                            draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: mod.widgets.RINX_BODY_SIZE}}
+                            padding: Inset{left: 10 right: (RINX_ICON_BUTTON_SIZE + 8) top: 10 bottom: 10}
+                            draw_text.color: mod.widgets.RINX_INK
                             draw_bg +: {
                                 color: mod.widgets.RINX_SURFACE color_hover: mod.widgets.RINX_SURFACE color_focus: mod.widgets.RINX_SURFACE
                                 color_empty: mod.widgets.RINX_SURFACE border_radius: 5

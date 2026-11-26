@@ -80,16 +80,12 @@ script_mod! {
     // =========================================================================
     // 5. STROKES & DIVIDERS
     // =========================================================================
-    // Default card / control border (low contrast).
-    mod.widgets.RBX_STROKE_SOFT   = mod.widgets.RINX_BORDER
-    // Stronger border (focused / emphasized control).
-    mod.widgets.RBX_STROKE_STRONG = mod.widgets.RINX_BORDER
-    // Floating-overlay border (toast / notification card). Distinctly darker than
-    // STRONG so a white card reads clearly against the light canvas WITHOUT a
-    // shadow. Tune this one value to make overlay edges softer / harder.
+    // Structural edges and floating panels use the soft stroke. Form
+    // controls have a stronger outline. Focus uses the active accent.
+    mod.widgets.RBX_STROKE_SOFT    = mod.widgets.RINX_BORDER
+    mod.widgets.RBX_STROKE_STRONG  = mod.widgets.RINX_CONTROL_BORDER
     mod.widgets.RBX_STROKE_OVERLAY = mod.widgets.RINX_BORDER
-    // Hairline divider between rows (alpha black).
-    mod.widgets.RBX_DIVIDER       = mod.widgets.RINX_BORDER
+    mod.widgets.RBX_DIVIDER        = mod.widgets.RINX_DIVIDER
 
     // =========================================================================
     // 6. SEMANTIC STATES — fg/bg pairs. One meaning = one color, always.
@@ -177,7 +173,7 @@ script_mod! {
     mod.widgets.RBX_COMPOSER_INPUT_BG    = mod.widgets.RINX_FIELD   // text field fill
     mod.widgets.RBX_COMPOSER_INPUT_HOVER = mod.widgets.RINX_HOVER
     mod.widgets.RBX_COMPOSER_INPUT_DOWN  = mod.widgets.RINX_PRESSED
-    mod.widgets.RBX_COMPOSER_STROKE      = mod.widgets.RINX_BORDER   // text field border
+    mod.widgets.RBX_COMPOSER_STROKE      = mod.widgets.RINX_CONTROL_BORDER   // text field border
     mod.widgets.RBX_COMPOSER_INK         = mod.widgets.RINX_INK   // primary glyph/icon ink
     mod.widgets.RBX_COMPOSER_INK_MUTED   = mod.widgets.RINX_MUTED   // secondary ink
     mod.widgets.RBX_COMPOSER_INK_FAINT   = mod.widgets.RINX_MUTED   // placeholder / disabled ink
@@ -292,28 +288,21 @@ script_mod! {
     mod.widgets.RBX_AVATAR_LG = 48.0   // hero / room identity
 
     // =========================================================================
-    // 14. TYPE SCALE — semantic TextStyle presets. Built on the app's real font
-    //     providers (APP_FONT_REGULAR / APP_FONT_BOLD). Sizes match Makepad's
-    //     dense scale used elsewhere in robrix2 (9–17). line_spacing matches the
-    //     1.3 used by styles.rs message text, so multi-line wraps stay readable.
+    // 14. TYPE SCALE — weights inherit the active platform font chain.
+    // Sizes come from theme.rs and include the selected text scale.
     // =========================================================================
-    // Mobile/desktop page title (e.g. "Settings", room hero name).
-    // Font providers for the RBX_TEXT_* scale. Upstream Rinx ships no
-    // system-font links, so these sit on the theme fonts; the
-    // `fonts/macos-system-fonts` branch swaps them for the OS's San Francisco
-    // and PingFang families.
     mod.widgets.RBX_FONT_REGULAR = theme.font_regular {}
     mod.widgets.RBX_FONT_BOLD = theme.font_bold {}
 
-    mod.widgets.RBX_TEXT_PAGE_TITLE    = mod.widgets.RBX_FONT_BOLD    { font_size: mod.widgets.RINX_TITLE_SIZE, line_spacing: 1.25 }
+    mod.widgets.RBX_TEXT_PAGE_TITLE    = mod.widgets.RBX_FONT_BOLD    { font_size: mod.widgets.RINX_PAGE_TITLE_SIZE, line_spacing: 1.25 }
     // Section / group title inside a page.
     mod.widgets.RBX_TEXT_SECTION_TITLE = mod.widgets.RBX_FONT_BOLD    { font_size: mod.widgets.RINX_SECTION_SIZE, line_spacing: 1.25 }
     // Card title.
     mod.widgets.RBX_TEXT_CARD_TITLE    = mod.widgets.RBX_FONT_BOLD    { font_size: mod.widgets.RINX_HEADING_SIZE, line_spacing: 1.3 }
     // Default body / list-row title.
-    mod.widgets.RBX_TEXT_BODY          = mod.widgets.RBX_FONT_REGULAR { font_size: mod.widgets.RINX_BODY_SIZE, line_spacing: 1.35 }
+    mod.widgets.RBX_TEXT_BODY          = mod.widgets.RBX_FONT_REGULAR { font_size: mod.widgets.RINX_BODY_SIZE, line_spacing: 1.4 }
     // Emphasized body (selected value, key figure).
-    mod.widgets.RBX_TEXT_BODY_STRONG   = mod.widgets.RBX_FONT_BOLD    { font_size: mod.widgets.RINX_BODY_SIZE, line_spacing: 1.35 }
+    mod.widgets.RBX_TEXT_BODY_STRONG   = mod.widgets.RBX_FONT_BOLD    { font_size: mod.widgets.RINX_BODY_SIZE, line_spacing: 1.4 }
     // Meta / caption / helper text.
     mod.widgets.RBX_TEXT_META          = mod.widgets.RBX_FONT_REGULAR { font_size: mod.widgets.RINX_META_SIZE,  line_spacing: 1.3 }
     // Badge / chip label (single line).
@@ -341,6 +330,8 @@ mod tests {
         ("RBX_FG_TERTIARY", "RBX_BG_CANVAS", "timestamps on the canvas"),
         ("RBX_FG_ON_ACCENT", "RBX_ACCENT", "label on the primary CTA"),
         ("RBX_FG_ON_ACCENT", "RBX_ACCENT_HOVER", "label on a hovered CTA"),
+        ("RBX_FG_ON_ACCENT", "RBX_ACCENT_PRESSED", "label on a pressed CTA"),
+        ("RINX_ON_DANGER", "RBX_DANGER_FG", "label on a solid danger action"),
         ("RBX_LINK", "RBX_BG_SURFACE", "inline link on a card"),
         ("RBX_ACCENT", "RBX_ACCENT_SOFT", "accent badge / selected chip"),
         ("RBX_SUCCESS_FG", "RBX_SUCCESS_BG", "success badge"),

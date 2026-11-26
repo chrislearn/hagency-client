@@ -89,6 +89,8 @@ def run_case(root, scene, width, dark=False, scale=1.0, chinese=False, board=Fal
             x, y, w, h = menu['r']
             request('/click', x=x+w/2, y=y+h/2, wait=1)
             time.sleep(.3)
+        # Window creation can precede the first painted frame on a cold font cache.
+        request('/m', k='move', x=0, y=0, wait=1)
         screenshot = request('/g')
         shutil.copyfile(screenshot['png'], output / 'screen.png')
         snapshot = request('/snap', all=1)
@@ -246,6 +248,7 @@ def run_case(root, scene, width, dark=False, scale=1.0, chinese=False, board=Fal
             before = visible(rows, 'welcome_content')[0]['r']
             request('/event', data='appearance:dark')
             time.sleep(.3)
+            request('/m', k='move', x=0, y=0, wait=1)
             capture = request('/g')
             shutil.copyfile(capture['png'], output/'restyled-dark.png')
             after = visible(request('/snap', all=1)['s'], 'welcome_content')[0]['r']

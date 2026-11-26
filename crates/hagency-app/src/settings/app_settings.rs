@@ -68,9 +68,9 @@ script_mod! {
         flow: Flow.Right{wrap: true}
         margin: Inset{left: 14, top: 0, bottom: 0, right: 5}
         padding: 0,
-        font_size: mod.widgets.RINX_META_SIZE,
+        font_size: mod.widgets.RINX_UI_SIZE,
         font_color: mod.widgets.RINX_MUTED,
-        text_style_normal: MESSAGE_TEXT_STYLE { font_size: mod.widgets.RINX_META_SIZE },
+        text_style_normal: MESSAGE_TEXT_STYLE { font_size: mod.widgets.RINX_UI_SIZE },
     }
 
     // A radio button styled to match other Rinx settings controls.
@@ -90,11 +90,11 @@ script_mod! {
 
         draw_bg +: {
             color: (COLOR_PRIMARY),
-            color_hover: (COLOR_PRIMARY),
-            color_active: (COLOR_PRIMARY),
-            color_focus: (COLOR_PRIMARY),
-            color_down: (COLOR_PRIMARY),
-            border_color: (COLOR_SECONDARY_DARKER),
+            color_hover: RINX_HOVER,
+            color_active: RINX_SELECTED,
+            color_focus: RINX_FIELD,
+            color_down: RINX_PRESSED,
+            border_color: RINX_CONTROL_BORDER,
             border_color_hover: (COLOR_ACTIVE_PRIMARY),
             border_color_active: (COLOR_ACTIVE_PRIMARY_DARKER),
             border_color_focus: (COLOR_ACTIVE_PRIMARY_DARKER),
@@ -111,7 +111,7 @@ script_mod! {
     let SettingsPreferenceCard = RinxCard {
         width: Fill height: Fit flow: Down padding: 16 spacing: 10
     }
-    let DesktopToggle = ToggleFlat {
+    let PreferenceToggle = ToggleFlat {
         width: Fill height: Fit
         label_walk +: {width: Fill height: Fit}
         flow: Flow.Right{wrap: true}
@@ -123,16 +123,16 @@ script_mod! {
         desktop_settings := SettingsPreferenceCard {
             visible: false
             PreferenceHeading {text: #(crate::i18n::tr("Startup and system tray")) i18n_text: "Startup and system tray"}
-            autostart_toggle := DesktopToggle {
+            autostart_toggle := PreferenceToggle {
                 text: #(crate::i18n::tr("Start Hagency when I sign in to Windows")) i18n_text: "Start Hagency when I sign in to Windows"
             }
-            start_hidden_toggle := DesktopToggle {
+            start_hidden_toggle := PreferenceToggle {
                 text: #(crate::i18n::tr("Start hidden in the system tray")) i18n_text: "Start hidden in the system tray"
             }
-            minimize_to_tray_toggle := DesktopToggle {
+            minimize_to_tray_toggle := PreferenceToggle {
                 text: #(crate::i18n::tr("Minimize to the system tray")) i18n_text: "Minimize to the system tray"
             }
-            close_to_tray_toggle := DesktopToggle {
+            close_to_tray_toggle := PreferenceToggle {
                 text: #(crate::i18n::tr("Keep running in the system tray when I close the window")) i18n_text: "Keep running in the system tray when I close the window"
             }
             mod.widgets.SettingsSectionDescription {
@@ -156,7 +156,7 @@ script_mod! {
                 text: #(crate::i18n::tr("Keyboard Shortcut to Send Message")) i18n_text: "Keyboard Shortcut to Send Message"
             }
 
-            send_on_cmd_enter_toggle := ToggleFlat {
+            send_on_cmd_enter_toggle := PreferenceToggle {
                 margin: Inset{left: 6.5, top: 5, bottom: 10}
                 padding: Inset { left: 15}
                 active: false,
@@ -202,7 +202,7 @@ script_mod! {
                 body: #(crate::i18n::tr("<ul><li>By default, the app layout auto-adapts based on width.</li></ul>")) i18n_body: "<ul><li>By default, the app layout auto-adapts based on width.</li></ul>"
             }
 
-            tabbed_chats_toggle := ToggleFlat {
+            tabbed_chats_toggle := PreferenceToggle {
                 margin: Inset{left: 6.5, top: 5, bottom: 4}
                 padding: Inset { left: 15}
                 active: false,
@@ -238,8 +238,7 @@ script_mod! {
                     spacing: 4
 
                     ui_zoom_minus_button := RobrixNeutralIconButton {
-                        height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
-                        width: 28, align: Align{x: 0.5, y: 0.5}
+                        width: RINX_BUTTON_HEIGHT height: RINX_BUTTON_HEIGHT padding: 0, align: Align{x: 0.5, y: 0.5}
                         draw_text +: {
                             text_style: mod.widgets.SETTINGS_REGULAR_TEXT_STYLE { font_size: mod.widgets.RINX_BODY_SIZE },
                         }
@@ -247,7 +246,7 @@ script_mod! {
                     }
 
                     ui_zoom_input := RobrixTextInput {
-                        width: 60, height: Fit
+                        width: (68 * mod.widgets.RINX_TEXT_SCALE), height: Fit
                         align: Align {y: 0.5}
                         padding: Inset{left: 8, right: 8, top: 5, bottom: 5}
                         empty_text: "100%"
@@ -256,8 +255,7 @@ script_mod! {
                     }
 
                     ui_zoom_plus_button := RobrixNeutralIconButton {
-                        height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
-                        width: 28, align: Align{x: 0.5, y: 0.5}
+                        width: RINX_BUTTON_HEIGHT height: RINX_BUTTON_HEIGHT padding: 0, align: Align{x: 0.5, y: 0.5}
                         draw_text +: {
                             text_style: mod.widgets.SETTINGS_REGULAR_TEXT_STYLE { font_size: mod.widgets.RINX_BODY_SIZE },
                         }
@@ -305,7 +303,7 @@ script_mod! {
 
                     // Read-only by default, enabled when `thumb_custom_radio` is selected.
                     thumb_custom_input := RobrixTextInput {
-                        width: 60, height: Fit
+                        width: (68 * mod.widgets.RINX_TEXT_SCALE), height: Fit
                         padding: Inset{left: 8, right: 8, top: 5, bottom: 5}
                         empty_text: "300"
                         autocapitalize: None,
@@ -317,7 +315,7 @@ script_mod! {
                         width: Fit, height: Fit
                         draw_text +: {
                             color: (MESSAGE_TEXT_COLOR),
-                            text_style: MESSAGE_TEXT_STYLE { font_size: mod.widgets.RINX_META_SIZE },
+                            text_style: MESSAGE_TEXT_STYLE { font_size: mod.widgets.RINX_UI_SIZE },
                         }
                         text: #(crate::i18n::tr("pixels")) i18n_text: "pixels"
                     }
@@ -336,7 +334,7 @@ script_mod! {
                 flow: Down,
                 margin: Inset{left: 6},
 
-                show_read_receipts_toggle := ToggleFlat {
+                show_read_receipts_toggle := PreferenceToggle {
                     margin: Inset{left: 0.5, top: 5, bottom: 10}
                     padding: Inset { left: 15}
                     active: true,

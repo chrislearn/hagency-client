@@ -101,26 +101,24 @@ script_mod! {
         text: ""
     }
 
-    // The badge after an agent's name, sized exactly like robrix2's bot badge:
-    // 16px tall, 6px side padding, 3px radius. Accent-tinted for workflow roles;
-    // the neutral pair is applied at populate time for agents with no role.
+    // Let the workflow badge grow with the label and its selected font.
     mod.widgets.AgentBadge = RoundedView {
         visible: false
         width: Fit
-        height: 16.0
+        height: Fit
         align: Align{x: 0.5, y: 0.5}
-        margin: Inset{top: 20.0, right: 10.0}
-        padding: Inset{left: 6.0, right: 6.0}
+        margin: 0
+        padding: Inset{left: 6.0, right: 6.0, top: 2.0, bottom: 2.0}
         show_bg: true
         draw_bg +: {
             color: (mod.widgets.RBX_ACCENT_SOFT)
-            border_radius: 3.0
+            border_radius: mod.widgets.RBX_RADIUS_XS
         }
         agent_badge_label := RinxLabel {
             width: Fit, height: Fit
             padding: 0
             draw_text +: {
-                text_style: theme.font_regular { font_size: mod.widgets.RINX_META_SIZE, top_drop: -0.08 }
+                text_style: RBX_TEXT_BADGE {}
                 color: (mod.widgets.RBX_ACCENT)
             }
             text: ""

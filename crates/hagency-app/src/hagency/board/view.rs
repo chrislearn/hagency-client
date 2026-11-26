@@ -6,7 +6,7 @@ makepad_widgets::script_mod! {
     use mod.widgets.*
     let Text = RinxLabel {width: Fill height: Fit draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular{font_size: mod.widgets.RINX_BODY_SIZE}}}
     let Small = Text {draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: mod.widgets.RINX_META_SIZE}}}
-    let Hint = Small {flow:Flow.Right{wrap:true}}
+    let Hint = Small {flow:Flow.Right{wrap:true} draw_text.text_style.font_size: RINX_UI_SIZE}
     let Input = RobrixTextInput {width: Fill height: RINX_CONTROL_HEIGHT margin: 0}
     let Select = RobrixSettingsDropDown {width: Fill height: RINX_CONTROL_HEIGHT margin: 0}
     let Action = RinxButton {}
@@ -22,11 +22,11 @@ makepad_widgets::script_mod! {
             boardimage := mod.widgets.BoardInlineImage {}
         }
     }
-    let Format = RinxGhostButton {width:28 height:30 padding:0}
+    let Format = RinxGhostButton {width:RINX_ICON_BUTTON_SIZE height:RINX_ICON_BUTTON_SIZE padding:0}
     let Composer = RinxSection {padding:RINX_SPACE_3
-        View {width:Fill height:30 spacing:4 align:Align{y:0.5}
-            edit := RinxGhostButton {height:30 text:#(crate::i18n::tr("Edit Markdown")) i18n_text:"Edit Markdown"}
-            preview := RinxGhostButton {height:30 text:#(crate::i18n::tr("Preview")) i18n_text:"Preview"}
+        View {width:Fill height:Fit spacing:4 align:Align{y:0.5}
+            edit := RinxGhostButton {height:RINX_BUTTON_HEIGHT text:#(crate::i18n::tr("Edit Markdown")) i18n_text:"Edit Markdown"}
+            preview := RinxGhostButton {height:RINX_BUTTON_HEIGHT text:#(crate::i18n::tr("Preview")) i18n_text:"Preview"}
             View {width:Fill height:1}
         }
         tools := View {width:Fill height:Fit flow:Flow.Right{wrap:true} spacing:2
@@ -41,8 +41,8 @@ makepad_widgets::script_mod! {
             link := Format {text:"↗"}
         }
         media_tools := View {width:Fill height:Fit flow:Flow.Right{wrap:true} spacing:8
-            insert_image := RinxGhostButton {height:30 text:#(crate::i18n::tr("Insert image")) i18n_text:"Insert image"}
-            paste_image := RinxGhostButton {height:30 text:#(crate::i18n::tr("Paste image")) i18n_text:"Paste image"}
+            insert_image := RinxGhostButton {height:RINX_BUTTON_HEIGHT text:#(crate::i18n::tr("Insert image")) i18n_text:"Insert image"}
+            paste_image := RinxGhostButton {height:RINX_BUTTON_HEIGHT text:#(crate::i18n::tr("Paste image")) i18n_text:"Paste image"}
         }
         source_wrap := View {width:Fill height:Fit
             source := Input {height:190 is_multiline:true empty_text:#(crate::i18n::tr("Write in Markdown…")) i18n_empty_text:"Write in Markdown…"
@@ -78,7 +78,7 @@ makepad_widgets::script_mod! {
                 grip := Small {width: Fit text: "⠿"}
             }
         }
-        title := Text {max_lines: 3 text_overflow: Ellipsis draw_text.text_style: theme.font_bold{font_size: mod.widgets.RINX_BODY_SIZE}}
+        title := Text {max_lines: 3 flow: Flow.Right{wrap:true} text_overflow: Ellipsis draw_text.text_style: RBX_TEXT_BODY_STRONG {}}
         tags := Small {max_lines: 1 text_overflow: Ellipsis}
         View {width: Fill height: Fit spacing: 8 align: Align{y:0.5}
             assignee := Small {width: Fill max_lines: 1 text_overflow: Ellipsis}
@@ -87,42 +87,42 @@ makepad_widgets::script_mod! {
     }
     let Column = RoundedView {width: 280 height: Fill padding: RINX_SPACE_3 flow: Down spacing: RINX_SPACE_3
         draw_bg +: {color: mod.widgets.RINX_PANEL_BG border_radius: mod.widgets.RINX_CARD_RADIUS border_size:0.0 border_color:mod.widgets.RINX_BORDER}
-        View {width: Fill height: 36 spacing: RINX_SPACE_2 align: Align{y: 0.5}
-            column_grip := View {width:20 height:32 cursor:MouseCursor.Hand align:Align{x:0.5 y:0.5}
+        View {width: Fill height: RINX_BUTTON_HEIGHT spacing: RINX_SPACE_2 align: Align{y: 0.5}
+            column_grip := View {width:20 height:RINX_ICON_BUTTON_SIZE cursor:MouseCursor.Hand align:Align{x:0.5 y:0.5}
                 Small {width:Fit text:"≡"}
             }
             marker := RoundedView {width: 8 height: 8 draw_bg +: {color: mod.widgets.RINX_MUTED border_radius: 4.0}}
-            heading := Text {width: Fill max_lines:1 text_overflow:Ellipsis draw_text.text_style: theme.font_bold{font_size: mod.widgets.RINX_BODY_SIZE}}
+            heading := Text {width: Fill max_lines:1 text_overflow:Ellipsis draw_text.text_style: RBX_TEXT_CARD_TITLE {}}
             count_badge := RoundedView {width:Fit height:Fit padding:Inset{left:8 right:8 top:3 bottom:3}
                 draw_bg +: {color:mod.widgets.RINX_SURFACE border_radius:6.0}
                 count := Small {width: Fit}
             }
-            add := RinxGhostButton {width:28 height:28 padding:0 text:"+"}
+            add := RinxGhostButton {width:RINX_ICON_BUTTON_SIZE height:RINX_ICON_BUTTON_SIZE padding:0 text:"+"}
         }
         cards := PortalList {width: Fill height: Fill capture_overload: false
             Card := mod.widgets.KanbanCard {margin: Inset{right:14 bottom:RINX_SPACE_3}}
             Empty := RoundedView {width: Fill height: 104 margin:Inset{right:14} padding: 16 align:Align{x:0.5 y:0.5}
                 draw_bg +: {color:mod.widgets.RINX_SURFACE border_color:mod.widgets.RINX_BORDER border_size:1.0 border_radius:10.0}
-                Small {width:Fit text: #(crate::i18n::tr("No tasks here yet")) i18n_text: "No tasks here yet"}
+                Hint {width:Fill align:Align{x:0.5} text: #(crate::i18n::tr("No tasks here yet")) i18n_text: "No tasks here yet"}
             }
-            More := View {width: Fill height: 48 margin: Inset{right:14}
-                more := RinxGhostButton {width: Fill height:36 text: #(crate::i18n::tr("Load more tasks")) i18n_text: "Load more tasks"}
+            More := View {width: Fill height: Fit padding:Inset{bottom:12} margin: Inset{right:14}
+                more := RinxGhostButton {width: Fill height:RINX_BUTTON_HEIGHT text: #(crate::i18n::tr("Load more tasks")) i18n_text: "Load more tasks"}
             }
             Filler := View {width: Fill height: 12}
         }
-        quick_add := RinxGhostButton {width:Fill height:36 align:Align{x:0.0 y:0.5} text:#(crate::i18n::tr("+ Add a card")) i18n_text:"+ Add a card"}
+        quick_add := RinxGhostButton {width:Fill height:RINX_BUTTON_HEIGHT align:Align{x:0.0 y:0.5} text:#(crate::i18n::tr("+ Add a card")) i18n_text:"+ Add a card"}
         quick_form := View {visible:false width:Fill height:Fit flow:Down spacing:8
             quick_notice := Hint {visible:false}
             quick_title := Input {height:64 is_multiline:true submit_on_enter:true empty_text:#(crate::i18n::tr("Enter a title…")) i18n_empty_text:"Enter a title…"}
-            View {width:Fill height:34 spacing:8
-                quick_save := RinxPrimaryButton {height:34 text:#(crate::i18n::tr("Add card")) i18n_text:"Add card"}
-                quick_cancel := RinxGhostButton {height:34 text:#(crate::i18n::tr("Cancel")) i18n_text:"Cancel"}
+            View {width:Fill height:Fit flow:Flow.Right{wrap:true} spacing:8
+                quick_save := RinxPrimaryButton {height:RINX_BUTTON_HEIGHT text:#(crate::i18n::tr("Add card")) i18n_text:"Add card"}
+                quick_cancel := RinxGhostButton {height:RINX_BUTTON_HEIGHT text:#(crate::i18n::tr("Cancel")) i18n_text:"Cancel"}
             }
         }
     }
     mod.widgets.ProjectBoard = #(ProjectBoard::register_widget(vm)) {
         skip_widget_tree_search: true
-        draw_dialog_bg +: {color:#0008}
+        draw_dialog_bg +: {color:RBX_SCRIM}
         notification_slide: 1.0
         animator: Animator {
             notifications: {
@@ -421,7 +421,7 @@ makepad_widgets::script_mod! {
                         attachment_delete := RoundedView {visible:false width:Fill height:Fit flow:Down spacing:8 padding:10
                             draw_bg +: {color:mod.widgets.RINX_PANEL_BG border_color:mod.widgets.RINX_BORDER border_size:1.0 border_radius:8.0}
                             delete_filename := Text {width:Fill max_lines:2}
-                            Small {text:#(crate::i18n::tr("Delete this attachment? Images in descriptions and comments will become unavailable.")) i18n_text:"Delete this attachment? Images in descriptions and comments will become unavailable."}
+                            Hint {draw_text.color:RINX_DANGER_FG text:#(crate::i18n::tr("Delete this attachment? Images in descriptions and comments will become unavailable.")) i18n_text:"Delete this attachment? Images in descriptions and comments will become unavailable."}
                             View {width:Fill height:Fit spacing:8
                                 delete_cancel := RinxGhostButton {text:#(crate::i18n::tr("Cancel")) i18n_text:"Cancel"}
                                 delete_confirm := Action {text:#(crate::i18n::tr("Delete attachment")) i18n_text:"Delete attachment"}
@@ -483,7 +483,7 @@ makepad_widgets::script_mod! {
             tooltip_label +: {visible:false}
         }}
         drag_preview := Tooltip {abs_pos:vec2(0,0) content := RoundedShadowView {width:Fit height:Fit padding:0
-            draw_bg +: {color:mod.widgets.RINX_SURFACE border_radius:8.0 shadow_radius:16.0 shadow_offset:vec2(0,4) shadow_color:#0003}
+            draw_bg +: {color:mod.widgets.RINX_SURFACE border_radius:8.0 shadow_radius:16.0 shadow_offset:vec2(0,4) shadow_color:RBX_SHADOW}
             tooltip_label := RinxLabel {visible:false}
             floating := mod.widgets.KanbanCard {width:226 margin:0 cursor:MouseCursor.Move
                 draw_bg +: {border_color:mod.widgets.RINX_ACCENT border_size:2.0}

@@ -1372,6 +1372,22 @@ pub fn register_widgets(vm: &mut ScriptVm) {
     embedded_content::script_mod(vm);
 }
 
+/// Register the standalone theme, platform fonts and widgets in dependency order.
+/// Native review fixtures use this same startup path.
+pub fn register_standalone_widgets(vm: &mut ScriptVm) {
+    // Order matters: base widgets first, then app widgets, then app UI.
+    makepad_widgets::theme_mod(vm);
+    script_eval!(vm, {
+        mod.theme = mod.themes.light
+    });
+    crate::theme::init_standalone(vm);
+    #[cfg(any(target_os = "macos", target_os = "ios", target_os = "windows", target_os = "linux"))]
+    crate::ui_fonts::install(vm);
+    makepad_widgets::widgets_mod(vm);
+    makepad_widgets::desktop_style::apply_widgets(vm);
+    register_widgets(vm);
+}
+
 impl AppMain for App {
     fn script_mod(vm: &mut ScriptVm) -> makepad_widgets::ScriptValue {
         // Local native acceptance bundles may stage the same assets outside the
@@ -1382,19 +1398,7 @@ impl AppMain for App {
         }
         #[cfg(all(target_os = "macos", feature = "macos-sparkle"))]
         crate::updates::sparkle::configure_resources(vm);
-        // Order matters: base widgets first, then app widgets, then app UI.
-        makepad_widgets::theme_mod(vm);
-        script_eval!(vm, {
-            mod.theme = mod.themes.light
-        });
-        crate::theme::init_standalone(vm);
-        #[cfg(any(target_os = "macos", target_os = "ios"))]
-        crate::apple_fonts::install(vm);
-        #[cfg(target_os = "windows")]
-        crate::windows_fonts::install(vm);
-        makepad_widgets::widgets_mod(vm);
-        makepad_widgets::desktop_style::apply_widgets(vm);
-        register_widgets(vm);
+        register_standalone_widgets(vm);
         self::script_mod(vm)
     }
 

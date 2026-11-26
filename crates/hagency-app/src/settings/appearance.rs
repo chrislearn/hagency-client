@@ -24,13 +24,13 @@ script_mod! {
     mod.widgets.AppearanceSettings = #(AppearanceSettings::register_widget(vm)) {
         width: Fill height: Fit flow: Down spacing: 8 padding: Inset{top: 12 bottom: 16}
         RinxLabel {text: #(crate::i18n::tr("App appearance")) i18n_text: "App appearance" draw_text.text_style: theme.font_bold{font_size: mod.widgets.RINX_HEADING_SIZE}}
-        choices := View {width: Fill height: Fit flow: Flow.Right{wrap: true} spacing: 12
+        choices := View {width: Fill height: Fit flow: Flow.Right{wrap: true} spacing: RINX_SPACE_3 wrap_spacing: RINX_SPACE_2
             mode := AppearanceSelect {labels: #(mode_labels(true)) i18n_labels: #(mode_labels(false))}
             accent := AppearanceSelect {labels: [#(crate::i18n::tr("Teal")), #(crate::i18n::tr("Violet"))] i18n_labels: ["Teal", "Violet"]}
         }
         customize := RinxButton {text: #(crate::i18n::tr("Customize appearance")) i18n_text: "Customize appearance"}
         host_note := RinxHint {visible: false width: Fill text: #(crate::i18n::tr("Appearance is managed by OctoSense")) i18n_text: "Appearance is managed by OctoSense"}
-        error := RinxHint {visible: false width: Fill}
+        error := RinxLabel {visible: false width: Fill flow: Flow.Right{wrap: true} draw_text.color: RINX_DANGER_FG}
     }
 }
 

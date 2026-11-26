@@ -1,127 +1,37 @@
-//! Use the OS-provided PingFang faces on macOS and iOS, without shipping Apple fonts.
-//!
-//! Makepad's script FontMember currently assumes face zero. PingFang is a TTC, so
-//! resolve its installed URL with CoreText and register the matching collection
-//! face through Makepad's native font API before widgets inherit the theme.
-
+//! Installed Simplified Chinese UI faces supplied by CoreText.
+use makepad_widgets::{makepad_draw::text::loader::FontDefinition, *};
 use std::{
-    cell::RefCell,
     ffi::{CString, OsString, c_char, c_void},
     os::unix::ffi::OsStringExt,
     path::PathBuf,
     ptr,
-    rc::Rc,
-};
-use makepad_widgets::{
-    *,
-    makepad_draw::text::{
-        font::FontId,
-        font_face::FontFace,
-        fonts::Fonts,
-        loader::{FontDefinition, FontFamilyDefinition},
-    },
 };
 
 const REGULAR: &str = "PingFangSC-Regular";
 const SEMIBOLD: &str = "PingFangSC-Semibold";
 
 pub fn install(vm: &mut ScriptVm) {
-    // Resolve both weights before changing any families. A missing system asset
-    // leaves the existing cross-platform theme usable, including CJK and emoji.
-    let faces = [REGULAR, SEMIBOLD].map(load_system_face);
-    let [Ok(regular), Ok(semibold)] = faces else {
-        log!(
-            "PingFang unavailable; keeping bundled fonts: {:?}",
-            faces.map(|face| face.err())
-        );
-        return;
-    };
-    vm.with_cx_mut(|cx| {
-        CxDraw::lazy_construct_fonts(cx);
-    });
-    let fonts = vm.with_cx_mut(|cx| cx.get_global::<Rc<RefCell<Fonts>>>().clone());
-    for (name, definition) in [(REGULAR, regular), (SEMIBOLD, semibold)] {
-        let mut fonts = fonts.borrow_mut();
-        let id = FontId::from(name);
-        if !fonts.is_font_known(id) {
-            fonts.define_font(id, definition);
+    // Some Macs have Hiragino Sans GB installed without the downloadable PingFang asset.
+    if let Err(error) =
+        crate::system_fonts::install_faces(vm, [REGULAR, SEMIBOLD], load_system_face)
+    {
+        if crate::system_fonts::install_faces(
+            vm,
+            ["HiraginoSansGB-W3", "HiraginoSansGB-W6"],
+            load_system_face,
+        )
+        .is_err()
+        {
+            log!(
+                "Chinese UI fonts unavailable; using bundled fallback: {}",
+                error
+            );
         }
     }
-
-    let styles = [
-        (script_eval!(vm, { mod.theme.font_label }), REGULAR),
-        (script_eval!(vm, { mod.theme.font_regular }), REGULAR),
-        (script_eval!(vm, { mod.theme.font_bold }), SEMIBOLD),
-        (script_eval!(vm, { mod.theme.font_italic }), REGULAR),
-        (script_eval!(vm, { mod.theme.font_bold_italic }), SEMIBOLD),
-    ];
-    for (value, name) in styles {
-        let style = TextStyle::script_from_value(vm, value);
-        vm.with_cx_mut(|cx| style.ensure_fonts_loaded(cx));
-        let family_id = style.font_family_id();
-        let mut fonts = fonts.borrow_mut();
-        let fallback = fonts.get_or_load_font_family(family_id);
-        let primary = FontId::from(name);
-        let font_ids: Vec<_> = std::iter::once(primary)
-            .chain(
-                fallback
-                    .fonts()
-                    .iter()
-                    .map(|font| font.id())
-                    .filter(|id| *id != primary),
-            )
-            .collect();
-        fonts.set_font_family_definition(
-            family_id,
-            FontFamilyDefinition {
-                expected_member_count: font_ids.len(),
-                font_ids,
-                diagnostics: Default::default(),
-            },
-        );
-    }
-    // Code and icon families retain their specialized fonts. PingFang has no
-    // italic face; italic prose uses the corresponding upright PingFang weight.
-    log!(
-        "Apple typography: PingFang SC Regular/Semibold for English and Chinese; bundled fallback retained"
-    );
 }
 
 fn load_system_face(name: &str) -> Result<FontDefinition, String> {
-    let path = system_font_path(name)?;
-    let data =
-        SharedBytes::from_file_mmap_or_read(&path).map_err(|error| format!("{name}: {error}"))?;
-    let count = if data.as_slice().starts_with(b"ttcf") {
-        let count = data
-            .as_slice()
-            .get(8..12)
-            .ok_or("truncated font collection")?;
-        u32::from_be_bytes(count.try_into().unwrap())
-    } else {
-        1
-    };
-    for index in 0..count {
-        let Some(face) = FontFace::from_data_and_index(data.clone(), index) else {
-            continue;
-        };
-        let matches = face.with_ttf_parser_face(|face| {
-            face.names().into_iter().any(|record| {
-                // OpenType name ID 6 is the PostScript name, also returned by CoreText.
-                record.name_id == 6 && record.to_string().as_deref() == Some(name)
-            })
-        });
-        if matches {
-            return Ok(FontDefinition {
-                data,
-                index,
-                ascender_fudge_in_ems: 0.0,
-                descender_fudge_in_ems: 0.0,
-                weight: None,
-                variations: Vec::new(),
-            });
-        }
-    }
-    Err(format!("{name}: matching collection face not found"))
+    crate::system_fonts::collection_face(&system_font_path(name)?, &[name])
 }
 
 // Small, private bindings to stable public APIs available on both Apple targets.
@@ -203,6 +113,8 @@ fn system_font_path(name: &str) -> Result<PathBuf, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use makepad_widgets::makepad_draw::text::{font_face::FontFace, fonts::Fonts};
+    use std::{cell::RefCell, rc::Rc};
 
     #[test]
     fn system_pingfang_faces_cover_english_and_chinese() {
@@ -240,37 +152,84 @@ mod tests {
 
     #[test]
     fn theme_prefers_pingfang_and_preserves_fallback_after_widget_registration() {
-        let mut cx = Cx::new(Box::new(|_, _| {}));
-        cx.with_vm(|vm| {
-            makepad_widgets::theme_mod(vm);
-            script_eval!(vm, { mod.theme = mod.themes.light });
-            install(vm);
-            makepad_widgets::widgets_mod(vm);
-            for (value, expected) in [
-                (script_eval!(vm, { mod.theme.font_regular }), REGULAR),
-                (script_eval!(vm, { mod.theme.font_bold }), SEMIBOLD),
-                (
-                    script_eval!(vm, { mod.widgets.Label.draw_text.text_style }),
-                    REGULAR,
-                ),
-                (
-                    script_eval!(vm, { mod.widgets.TextInput.draw_text.text_style }),
-                    REGULAR,
-                ),
-            ] {
-                let style = TextStyle::script_from_value(vm, value);
-                vm.with_cx_mut(|cx| style.ensure_fonts_loaded(cx));
-                let fonts = vm.with_cx_mut(|cx| cx.get_global::<Rc<RefCell<Fonts>>>().clone());
-                let family = fonts
-                    .borrow_mut()
-                    .get_or_load_font_family(style.font_family_id());
-                assert_eq!(family.fonts()[0].id(), FontId::from(expected));
-                assert_eq!(
-                    family.fonts().len(),
-                    4,
-                    "PingFang plus Latin, CJK and emoji fallbacks"
+        use makepad_widgets::desktop_style::{self, DesktopStyle, StyleSheet};
+        for (dark, late_install) in [(false, false), (true, false), (false, true)] {
+            let mut cx = Cx::new(Box::new(|_, _| {}));
+            cx.with_vm(|vm| {
+                makepad_widgets::theme_mod(vm);
+                script_eval!(vm, { mod.theme = mod.themes.light });
+                desktop_style::install(
+                    vm,
+                    StyleSheet::load_with_appearance(DesktopStyle::Macos, dark),
                 );
-            }
-        });
+                if !late_install {
+                    install(vm);
+                }
+                makepad_widgets::widgets_mod(vm);
+                desktop_style::apply_widgets(vm);
+                install(vm);
+                let italic = script_eval!(vm, { mod.theme.font_italic });
+                let italic = TextStyle::script_from_value(vm, italic);
+                assert_eq!(
+                    italic.font_family.member_ids().next(),
+                    Some("ibm_plex_italic")
+                );
+                assert!(italic.font_family.member_ids().any(|id| id == "system_ui"));
+                let code = script_eval!(vm, { mod.theme.font_code });
+                let code = TextStyle::script_from_value(vm, code);
+                assert!(!code.font_family.member_ids().any(|id| id == "system_ui"));
+                for (value, expected) in [
+                    (script_eval!(vm, { mod.theme.font_regular }), REGULAR),
+                    (script_eval!(vm, { mod.theme.font_bold }), SEMIBOLD),
+                    (
+                        script_eval!(vm, { mod.widgets.Label.draw_text.text_style }),
+                        REGULAR,
+                    ),
+                    (
+                        script_eval!(vm, { mod.widgets.TextInput.draw_text.text_style }),
+                        REGULAR,
+                    ),
+                ] {
+                    let style = TextStyle::script_from_value(vm, value);
+                    assert!(
+                        style
+                            .font_family
+                            .member_ids()
+                            .any(|id| id == "noto_color_emoji")
+                    );
+                    vm.with_cx_mut(|cx| {
+                        style.ensure_fonts_loaded(cx);
+                        cx.script_data.resources.bump_generation();
+                        style.ensure_fonts_loaded(cx);
+                    });
+                    let fonts = vm.with_cx_mut(|cx| cx.get_global::<Rc<RefCell<Fonts>>>().clone());
+                    let family = fonts
+                        .borrow_mut()
+                        .get_or_load_font_family(style.font_family_id());
+                    assert_eq!(
+                        style
+                            .font_family
+                            .member_ids()
+                            .filter(|id| *id == "system_ui")
+                            .count(),
+                        1
+                    );
+                    assert!(family.fonts().len() > 1);
+                    let shaped = family.get_or_shape("English 中文聊天繁體 0123".into());
+                    assert!(!shaped.glyphs.is_empty());
+                    for glyph in &shaped.glyphs {
+                        assert_ne!(glyph.id, 0);
+                        let face =
+                            FontFace::from_data_and_index(glyph.font.data().clone(), 0).unwrap();
+                        face.with_ttf_parser_face(|face| {
+                            assert!(
+                                face.names().into_iter().any(|n| n.name_id == 6
+                                    && n.to_string().as_deref() == Some(expected))
+                            );
+                        });
+                    }
+                }
+            });
+        }
     }
 }

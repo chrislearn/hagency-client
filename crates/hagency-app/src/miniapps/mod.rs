@@ -58,6 +58,8 @@ pub use ui::{MiniAppsAction, MiniAppsPanelWidgetRefExt};
 pub fn script_mod(vm: &mut makepad_widgets::ScriptVm) {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
+        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "windows", target_os = "linux"))]
+        makepad_widgets::widget_async::register_splash_isolate_mod(crate::ui_fonts::install);
         makepad_widgets::widget_async::register_splash_isolate_mod(crate::theme::script_mod);
         makepad_widgets::widget_async::register_splash_isolate_mod(|vm| {
             octoscript_widgets::design::script_mod(vm);

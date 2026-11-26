@@ -37,13 +37,13 @@ script_mod! {
         }
         margin: Inset{top: 5, right: 0},
         width: Fit,
-        height: 15.0,
+        height: Fit,
         plus_template: RinxLabel {
             padding: 0,
             flow: Flow.Right { wrap: false },
             draw_text +: {
-                color: #x0,
-                text_style: TITLE_TEXT { font_size: mod.widgets.RINX_UI_SIZE}
+                color: mod.widgets.RINX_MUTED,
+                text_style: RBX_TEXT_META {}
             }
             text: ""
         }

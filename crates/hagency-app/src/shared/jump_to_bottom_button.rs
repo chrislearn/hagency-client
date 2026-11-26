@@ -20,7 +20,7 @@ script_mod! {
                 border_radius: mod.widgets.RINX_CONTROL_RADIUS
             }
             history_hint_holder := View {
-                width: Fit height: 32 flow: Down align: Align{y: 0.5}
+                width: Fit height: RINX_BUTTON_HEIGHT flow: Down align: Align{y: 0.5}
                 history_hint := RinxLabel {
                     width: Fit height: Fit padding: 0
                     draw_text +: {color: mod.widgets.RINX_MUTED text_style.font_size: mod.widgets.RINX_UI_SIZE}
@@ -28,7 +28,7 @@ script_mod! {
                 }
             }
             unread_message_badge := RoundedView {
-                visible: false width: Fit height: 32 padding: Inset{left: 6 right: 6}
+                visible: false width: Fit height: RINX_BUTTON_HEIGHT padding: Inset{left: 6 right: 6}
                 flow: Down align: Align{y: 0.5}
                 draw_bg +: {color: mod.widgets.RINX_ACCENT border_radius: mod.widgets.RINX_CONTROL_RADIUS}
                 unread_messages_count := RinxLabel {
@@ -37,7 +37,7 @@ script_mod! {
                 }
             }
             inner_button := RinxButton {
-                width: Fit height: 32 padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+                width: Fit height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
                 icon_walk: Walk{width: 0 height: 0}
                 text: #(crate::i18n::tr("Jump to latest")) i18n_text: "Jump to latest"
             }

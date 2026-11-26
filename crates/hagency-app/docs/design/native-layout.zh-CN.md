@@ -5,11 +5,33 @@
 客户端继续使用 Makepad 原生界面，参考 OctoSense 的表面层次、排版和组件规范。
 聊天、项目、Agent 的导航方式及授权流程仍由现有业务实现负责。
 
-## 共同规则
+## 文字与颜色
 
-- `theme.rs` 集中定义浅色／深色表面、强调色，以及页面标题 24、卡片标题 18、
-  分区标题 16、正文 14、辅助文字 12 的逻辑像素字号。Makepad 使用点作为字号
-  单位，因此代码中乘以 0.75。用户的文字放大设置继续生效。
+默认字号使用逻辑像素。`theme.rs` 将字号转换为 Makepad 点数并应用一次用户的文字缩放。常规字重用于阅读和操作，标题、未读名称和关键数值使用强调字重。多行正文的行距系数为 1.4。
+
+Apple 平台的中英混排使用苹方简体常规和半粗体，Windows 优先使用微软雅黑 UI，Linux 通过 Fontconfig 选择中文无衬线字体。缺字时继续查找随应用提供的字体，代码和 Emoji 使用各自的字体。
+
+| 用途 | 主题角色 | 默认字号 |
+| --- | --- | --- |
+| 时间、计数、简短注释 | `RINX_META_SIZE` | 13 px |
+| 导航、按钮、输入框、表单标签 | `RINX_UI_SIZE` | 15 px |
+| 消息、段落、列表正文 | `RINX_BODY_SIZE` | 16 px |
+| 面板、卡片标题 | `RINX_HEADING_SIZE` | 17 px |
+| 分区标题 | `RINX_SECTION_SIZE` | 19 px |
+| 对话框、视图标题 | `RINX_TITLE_SIZE` | 22 px |
+| 工作区页面标题 | `RINX_PAGE_TITLE_SIZE` | 26 px |
+
+- 页面、卡片和输入区分别使用 `PAGE`、`SURFACE`、`FIELD`。正文用 `INK`，辅助文字与占位符用 `MUTED`，不可操作的控件用 `DISABLED`。
+- 主操作与焦点用 `ACCENT`，实心主按钮搭配 `ON_ACCENT`。选中行用 `SELECTED`，悬停与按下分别用 `HOVER`、`PRESSED`。
+- 成功、待处理、错误和信息分别使用 `SUCCESS`、`WARNING`、`DANGER`、`INFO` 的前景和背景色对。状态文字或图标同时说明含义。
+- 输入框和可见控件轮廓用 `CONTROL_BORDER`，面板边沿用 `BORDER`，内容间的细分隔线用 `DIVIDER`。内置主题的普通文字色对至少达到 4.5∶1，控件轮廓与相邻背景至少达到 3∶1。
+
+以上颜色名均带有 `RINX_` 前缀，随浅色、深色和主题包一起更新。
+
+[430 px 窄窗口的简体中文设置页，文字放大至 130%](native-layout/appearance-zh-narrow.png) · [深色 Agent 列表](native-layout/agents-zh-dark.png)
+
+## 布局与控件
+
 - `RinxLabel` 不自带内边距，由容器负责对齐和留白。
 - `RINX_SPACE_1` 至 `RINX_SPACE_8` 提供 4、8、12、16、20、24、32 的间距阶梯，
   随当前主题的密度设置缩放。

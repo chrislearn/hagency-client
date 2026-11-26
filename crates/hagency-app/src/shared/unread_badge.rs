@@ -14,45 +14,20 @@ script_mod! {
 
     mod.widgets.UnreadBadge = #(UnreadBadge::register_widget(vm)) {
 
-        width: 30, height: 20,
-        align: Align{ x: 0.5, y: 0.5 }
-        flow: Overlay,
-
-        rounded_view := View {
-            width: Fill,
-            height: Fill,
-            show_bg: true,
-            draw_bg +: {
-                badge_color: instance((COLOR_UNREAD_BADGE_MESSAGES)),
-                border_radius: instance(4.0)
-                // Set this border_size to a larger value to make the oval smaller
-                border_size: instance(2.0)
-
-                pixel: fn() {
-                    let sdf = Sdf2d.viewport(self.pos * self.rect_size)
-                    sdf.box(
-                        self.border_size,
-                        1.0,
-                        self.rect_size.x - (self.border_size * 2.0),
-                        self.rect_size.y - 2.0,
-                        max(1.0, self.border_radius)
-                    )
-                    sdf.fill_keep(self.badge_color);
-                    return sdf.result;
-                }
+        width: Fit height: Fit
+        align: Align{x: 0.5 y: 0.5}
+        pill := RoundedView {
+            width: Fit height: Fit padding: Inset{left: 5 right: 5 top: 1 bottom: 1}
+            draw_bg +: {color: RINX_FIELD border_radius: RBX_RADIUS_PILL}
+            label_count := RinxLabel {
+                width: Fit height: Fit padding: 0
+                flow: Flow.Right{wrap: false}
+                draw_text +: {color: RINX_MUTED text_style: RBX_TEXT_BADGE {}}
             }
         }
-        // Label that displays the unread message count
-        label_count := RinxLabel {
-            padding: 0,
-            width: Fit,
-            height: Fit,
-            flow: Flow.Right { wrap: false },
-            text: "",
-            draw_text +: {
-                color: mod.widgets.RINX_ON_ACCENT,
-                text_style: REGULAR_TEXT {font_size: (8.0 * mod.widgets.RINX_TEXT_SCALE)}, // style-size: glyph
-            }
+        dot := RoundedView {
+            visible: false width: 10 height: 10
+            draw_bg +: {color: RINX_ACCENT border_radius: RBX_RADIUS_PILL}
         }
     }
 }
@@ -98,103 +73,31 @@ impl Widget for UnreadBadge {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
 
-        /// Helper function to format the badge's rounded rectangle.
-        ///
-        /// The rounded rectangle needs to be wider for longer text.
-        /// It also adds a plus sign at the end if the unread count is greater than 99.
-        ///
-        /// `extra_glyphs` accounts for characters drawn beyond the digits
-        /// themselves — the mention badge's leading `@` — so the pill grows to
-        /// fit them instead of clipping.
-        fn format_border_and_truncation(count: u64, extra_glyphs: u64) -> (f64, &'static str) {
-            let (border_size, plus_sign) = if count > 99 {
-                (0.0, "+")
-            } else if count > 9 {
-                (2.0, "")
-            } else {
-                (5.0, "")
-            };
-            // Each extra glyph costs roughly one digit's worth of width, which
-            // the border insets by ~3px per step.
-            (
-                (border_size - 3.0 * extra_glyphs as f64).max(0.0),
-                plus_sign,
-            )
-        }
-
-        // Styling and label depend only on these counts; re-running the draw_bg
-        // eval every draw is costly, so skip it when they haven't changed.
         let now = (self.is_marked_unread, self.unread_mentions, self.unread_messages);
-        if self.last_drawn == Some(now) {
-            return self.view.draw_walk(cx, scope, walk);
+        if self.last_drawn != Some(now) {
+            self.last_drawn = Some(now);
+            let mentions = self.unread_mentions > 0;
+            let count = if mentions { self.unread_mentions } else { self.unread_messages };
+            let mut pill = self.view(cx, ids!(pill));
+            pill.set_visible(cx, count > 0);
+            self.view(cx, ids!(dot)).set_visible(cx, self.is_marked_unread && count == 0);
+            self.visible = count > 0 || self.is_marked_unread;
+            if count > 0 {
+                let (fg, bg) = if mentions {
+                    (self.appearance.role("color.status.danger.foreground"), self.appearance.role("color.status.danger.background"))
+                } else if self.is_marked_unread {
+                    (self.appearance.on_accent, self.appearance.accent)
+                } else {
+                    (self.appearance.ink, self.appearance.field)
+                };
+                let prefix = if mentions { "@" } else { "" };
+                let suffix = if count > 99 { "+" } else { "" };
+                let label = self.label(cx, ids!(pill.label_count));
+                label.set_text(cx, &format!("{prefix}{}{suffix}", count.min(99)));
+                label.set_text_color(cx, fg);
+                script_apply_eval!(cx, pill, {draw_bg.color: #(bg)});
+            }
         }
-        self.last_drawn = Some(now);
-        let foreground = if self.unread_mentions > 0 {
-            self.appearance.role("color.status.danger.background")
-        } else if self.is_marked_unread {
-            self.appearance.on_accent
-        } else {
-            self.appearance.page
-        };
-        let mut label = self.label(cx, ids!(label_count));
-        script_apply_eval!(cx, label, {draw_text.color: #(foreground)});
-
-        // If there are unread mentions, show red badge and the number of unread mentions.
-        //
-        // The `@` matters: mentions and plain unreads were previously identical
-        // glyphs distinguished only by badge color, so a red "3" and a gray "3"
-        // are the same badge to anyone who can't separate the two hues. The
-        // prefix carries the same signal in a second channel.
-        if self.unread_mentions > 0 {
-            let (border_size, plus_sign) = format_border_and_truncation(self.unread_mentions, 1);
-            self.label(cx, ids!(label_count))
-                .set_text(cx, &format!("@{}{plus_sign}", std::cmp::min(self.unread_mentions, 99)));
-            let mut rounded_view = self.view(cx, ids!(rounded_view));
-            script_apply_eval!(cx, rounded_view, {
-                draw_bg +: {
-                    border_size: #(border_size),
-                    badge_color: #(self.appearance.role("color.status.danger.foreground"))
-                }
-            });
-            self.visible = true;
-        }
-        // If there are no unread mentions but there are unread messages, show the number
-        // of unread messages, in the marked-unread color if the room is also marked unread.
-        else if self.unread_messages > 0 {
-            let (border_size, plus_sign) = format_border_and_truncation(self.unread_messages, 0);
-            let badge_color = if self.is_marked_unread {
-                self.appearance.accent
-            } else {
-                self.appearance.muted
-            };
-            self.label(cx, ids!(label_count))
-                .set_text(cx, &format!("{}{plus_sign}", std::cmp::min(self.unread_messages, 99)));
-            let mut rounded_view = self.view(cx, ids!(rounded_view));
-            script_apply_eval!(cx, rounded_view, {
-                draw_bg +: {
-                    border_size: #(border_size),
-                    badge_color: #(badge_color)
-                }
-            });
-            self.visible = true;
-        }
-        // If this room is only marked as unread, show the badge as a dot.
-        else if self.is_marked_unread {
-            self.label(cx, ids!(label_count)).set_text(cx, "");
-            let mut rounded_view = self.view(cx, ids!(rounded_view));
-            script_apply_eval!(cx, rounded_view, {
-                draw_bg +: {
-                    border_size: 6.0, // larger value = smaller badge size
-                    badge_color: #(self.appearance.accent)
-                }
-            });
-            self.visible = true;
-        }
-        else {
-            // If there are no unreads of any kind, hide the badge
-            self.visible = false;
-        }
-
         self.view.draw_walk(cx, scope, walk)
     }
 }
@@ -246,12 +149,15 @@ mod tests {
             let mut cx2d=Cx2d::new(&mut draw);
             cx2d.begin_pass(&pass,None);list.begin_always(&mut cx2d);
             cx2d.begin_root_turtle(dvec2(60.0,40.0),Layout::flow_overlay());
-            badge.draw_walk_all(&mut cx2d,&mut Scope::empty(),Walk {width:Size::Fixed(30.0),height:Size::Fixed(20.0),..Walk::default()});
+            badge.draw_all(&mut cx2d, &mut Scope::empty());
             cx2d.end_pass_sized_turtle();list.end(&mut cx2d);cx2d.end_pass(&pass);
             drop(cx2d);drop(draw);
             assert_eq!(badge.visible(),visible);
             if visible {
-                let label=badge.label(&cx,ids!(label_count));
+                assert_eq!(badge.view(&cx, ids!(dot)).visible(), text.is_empty());
+            }
+            if !text.is_empty() {
+                let label=badge.label(&cx,ids!(pill.label_count));
                 assert_eq!(label.text().trim(),text,"marked={marked}, mentions={mentions}, messages={messages}");
                 let rect=label.area().rect(&cx);let outer=badge.area().rect(&cx);
                 assert!(rect.pos.x>=outer.pos.x && rect.pos.x+rect.size.x<=outer.pos.x+outer.size.x,"{text}: {rect:?} outside {outer:?}");

@@ -2,10 +2,11 @@
 
 # Hagency client
 
-[Hagency](https://github.com/hagency-org/hagency-client) is a native desktop
+[Hagency Client](https://github.com/chrislearn/hagency-client) is a native desktop
 application for Windows, macOS and Linux. It combines Matrix chat, Project
-workspaces and locally executed AI Agents. Download it from
-[Client Releases](https://github.com/hagency-org/hagency-client/releases/latest).
+workspaces and locally executed AI Agents. This fork independently maintains the
+original Client interface. Earlier installers are available in the
+[archived upstream releases](https://github.com/hagency-org/hagency-client/releases).
 
 Sign in to your Hagency server through Pasion, then manage Projects and Agents
 inside the application. See the [desktop quick start](crates/hagency-app/docs/hagency-quickstart.md)
@@ -32,8 +33,7 @@ On macOS/Linux, follow the [native dependencies guide](crates/hagency-app/docs/l
 and run `cargo run --locked -p hagency-app --bin hagency`. No Node page build or
 separate local console process is required. See [workspace and packaging](docs/workspace.md).
 
-The historical `hagency-org/hagency-desktop` repository preserves earlier sources
-and releases; current development belongs here. Historical Fleet and CLI documents
+The original Client and Hagency Desktop now have separate development histories. Historical Fleet and CLI documents
 record retired behavior and are not current setup instructions.
 
 ## License

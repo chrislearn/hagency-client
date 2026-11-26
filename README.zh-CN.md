@@ -2,9 +2,9 @@
 
 # Hagency 客户端
 
-[Hagency](https://github.com/hagency-org/hagency-client) 是 Windows、macOS 和 Linux
+[Hagency Client](https://github.com/chrislearn/hagency-client) 是 Windows、macOS 和 Linux
 原生桌面应用，集成 Matrix 聊天、Project 工作区和本机执行的 AI Agent。
-安装包见 [Client Releases](https://github.com/hagency-org/hagency-client/releases/latest)。
+这个 fork 独立维护原 Client 界面。历史安装包见[原仓库发布记录](https://github.com/hagency-org/hagency-client/releases)。
 
 通过 Pasion 登录 Hagency 服务，在应用内管理项目和 Agent。使用步骤见
 [桌面快速开始](crates/hagency-app/docs/hagency-quickstart.zh-CN.md)和
@@ -35,7 +35,7 @@ macOS/Linux 按[原生依赖说明](crates/hagency-app/docs/local-development.md
 运行 `cargo run --locked -p hagency-app --bin hagency`。不再需要 Node 页面构建或
 另起控制台进程。工作区、测试和安装包流程见[工作区指南](docs/workspace.md)。
 
-原 `hagency-org/hagency-desktop` 仓库保留历史源码和发布；当前开发集中在这里。
+原 Client 与 Hagency Desktop 已分别演进。
 历史 Fleet、CLI 文档仅作旧实现记录，不作为当前安装说明。
 
 ## 许可

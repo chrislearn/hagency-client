@@ -53,11 +53,14 @@ script_mod! {
         show_bg: true
         draw_bg +: {
             hover: instance(0.0)
+            down: instance(0.0)
             active: instance(0.0)
             focus: instance(0.0)
 
             color_hover: instance((COLOR_NAVIGATION_TAB_BG_HOVER))
             color_active: instance((COLOR_NAVIGATION_TAB_BG_ACTIVE))
+            color_down: instance(RINX_PRESSED)
+            color_focus: instance(RINX_ACCENT)
 
             border_color: instance(#0000)
             border_size: uniform(0.0)
@@ -69,22 +72,24 @@ script_mod! {
             // which combined with the dropping alpha makes the blend briefly
             // DARKER mid-fade, visible as a flicker on hover-out.
             get_color: fn() -> vec4 {
-                let hover_color = vec4(self.color_hover.xyz, self.color_hover.w * max(self.hover, self.focus))
-                return mix(hover_color, self.color_active, self.active)
+                let hover_color = vec4(self.color_hover.xyz, self.color_hover.w * self.hover)
+                return mix(hover_color, self.color_active, self.active).mix(self.color_down, self.down)
             }
 
             pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+                let inset = max(self.border_size, self.focus)
                 sdf.box(
-                    self.border_inset.x + self.border_size,
-                    self.border_inset.y + self.border_size,
-                    self.rect_size.x - (self.border_inset.x + self.border_inset.z + self.border_size * 2.0),
-                    self.rect_size.y - (self.border_inset.y + self.border_inset.w + self.border_size * 2.0),
+                    self.border_inset.x + inset,
+                    self.border_inset.y + inset,
+                    self.rect_size.x - (self.border_inset.x + self.border_inset.z + inset * 2.0),
+                    self.rect_size.y - (self.border_inset.y + self.border_inset.w + inset * 2.0),
                     max(1.0, self.border_radius)
                 )
                 sdf.fill_keep(self.get_color())
-                if self.border_size > 0.0 {
-                    sdf.stroke(self.border_color, self.border_size)
+                let line = max(self.border_size, 2.0 * self.focus)
+                if line > 0.0 {
+                    sdf.stroke(self.border_color.mix(self.color_focus, self.focus), line)
                 }
                 return sdf.result;
             }
@@ -101,15 +106,15 @@ script_mod! {
                 default: @off
                 off: AnimatorState{
                     from: {all: Forward {duration: 0.15}}
-                    apply: { draw_bg: {hover: 0.0} }
+                    apply: { draw_bg: {hover: 0.0 down: 0.0} }
                 }
                 on: AnimatorState{
                     from: {all: Snap}
-                    apply: { draw_bg: {hover: 1.0} }
+                    apply: { draw_bg: {hover: 1.0 down: 0.0} }
                 }
                 down: AnimatorState{
                     from: {all: Snap}
-                    apply: { draw_bg: {hover: 1.0} }
+                    apply: { draw_bg: {hover: 1.0 down: 1.0} }
                 }
             }
             active: {

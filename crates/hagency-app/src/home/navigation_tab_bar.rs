@@ -242,7 +242,7 @@ script_mod! {
     }
 
     mod.widgets.MobileTabButton = NavigationBarButton {
-        width: Fill height: 56 flow: Down spacing: 4
+        width: Fill height: (mod.widgets.RBX_BOTTOM_TAB_H * max(1.0, mod.widgets.RINX_TEXT_SCALE)) flow: Down spacing: 2
         padding: Inset{top: 7 bottom: 4} align: Align{x: 0.5 y: 0.5}
         draw_bg +: {color_hover: #x00000000 color_active: #x00000000 border_radius: 0}
         icon := Icon {
@@ -250,7 +250,8 @@ script_mod! {
             draw_icon.color: mod.widgets.RINX_INK
         }
         label := RinxLabel {
-            draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: mod.widgets.RINX_META_SIZE}}
+            width: Fill align: Align{x: 0.5} padding: 0 max_lines: 1 text_overflow: Ellipsis
+            draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: mod.widgets.RINX_UI_SIZE}}
         }
     }
 
@@ -316,7 +317,7 @@ script_mod! {
 
         Mobile := SolidView {
             new_batch: true flow: Right align: Align{y: 0.5}
-            width: Fill height: (56 + mod.widgets.SAFE_INSET_PAD_BOTTOM)
+            width: Fill height: (mod.widgets.RBX_BOTTOM_TAB_H * max(1.0, mod.widgets.RINX_TEXT_SCALE) + mod.widgets.SAFE_INSET_PAD_BOTTOM)
             padding: Inset{bottom: (mod.widgets.SAFE_INSET_PAD_BOTTOM)}
             draw_bg.color: mod.widgets.RINX_PAGE
             chats_tab := mod.widgets.MobileTabButton {unread := UnreadBadge {}

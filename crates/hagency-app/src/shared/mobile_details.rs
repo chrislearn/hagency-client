@@ -18,7 +18,7 @@ script_mod! {
     mod.widgets.DetailRow = NavigationBarButton {
         width: Fill height: 56 flow: Right spacing: 12
         padding: Inset{left: 20 right: 20} align: Align{y: 0.5}
-        draw_bg +: {color_hover: mod.widgets.RINX_BORDER color_active: mod.widgets.RINX_BORDER border_radius: 0}
+        draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_SELECTED border_radius: 0}
         title := mod.widgets.DetailLabel {width: Fit max_lines: 1}
         value := mod.widgets.DetailLabel {
             width: Fill align: Align{x: 1} max_lines: 1 text_overflow: Ellipsis
@@ -34,7 +34,7 @@ script_mod! {
     }
     mod.widgets.DetailAction = NavigationBarButton {
         width: Fill height: 56 align: Align{x: 0.5 y: 0.5}
-        draw_bg +: {color_hover: mod.widgets.RINX_BORDER color_active: mod.widgets.RINX_BORDER border_radius: 0}
+        draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_SELECTED border_radius: 0}
         title := mod.widgets.DetailLabel {draw_text.color: mod.widgets.RINX_ACCENT}
     }
     mod.widgets.DetailHeader = SolidView {
@@ -51,12 +51,10 @@ script_mod! {
                 draw_icon +: {svg: ICON_CHEVRON_LEFT color: mod.widgets.RINX_INK}
             }
             View {width: Fill height: 1}
-            save := RobrixPositiveIconButton {
+            save := RinxPrimaryButton {
                 height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
-                visible: false text: #(crate::i18n::tr("Save")) i18n_text: "Save" width: 58 margin: Inset{right: 12} align: Align{x: 0.5 y: 0.5}
+                visible: false text: #(crate::i18n::tr("Save")) i18n_text: "Save" width: Fit margin: Inset{right: 12} align: Align{x: 0.5 y: 0.5}
                 icon_walk: Walk{width: 0 height: 0} spacing: 0
-                draw_bg +: {color: mod.widgets.RINX_ACCENT border_size: 0 border_radius: 4}
-                draw_text +: {color: mod.widgets.RINX_ON_ACCENT text_style: theme.font_regular {font_size: mod.widgets.RINX_BODY_SIZE}}
             }
         }
     }

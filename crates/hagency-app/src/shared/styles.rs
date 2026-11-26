@@ -92,7 +92,7 @@ script_mod! {
     mod.widgets.ICON_ADD_ATTACHMENT   = crate_resource("self://resources/icons/add_attachment.svg")
     mod.widgets.ICON_FILE             = crate_resource("self://resources/icons/file.svg")
 
-    mod.widgets.TITLE_TEXT = theme.font_regular {
+    mod.widgets.TITLE_TEXT = theme.font_bold {
         font_size: mod.widgets.RINX_HEADING_SIZE,
     }
 
@@ -129,7 +129,7 @@ script_mod! {
     mod.widgets.MESSAGE_TEXT_COLOR = mod.widgets.RINX_INK
     // notices (automated messages from bots) use a lighter color
     mod.widgets.COLOR_MESSAGE_NOTICE_TEXT = mod.widgets.RINX_MUTED
-    mod.widgets.MESSAGE_TEXT_LINE_SPACING = 1.3
+    mod.widgets.MESSAGE_TEXT_LINE_SPACING = 1.4
     // This font should only be used for plaintext labels. Don't use this for Html content,
     // as the Html widget sets different fonts for different text styles (e.g., bold, italic).
     mod.widgets.MESSAGE_TEXT_STYLE = theme.font_regular {
@@ -254,13 +254,13 @@ script_mod! {
 
     // Settings screen colors
     mod.widgets.COLOR_DROPDOWN_TEXT = mod.widgets.RINX_INK
-    mod.widgets.COLOR_DROPDOWN_BORDER = mod.widgets.RINX_BORDER
+    mod.widgets.COLOR_DROPDOWN_BORDER = mod.widgets.RINX_CONTROL_BORDER
     mod.widgets.COLOR_DROPDOWN_POPUP_BORDER = mod.widgets.RINX_BORDER
     mod.widgets.COLOR_DROPDOWN_ARROW = mod.widgets.RINX_MUTED
-    mod.widgets.COLOR_INACTIVE_BORDER = mod.widgets.RINX_BORDER
+    mod.widgets.COLOR_INACTIVE_BORDER = mod.widgets.RINX_CONTROL_BORDER
     mod.widgets.COLOR_DESCRIPTION_TEXT = mod.widgets.RINX_MUTED
     mod.widgets.COLOR_FIELD_LABEL = mod.widgets.RINX_MUTED
-    mod.widgets.COLOR_DISABLED_TEXT = mod.widgets.RINX_MUTED
+    mod.widgets.COLOR_DISABLED_TEXT = mod.widgets.RINX_DISABLED
 
     // Settings screen layout
     mod.widgets.SETTINGS_CONTENT_PADDING = 16
@@ -289,28 +289,6 @@ script_mod! {
         margin: 0,
         padding: Inset{left: 10 right: 10 top: 7 bottom: 7},
 
-        draw_bg +: {
-            border_radius: mod.widgets.RINX_CONTROL_RADIUS
-            border_size: 1.0
-
-            color: (mod.widgets.COLOR_PRIMARY)
-            color_hover: (mod.widgets.COLOR_PRIMARY)
-            color_focus: (mod.widgets.COLOR_PRIMARY)
-            color_down: (mod.widgets.COLOR_PRIMARY)
-            color_empty: (mod.widgets.COLOR_PRIMARY)
-            color_disabled: (mod.widgets.COLOR_BG_DISABLED)
-
-            border_color: (mod.widgets.COLOR_SECONDARY_DARKER)
-            border_color_hover: (mod.widgets.COLOR_ACTIVE_PRIMARY)
-            border_color_focus: (mod.widgets.COLOR_ACTIVE_PRIMARY_DARKER)
-            border_color_down: (mod.widgets.COLOR_ACTIVE_PRIMARY_DARKER)
-            border_color_empty: (mod.widgets.COLOR_SECONDARY_DARKER)
-            border_color_disabled: (mod.widgets.COLOR_FG_DISABLED)
-
-            color_2: vec4(-1.0, -1.0, -1.0, -1.0) // don't use color_2*
-            border_color_2: vec4(-1.0, -1.0, -1.0, -1.0) // don't use border_color_2*
-        }
-
         draw_selection +: {
             color: mod.widgets.COLOR_SELECT_TEXT
             color_hover:  (mod.widgets.COLOR_SELECT_TEXT)
@@ -320,22 +298,6 @@ script_mod! {
             color_disabled: (mod.widgets.COLOR_SELECT_TEXT)
         }
 
-        draw_cursor +: {
-            color: (mod.widgets.MESSAGE_TEXT_COLOR)
-        }
-
-        draw_text +: {
-            color: (mod.widgets.MESSAGE_TEXT_COLOR),
-            color_hover: (mod.widgets.MESSAGE_TEXT_COLOR),
-            color_focus: (mod.widgets.MESSAGE_TEXT_COLOR),
-            color_down: (mod.widgets.MESSAGE_TEXT_COLOR),
-            color_disabled: (mod.widgets.COLOR_FG_DISABLED),
-            color_empty: (mod.widgets.RINX_MUTED),
-            color_empty_hover: (mod.widgets.RINX_MUTED),
-            color_empty_focus: (mod.widgets.RINX_MUTED),
-
-            text_style: theme.font_regular{font_size: mod.widgets.RINX_UI_SIZE},
-        }
     }
 
     // A read-only CodeView with our light-theme syntax highlighting colors.
@@ -399,84 +361,86 @@ pub const COLOR_ROBRIX_PURPLE: Vec4 = vec4(0.341, 0.176, 0.8, 1.0); // theme-con
 pub const COLOR_ROBRIX_CYAN: Vec4 = vec4(0.031, 0.804, 0.78, 1.0); // theme-content: stable brand or avatar identity.
 pub const COLOR_UNKNOWN_ROOM_AVATAR: Vec4 = vec4(1.0, 0.431, 0.0, 1.0); // theme-content: stable brand or avatar identity.
 
-/// Applies positive (green) button styling to the given button.
+/// Recolor an existing button when a dialog changes action. Read the same
+/// registered recipe used by static buttons and copy only its paint fields.
+/// Layout, label, icon, interaction progress and widget identity stay local.
+fn apply_button_palette(cx: &mut Cx, button: &mut ButtonRef, recipe: LiveId) {
+    let palette = cx.with_vm(|vm| {
+        let widgets = vm.module(id!(widgets));
+        vm.bx.heap.value(widgets, recipe.into(), NoTrap)
+    });
+    script_apply_eval!(cx, button, {
+        let palette = #(palette)
+        draw_bg +: {
+            color: (palette.draw_bg.color)
+            color_focus: (palette.draw_bg.color_focus)
+            color_hover: (palette.draw_bg.color_hover)
+            color_down: (palette.draw_bg.color_down)
+            border_color: (palette.draw_bg.border_color)
+            border_color_focus: (palette.draw_bg.border_color_focus)
+            border_color_hover: (palette.draw_bg.border_color_hover)
+            border_color_down: (palette.draw_bg.border_color_down)
+            border_size: (palette.draw_bg.border_size)
+        }
+        draw_text +: {
+            color: (palette.draw_text.color)
+            color_hover: (palette.draw_text.color_hover)
+            color_down: (palette.draw_text.color_down)
+            color_focus: (palette.draw_text.color_focus)
+        }
+        draw_icon.color: (palette.draw_icon.color)
+    });
+}
+
 pub fn apply_positive_button_style(cx: &mut Cx, button: &mut ButtonRef) {
-    script_apply_eval!(cx, button, {
-        draw_bg +: {
-            border_color: mod.widgets.COLOR_FG_ACCEPT_GREEN,
-            color: mod.widgets.COLOR_BG_ACCEPT_GREEN,
-            color_hover: mod.widgets.RINX_SUCCESS_BG,
-            color_down: mod.widgets.RINX_SUCCESS_BG,
-        }
-        draw_text +: {
-            color: mod.widgets.COLOR_FG_ACCEPT_GREEN,
-            color_hover: mod.widgets.COLOR_FG_ACCEPT_GREEN,
-            color_down: mod.widgets.COLOR_FG_ACCEPT_GREEN,
-        }
-        draw_icon +: {
-            color: mod.widgets.COLOR_FG_ACCEPT_GREEN,
-        }
-    });
+    apply_button_palette(cx, button, id!(RobrixPositiveIconButton));
 }
 
-/// Applies negative (red) button styling to the given button.
 pub fn apply_negative_button_style(cx: &mut Cx, button: &mut ButtonRef) {
-    script_apply_eval!(cx, button, {
-        draw_bg +: {
-            border_color: mod.widgets.COLOR_FG_DANGER_RED,
-            color: mod.widgets.COLOR_BG_DANGER_RED,
-            color_hover: mod.widgets.RINX_DANGER_BG,
-            color_down: mod.widgets.RINX_DANGER_BG,
-        }
-        draw_text +: {
-            color: mod.widgets.COLOR_FG_DANGER_RED,
-            color_hover: mod.widgets.COLOR_FG_DANGER_RED,
-            color_down: mod.widgets.COLOR_FG_DANGER_RED,
-        }
-        draw_icon +: {
-            color: mod.widgets.COLOR_FG_DANGER_RED,
-        }
-    });
+    apply_button_palette(cx, button, id!(RobrixNegativeIconButton));
 }
 
-/// Applies neutral (gray) button styling to the given button.
 pub fn apply_neutral_button_style(cx: &mut Cx, button: &mut ButtonRef) {
-    script_apply_eval!(cx, button, {
-        draw_bg +: {
-            border_color: mod.widgets.COLOR_BG_DISABLED,
-            color: mod.widgets.COLOR_SECONDARY,
-            color_hover: mod.widgets.RINX_HOVER,
-            color_down: mod.widgets.RINX_PRESSED,
-        }
-        draw_text +: {
-            color: mod.widgets.COLOR_TEXT,
-            color_hover: mod.widgets.COLOR_TEXT,
-            color_down: mod.widgets.COLOR_TEXT,
-        }
-        draw_icon +: {
-            color: mod.widgets.COLOR_TEXT,
-        }
-    });
+    apply_button_palette(cx, button, id!(RinxButton));
 }
 
-/// Applies the primary (blue) button styling to the given button.
 pub fn apply_primary_button_style(cx: &mut Cx, button: &mut ButtonRef) {
-    script_apply_eval!(cx, button, {
-        draw_bg +: {
-            color: mod.widgets.COLOR_ACTIVE_PRIMARY,
-            color_hover: mod.widgets.COLOR_ACTIVE_PRIMARY_DARKER,
-            color_down: mod.widgets.RINX_ACCENT_DOWN,
-            border_color: #0000,
-            border_color_hover: #0000,
-            border_color_down: #0000,
+    apply_button_palette(cx, button, id!(RinxPrimaryButton));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reused_dialog_buttons_follow_the_current_action_palette() {
+        for appearance in [crate::theme::Appearance::Light, crate::theme::Appearance::Dark] {
+            let mut cx = Cx::new(Box::new(|_, _| {}));
+            let (mut button, theme) = cx.with_vm(|vm| {
+                crate::theme::tests::install(vm, crate::theme::Selection { appearance, ..Default::default() });
+                crate::app::register_widgets(vm);
+                let value = script_eval!(vm, {mod.widgets.RinxButton {text: "继续"}});
+                let button = WidgetRef::script_from_value(vm, value).as_button();
+                assert!(vm.take_errors().is_empty());
+                vm.bx.captured_errors = Some(Vec::new());
+                (button, crate::theme::snapshot_for_vm(vm))
+            });
+            for (recipe, foreground) in [
+                (id!(RobrixNegativeIconButton), theme.role("color.status.danger.foreground")),
+                (id!(RobrixPositiveIconButton), theme.role("color.status.success.foreground")),
+                (id!(RinxPrimaryButton), theme.on_accent),
+                (id!(RinxButton), theme.ink),
+            ] {
+                apply_button_palette(&mut cx, &mut button, recipe);
+                cx.with_vm(|vm| {
+                    let errors = vm.take_errors();
+                    assert!(errors.is_empty(), "{recipe}: {errors:?}");
+                    vm.bx.captured_errors = Some(Vec::new());
+                });
+                let button = button.borrow().unwrap();
+                assert_eq!(button.text.as_ref(), "继续");
+                assert_eq!(crate::theme::argb(button.draw_icon.color), crate::theme::argb(foreground));
+            }
         }
-        draw_text +: {
-            color: mod.widgets.COLOR_PRIMARY,
-            color_hover: mod.widgets.COLOR_PRIMARY,
-            color_down: mod.widgets.COLOR_PRIMARY,
-        }
-        draw_icon +: {
-            color: mod.widgets.COLOR_PRIMARY,
-        }
-    });
+    }
 }

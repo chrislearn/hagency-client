@@ -201,7 +201,7 @@ fn refresh_ui_in_language(
         }
         let labels = cx.with_vm(|vm| {
             let value = vm.bx.heap.value(source, id!(i18n_labels).into(), NoTrap);
-            if value.as_object().is_some() {
+            if value.is_array() || value.as_object().is_some() {
                 Vec::<String>::script_from_value(vm, value)
             } else {
                 Vec::new()
@@ -320,6 +320,39 @@ mod tests {
             "Chats {count} 中文"
         );
     }
+    #[test]
+    fn interface_dropdowns_translate_the_selected_value_and_every_option() {
+        use makepad_widgets::*;
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let ui = cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm);
+            crate::app::register_widgets(vm);
+            let value = script_eval!(vm, {mod.widgets.InterfaceSettings {}});
+            WidgetRef::script_from_value(vm, value)
+        });
+        let selectors = [
+            (id!(mode), vec!["Light", "Dark"]),
+            (id!(accent), vec!["Teal", "Violet"]),
+            (id!(view_mode_dropdown), vec!["Automatic (default)", "Force wide (desktop)", "Force narrow (mobile)"]),
+        ];
+        for (id, _) in &selectors {
+            ui.drop_down(&cx, &[*id]).set_selected_item(&mut cx, 1);
+        }
+        for language in [Language::Chinese, Language::English] {
+            refresh_ui_in_language(&mut cx, &ui, language);
+            for (id, options) in &selectors {
+                let dropdown = ui.drop_down(&cx, &[*id]);
+                assert_eq!(dropdown.selected_item(), 1);
+                assert_eq!(dropdown.selected_label(), text_for(language, options[1]));
+                for (index, key) in options.iter().enumerate() {
+                    dropdown.set_selected_item(&mut cx, index);
+                    assert_eq!(dropdown.selected_label(), text_for(language, key));
+                }
+                dropdown.set_selected_item(&mut cx, 1);
+            }
+        }
+    }
+
     #[test]
     fn catalog_is_complete_and_preserves_placeholders() {
         let en: BTreeMap<String, String> =

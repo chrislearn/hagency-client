@@ -22,6 +22,10 @@ pub enum ThemeStudioAction {
 script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
+    let AccentSwatch = RoundedView {
+        width: 18 height: 18
+        draw_bg +: {color: #0000 border_color: RINX_CONTROL_BORDER border_size: 1 border_radius: RINX_CONTROL_RADIUS}
+    }
     mod.widgets.ThemeStudio = #(ThemeStudio::register_widget(vm)) {
         ..mod.widgets.SolidView
         width: Fill{max: 920} height: Fill flow: Down padding: Inset{top: 20 bottom: 20} spacing: 12
@@ -42,11 +46,17 @@ script_mod! {
             theme_name := RinxInput {width: Fill}
             colors := View {width: Fill height: Fit flow: Flow.Right{wrap: true} spacing: 12
                 View {width: 180 height: Fit flow: Down spacing: 6
-                    RinxHint {text: #(crate::i18n::tr("Light accent")) i18n_text: "Light accent"}
+                    View {width: Fill height: Fit flow: Right spacing: RINX_SPACE_2 align: Align{y: 0.5}
+                        light_swatch := AccentSwatch {}
+                        RinxLabel {width: Fill height: Fit draw_text.text_style.font_size: RINX_UI_SIZE text: #(crate::i18n::tr("Light accent")) i18n_text: "Light accent"}
+                    }
                     light_accent := RinxInput {width: Fill}
                 }
                 View {width: 180 height: Fit flow: Down spacing: 6
-                    RinxHint {text: #(crate::i18n::tr("Dark accent")) i18n_text: "Dark accent"}
+                    View {width: Fill height: Fit flow: Right spacing: RINX_SPACE_2 align: Align{y: 0.5}
+                        dark_swatch := AccentSwatch {}
+                        RinxLabel {width: Fill height: Fit draw_text.text_style.font_size: RINX_UI_SIZE text: #(crate::i18n::tr("Dark accent")) i18n_text: "Dark accent"}
+                    }
                     dark_accent := RinxInput {width: Fill}
                 }
                 View {width: 140 height: Fit flow: Down spacing: 6
@@ -136,6 +146,17 @@ impl ThemeStudio {
             .set_text(cx, &self.status_text);
         self.view.redraw(cx);
     }
+    fn refresh_swatches(&self, cx: &mut Cx) {
+        for (input, swatch) in [(id!(light_accent), id!(light_swatch)), (id!(dark_accent), id!(dark_swatch))] {
+            let text = self.view.text_input(cx, &[input]).text();
+            let color = contract::color(&text)
+                .and_then(|token| contract::rgb(&token))
+                .map(|[r, g, b]| vec4(r as f32, g as f32, b as f32, 1.0))
+                .unwrap_or_default();
+            let mut swatch = self.view.view(cx, &[swatch]);
+            script_apply_eval!(cx, swatch, {draw_bg.color: #(color)});
+        }
+    }
     fn populate(&mut self, cx: &mut Cx, package: ThemePackage) {
         self.view
             .text_input(cx, ids!(theme_name))
@@ -174,6 +195,7 @@ impl ThemeStudio {
                 .text_input(cx, &[id])
                 .set_text(cx, &format!("#{color}"));
         }
+        self.refresh_swatches(cx);
         let tokens = resolved_light;
         let scale = tokens
             .get("typography.scale")
@@ -301,6 +323,7 @@ impl Widget for ThemeStudio {
         }
         if self.restore {
             self.restore = false;
+            self.refresh_swatches(cx);
             self.view
                 .view(cx, ids!(advanced))
                 .set_visible(cx, self.advanced);
@@ -314,6 +337,11 @@ impl Widget for ThemeStudio {
         }
         self.view.handle_event(cx, event, scope);
         if let Event::Actions(actions) = event {
+            if self.view.text_input(cx, ids!(light_accent)).changed(actions).is_some()
+                || self.view.text_input(cx, ids!(dark_accent)).changed(actions).is_some()
+            {
+                self.refresh_swatches(cx);
+            }
             let result = (|| -> Result<(), String> {
                 if self.view.button(cx, ids!(studio_close)).clicked(actions) {
                     cx.action(ThemeStudioAction::Close);
@@ -572,5 +600,53 @@ mod attachment_import_tests {
         let owner = Some(ruma::user_id!("@owner:example.org").to_owned());
         assert!(!import_scope_matches(&owner, 7, &owner, 9));
         assert!(import_scope_matches(&owner, 9, &owner, 9));
+    }
+}
+
+#[cfg(test)]
+mod swatch_tests {
+    use super::*;
+
+    fn edit(cx: &mut Cx, studio: &mut ThemeStudio, id: LiveId, text: &str) {
+        let input = studio.view.text_input(cx, &[id]);
+        input.set_text(cx, text);
+        let actions = cx.capture_actions(|cx| {
+            cx.widget_action(input.widget_uid(), TextInputAction::Changed(text.to_owned()));
+        });
+        studio.handle_event(cx, &Event::Actions(actions), &mut Scope::empty());
+    }
+
+    fn swatch(cx: &mut Cx, studio: &ThemeStudio, id: LiveId) -> [u8; 4] {
+        let view = studio.view.view(cx, &[id]);
+        let mut color = [f32::NAN; 4];
+        view.borrow().unwrap().draw_bg.get_instance(cx, id!(color), &mut color);
+        assert!(color.iter().all(|component| component.is_finite()));
+        color.map(|component| (component * 255.0).round() as u8)
+    }
+
+    #[test]
+    fn accent_swatches_follow_edits_and_restore_after_theme_reapply() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let (mut studio, value) = cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm);
+            crate::app::register_widgets(vm);
+            let value = script_eval!(vm, {mod.widgets.ThemeStudio {}});
+            (ThemeStudio::script_from_value(vm, value), value)
+        });
+        studio.active = true;
+        edit(&mut cx, &mut studio, id!(light_accent), "#116633");
+        edit(&mut cx, &mut studio, id!(dark_accent), "DDEEFF");
+        assert_eq!(swatch(&mut cx, &studio, id!(light_swatch)), [17, 102, 51, 255]);
+        assert_eq!(swatch(&mut cx, &studio, id!(dark_swatch)), [221, 238, 255, 255]);
+
+        edit(&mut cx, &mut studio, id!(light_accent), "#1");
+        assert_eq!(swatch(&mut cx, &studio, id!(light_swatch)), [0; 4]);
+        assert_eq!(swatch(&mut cx, &studio, id!(dark_swatch)), [221, 238, 255, 255]);
+
+        edit(&mut cx, &mut studio, id!(light_accent), "#AA3377");
+        cx.with_vm(|vm| studio.script_apply(vm, &Apply::ScriptReapply, &mut Scope::empty(), value));
+        studio.handle_event(&mut cx, &Event::Actions(Vec::new()), &mut Scope::empty());
+        assert_eq!(swatch(&mut cx, &studio, id!(light_swatch)), [170, 51, 119, 255]);
+        assert_eq!(swatch(&mut cx, &studio, id!(dark_swatch)), [221, 238, 255, 255]);
     }
 }

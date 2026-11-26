@@ -294,13 +294,8 @@ script_mod! {
             mentions_bar_width: instance(4.0)
 
             pixel: fn() {
-                // Multiply rather than replace, so a mention-highlighted message
-                // keeps its yellow on hover, just darker.
-                let base_color = mix(
-                    self.color,
-                    self.color * self.color_hover,
-                    self.hover
-                );
+                // Keep a mention's tint visible while moving toward the theme hover surface.
+                let base_color = mix(self.color, self.color_hover, self.hover * 0.75);
 
                 let with_highlight = mix(
                     base_color,
@@ -371,7 +366,7 @@ script_mod! {
 
             profile := View {
                 align: Align{x: 0.5, y: 0.0} // centered horizontally, top aligned
-                width: 49.0,
+                width: (49.0 * RINX_TEXT_SCALE),
                 height: Fit,
                 margin: Inset{top: 4.5, right: 10}
                 flow: Down,
@@ -582,7 +577,7 @@ script_mod! {
             padding: Inset{ top: 0, bottom: 2.5, left: (1.5 * mod.widgets.RINX_GUTTER), right: (1.5 * mod.widgets.RINX_GUTTER) },
             profile := View {
                 align: Align{x: 0.5, y: 0.0} // centered horizontally, top aligned
-                width: 49.0,
+                width: (49.0 * RINX_TEXT_SCALE),
                 height: Fit,
                 flow: Down,
                 timestamp := Timestamp {

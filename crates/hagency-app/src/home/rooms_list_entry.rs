@@ -45,7 +45,7 @@ script_mod! {
         text_overflow: Ellipsis
         draw_text +: {
             color: (RBX_FG_PRIMARY),
-            text_style: RBX_TEXT_BODY_STRONG {font_size: mod.widgets.RINX_UI_SIZE}
+            text_style: RBX_TEXT_BODY_STRONG {}
         }
         text: #(crate::i18n::tr("[Room name unknown]"))
     }
@@ -66,6 +66,7 @@ script_mod! {
             html_view +: {
                 html +: {
                     font_size: mod.widgets.RINX_UI_SIZE
+                    font_color: mod.widgets.RBX_FG_SECONDARY
                     max_lines: 2
                     text_overflow: Ellipsis
                     text_style_normal +: { font_size: mod.widgets.RINX_UI_SIZE, line_spacing: 1.32 }
@@ -200,10 +201,10 @@ script_mod! {
 
     mod.widgets.MobileRoomsListEntry = mod.widgets.RoomsListEntryContent {
         mobile: true
-        height: 72 padding: 0 spacing: 0 flow: Overlay clip_x: true
+        height: max(72, 72 * RINX_TEXT_SCALE) padding: 0 spacing: 0 flow: Overlay clip_x: true
         draw_bg +: {
             border_radius: 0
-            color: mod.widgets.RINX_SURFACE color_hover: mod.widgets.RINX_BORDER color_selected: mod.widgets.RINX_SURFACE
+            color: mod.widgets.RINX_SURFACE color_hover: mod.widgets.RINX_HOVER color_selected: mod.widgets.RINX_SELECTED
             pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size)
                 sdf.rect(0.0, 0.0, self.rect_size.x, self.rect_size.y)
@@ -232,7 +233,7 @@ script_mod! {
                 width: 72 height: Fill padding: 4 spacing: 0 align: Align{x: 0.5 y: 0.5}
                 text: #(crate::i18n::tr("Delete")) i18n_text: "Delete" icon_walk: Walk{width: 0 height: 0}
                 draw_bg +: {pixel: fn() {return mod.widgets.RINX_DANGER_FG.mix(mod.widgets.RINX_DANGER_FG, self.down)}}
-                draw_text +: {color: mod.widgets.RINX_DANGER_BG color_hover: mod.widgets.RINX_DANGER_BG color_down: mod.widgets.RINX_DANGER_BG text_style.font_size: mod.widgets.RINX_UI_SIZE}
+                draw_text +: {color: RINX_ON_DANGER color_hover: RINX_ON_DANGER color_down: RINX_ON_DANGER color_focus: RINX_ON_DANGER text_style.font_size: mod.widgets.RINX_UI_SIZE}
             }
         }
         chat_row := SolidView {
@@ -252,11 +253,12 @@ script_mod! {
             View {
                 width: Fill height: Fill align: Align{x: 1.0 y: 0.0}
                 margin: Inset{top: -5 right: -6}
-                mobile_badge := RoundedView {
-                    visible: false width: Fit height: 18 padding: Inset{left: 5 right: 5}
+                unread_badge := UnreadBadge {}
+                invite_badge := RoundedView {
+                    visible: false width: Fit height: Fit padding: Inset{left: 5 right: 5 top: 1 bottom: 1}
                     align: Align{x: 0.5 y: 0.5}
-                    draw_bg +: {color: mod.widgets.RINX_DANGER_FG border_radius: 9}
-                    count := RinxLabel {padding: 0 draw_text +: {color: mod.widgets.RINX_DANGER_BG text_style: theme.font_regular {font_size: mod.widgets.RINX_META_SIZE}}}
+                    draw_bg +: {color: RINX_WARNING_BG border_radius: RBX_RADIUS_PILL}
+                    RinxLabel {text: "!" padding: 0 draw_text +: {color: RINX_WARNING_FG text_style: RBX_TEXT_BADGE {}}}
                 }
             }
         }
@@ -647,10 +649,7 @@ impl RoomsListEntryContent {
         );
         if self.mobile {
             self.view.view(cx, ids!(muted_indicator)).set_visible(cx, room_info.notification_mode == Some(matrix_sdk::notification_settings::RoomNotificationMode::Mute));
-            let count = room_info.num_unread_messages.max(room_info.num_unread_mentions);
-            self.view.view(cx, ids!(mobile_badge)).set_visible(cx, room_info.is_marked_unread || count > 0);
-            let text = if count > 99 { "99+".into() } else if count == 0 { "•".into() } else { count.to_string() };
-            self.view.label(cx, ids!(count)).set_text(cx, &text);
+            self.view.view(cx, ids!(invite_badge)).set_visible(cx, false);
         }
         self.draw_common(cx, &room_info.room_avatar, room_info.is_selected);
         // Show tombstone icon if the room is tombstoned
@@ -680,12 +679,12 @@ impl RoomsListEntryContent {
         self.view.html_or_plaintext(cx, ids!(latest_message)).show_html(cx, &inviter_string);
         // an invite cannot ever be tombstoned
         self.view.view(cx, ids!(tombstone_icon)).set_visible(cx, false);
-        self.view
-            .unread_badge(cx, ids!(unread_badge))
-            .update_counts(false, 1, 0);
+        let unread = self.view.unread_badge(cx, ids!(unread_badge));
         if self.mobile {
-            self.view.view(cx, ids!(mobile_badge)).set_visible(cx, true);
-            self.view.label(cx, ids!(count)).set_text(cx, "!");
+            unread.update_counts(false, 0, 0);
+            self.view.view(cx, ids!(invite_badge)).set_visible(cx, true);
+        } else {
+            unread.update_counts(false, 1, 0);
         }
 
         self.draw_common(cx, &room_info.room_avatar, room_info.is_selected);

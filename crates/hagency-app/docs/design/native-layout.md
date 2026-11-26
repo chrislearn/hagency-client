@@ -7,12 +7,33 @@ surface hierarchy, typography and consistent component recipes, rather than a
 replacement renderer. The client's existing chat, Project and Agent navigation
 and authorization flows remain authoritative.
 
-## Shared rules
+## Typography and color
 
-- `theme.rs` supplies light/dark surface roles, a restrained accent, 24 px page
-  titles, 18 px card titles, 16 px section titles, 14 px body text and 12 px
-  supporting text. Makepad font sizes are points, so these logical pixel sizes
-  are converted by a factor of 0.75. Existing text enlargement still applies.
+Sizes are logical pixels at the default text setting. `theme.rs` converts to Makepad points and applies the user's text scale once. Use regular weight for reading and controls, bold for headings, unread names and key figures, and 1.4 line spacing for multiline body text.
+
+On Apple platforms, mixed Chinese and Latin interface text uses PingFang SC Regular and Semibold. Windows prefers Microsoft YaHei UI. On Linux, Fontconfig supplies the Chinese sans-serif fallback. The bundled faces cover missing glyphs, and code and emoji keep their own font families.
+
+| Use | Theme role | Size |
+| --- | --- | --- |
+| Timestamp, count, short caption | `RINX_META_SIZE` | 13 px |
+| Navigation, button, field and form label | `RINX_UI_SIZE` | 15 px |
+| Message, paragraph and list body | `RINX_BODY_SIZE` | 16 px |
+| Pane and card heading | `RINX_HEADING_SIZE` | 17 px |
+| Section heading | `RINX_SECTION_SIZE` | 19 px |
+| Dialog and view title | `RINX_TITLE_SIZE` | 22 px |
+| Workspace page title | `RINX_PAGE_TITLE_SIZE` | 26 px |
+
+- Use `PAGE`, `SURFACE` and `FIELD` for page, panel and inset fills. Use `INK` for primary text, `MUTED` for secondary text and placeholders, and `DISABLED` for unavailable controls.
+- Use `ACCENT` for primary actions and focus. Pair solid accent fills with `ON_ACCENT`. Use `SELECTED` for the current row and `HOVER` and `PRESSED` for pointer feedback.
+- Use the paired foreground and background roles for `SUCCESS`, `WARNING`, `DANGER` and `INFO`. Keep a label or identifying symbol with each status.
+- Use `CONTROL_BORDER` for control outlines, `BORDER` for structural edges and `DIVIDER` between items. Built-in themes target at least 4.5∶1 for normal text pairs and 3∶1 for control outlines against surrounding surfaces.
+
+All color names above take the `RINX_` prefix and follow the active theme.
+
+[Simplified Chinese settings at 430 px and 130% text size](native-layout/appearance-zh-narrow.png) · [Dark Agent list](native-layout/agents-zh-dark.png)
+
+## Layout and controls
+
 - `RinxLabel` has no implicit padding. Its parent owns alignment and spacing.
 - `RINX_SPACE_1` through `RINX_SPACE_8` provide 4, 8, 12, 16, 20, 24 and 32
   logical pixel steps, scaled by the active theme's density.

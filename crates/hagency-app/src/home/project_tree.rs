@@ -31,22 +31,22 @@ script_mod! {
             loading := LoadingSpinner {visible:false width:14 height:14 draw_bg.color:mod.widgets.RINX_MUTED}
             status := RinxLabel {
                 width:Fill height:Fit flow:Flow.Right{wrap:true}
-                draw_text +: {color:mod.widgets.RINX_MUTED text_style:theme.font_regular{font_size:mod.widgets.RINX_META_SIZE}}
+                draw_text +: {color:mod.widgets.RINX_MUTED text_style:theme.font_regular{font_size:mod.widgets.RINX_UI_SIZE}}
             }
-            retry := RinxGhostButton {visible:false width:Fit height:28 text:#(crate::i18n::tr("Retry")) i18n_text:"Retry"}
+            retry := RinxGhostButton {visible:false width:Fit height:RINX_BUTTON_HEIGHT text:#(crate::i18n::tr("Retry")) i18n_text:"Retry"}
         }
         list := PortalList {
             width: Fill height: Fill flow: Down auto_tail: false
-            Section := View {width:Fill height:32 padding:Inset{left:12 top:10 bottom:4}
-                name := RinxLabel {width:Fill draw_text +: {color:mod.widgets.RINX_MUTED text_style:theme.font_bold{font_size:mod.widgets.RINX_META_SIZE}}}
+            Section := View {width:Fill height:Fit padding:Inset{left:12 top:10 bottom:4}
+                name := RinxLabel {width:Fill draw_text +: {color:mod.widgets.RINX_MUTED text_style:theme.font_bold{font_size:mod.widgets.RINX_UI_SIZE}}}
             }
             Row := View {
-                width: Fill height: 37 flow: Down
-                row_surface := RoundedView {width: Fill height: 36 flow: Right align: Align{y: 0.5}
-                draw_bg +: {color: #0000 border_radius: 5 border_size: 0}
+                width: Fill height: Fit flow: Down padding: Inset{bottom:1}
+                row_surface := RoundedView {width: Fill height: RINX_BUTTON_HEIGHT flow: Right align: Align{y: 0.5}
+                draw_bg +: {color: #0000 border_radius: RINX_CONTROL_RADIUS border_size: 0}
                 disclosure := NavigationBarButton {
-                    width: 28 height: 36 flow: Overlay align: Align{x: 0.5 y: 0.5}
-                    draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: #0000 border_radius: 5}
+                    width: RINX_ICON_BUTTON_SIZE height: RINX_BUTTON_HEIGHT flow: Overlay align: Align{x: 0.5 y: 0.5}
+                    draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: #0000 border_radius: RINX_CONTROL_RADIUS}
                     closed := View {
                         width: 20 height: 20
                         Icon {icon_walk: Walk{width: 20 height: 20} draw_icon +: {svg: mod.widgets.ICON_PROJECT_FOLDER_CLOSED color: mod.widgets.RINX_ACCENT}}
@@ -57,9 +57,9 @@ script_mod! {
                     }
                 }
                 row := NavigationBarButton {
-                    width: Fill height: 36 flow: Right spacing: 8
+                    width: Fill height: RINX_BUTTON_HEIGHT flow: Right spacing: 8
                     align: Align{y: 0.5} padding: Inset{left: 4 right: 6}
-                    draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: #0000 border_radius: 5}
+                    draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: #0000 border_radius: RINX_CONTROL_RADIUS}
                     indent := View {width: 0 height: 1}
                     board_icon := View {visible: false width: 16 height: 16 Icon {icon_walk: Walk{width: 16 height: 16} draw_icon +: {svg: ICON_SQUARES color: mod.widgets.RINX_ACCENT}}}
                     room_icon := View {visible: false width: 16 height: 16 Icon {icon_walk: Walk{width: 16 height: 16} draw_icon +: {svg: ICON_THREADS color: mod.widgets.RINX_MUTED}}}
@@ -70,7 +70,7 @@ script_mod! {
                     default_badge := mod.widgets.RinxDefaultBadge {visible:false label +: {i18n_text:"default"}}
                     unread := UnreadBadge {}
                 }
-                View {width:32 height:32 more := RinxMoreButton {visible:false}}
+                View {width:RINX_ICON_BUTTON_SIZE height:RINX_ICON_BUTTON_SIZE more := RinxMoreButton {visible:false}}
                 }
 
             }
@@ -927,7 +927,6 @@ impl Widget for ProjectTree {
                 let item = list.item(cx, index, id!(Row));
                 if let Some(mut view)=item.borrow_mut::<View>() {
                     let project_row=self.mode==ProjectTreeMode::Projects && matches!(row,Row::Project(_));
-                    view.walk.height=Size::Fixed(if project_row {43.0}else{37.0});
                     view.layout.padding.top=if project_row {6.0}else{0.0};
                 }
                 let row_selected=if self.mode==ProjectTreeMode::Projects && let Some(selection)=self.selection.as_ref().filter(|s|self.identity.as_ref()==Some(&s.identity)) {
