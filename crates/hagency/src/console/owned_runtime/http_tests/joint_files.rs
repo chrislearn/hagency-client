@@ -398,6 +398,7 @@ async fn qualification() {
         credential_ref: "keychain:fixture".into(),
         takeover: Takeover::Never,
         host_files: true,
+        remote: None,
         owner_direct: false,
         recovery_device_id: None,
         recovery_consent_id: None,

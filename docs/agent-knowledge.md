@@ -6012,3 +6012,9 @@ Operator explicitly authorized this0.6.5 unsigned/manual-install exception with 
 ## 2026-11-05 — Desktop owner-direct partial creation recovery
 
 Desktop work branch pins the older native/ engine layout at1953981; current Client main's crates/ layout is a different codebase. Debug that exact pin in an independent source copy, never edit Cargo cache or point regression selectors at unrelated main. Palpo createRoom writes room/canonical_alias/initial state before its final alias directory operation, so a room can exist while stable-alias recovery returns404. Unknown creation must not repeat POST: a bounded complete joined-room scan may recover a unique room only after exact creator/owner/Agent marker/canonical-alias/private-state/member validation, followed by normal server owner-direct binding. State-read failure or ambiguity preserves unknown outcome. A watcher serving zero rooms needs attention, not permanent Starting. Start the dev wrapper fully and verify exactly one initialized app before CUA getApp; selecting the bundle during launch can create a second instance and conflict with SDK OAuth rotation.
+
+- **Remote runtime demo, 2026-11-26:** An owner-authorized HTTPS binding and a
+  freshly authorized Matrix execution are both required before exporting the
+  current text of an encrypted private Agent message. Persist the original run
+  route before submission and keep uncertain receipts for reconciliation. The
+  existing Matrix runtime seals and posts the answer.

@@ -724,6 +724,7 @@ async fn fixture_with_files(
         credential_ref: "keychain:fixture".into(),
         takeover: Takeover::Never,
         host_files: receive || sending,
+        remote: None,
         owner_direct: false,
         recovery_device_id: None,
         recovery_consent_id: None,
@@ -932,6 +933,7 @@ async fn typed_http_runtime_intent_recovery_rechecks_scope_and_explicit_stop_sur
         reservation: 50,
         effort: "low".into(),
         host_files: false,
+        remote_consent: None,
     };
     change_intent(
         &path,
@@ -985,6 +987,7 @@ async fn typed_http_runtime_intent_recovery_rechecks_scope_and_explicit_stop_sur
         credential_ref: "none".into(),
         takeover: Takeover::Never,
         host_files: saved.host_files,
+        remote: None,
         owner_direct: false,
         recovery_device_id: Some(saved.device_id.clone()),
         recovery_consent_id: Some(saved.consent_id.clone()),

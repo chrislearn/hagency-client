@@ -99,6 +99,7 @@ enum Target {
     Creation,
     Provider,
     Runtime,
+    RuntimeSetup,
     ListService,
     ServiceRoomChanged,
     ApprovalDecision,
@@ -138,7 +139,10 @@ struct RuntimeListCompleted { identity:String, request:u64, states:Vec<(String,R
 pub(crate) fn runtime_list_label(runtime:Option<&Result<Value,String>>,agent:&str)->&'static str {
     let Some(runtime)=runtime else {return "Checking local processing…";};
     let Ok(value)=runtime else {return "Local processing could not be verified. Refresh to retry.";};
+    if !value["remoteConfigurationError"].is_null() {return "Check the remote runtime binding.";}
     if service_needs_model(value) {return "No model is configured on this device. Open Model & resources, connect an account and save a model before starting.";}
+    let external = value["remoteRuntime"].is_object();
+    if external && value["service"]["enabled"] == false {return "Remote execution disabled. Open Service to enable it.";}
     if value["service"]["enabled"] == false && value["runtime"].is_null() {return "Not running on this device. Open Service to configure and start.";}
     if value["service"]["enabled"] == true && (value["service"]["watcherRunning"] == false || !string(&value["service"],"lastError").is_empty()) {return "Service needs attention. Refresh status or stop and start again.";}
     if !array(&value["service"],"problems").is_empty() {return "Some Rooms could not start. The service will retry automatically.";}
@@ -149,8 +153,8 @@ pub(crate) fn runtime_list_label(runtime:Option<&Result<Value,String>>,agent:&st
     let bindings=array(r,"bindings");
     let phases=if bindings.is_empty() {vec![string(r,"phase")]} else {bindings.iter().map(|b|string(b,"phase")).collect::<Vec<_>>()};
     if string(r,"phase")=="waiting_for_lease" || phases.contains(&"waiting_for_lease") {"Waiting for the previous runtime lease to be released…"}
-    else if phases.iter().any(|p|matches!(*p,"executing"|"executing_chat_only"|"executing_host_files")) {"Processing requests on this device."}
-    else if phases.iter().any(|p|matches!(*p,"online"|"online_chat_only")) {if value["service"]["enabled"] == false {"Running in previously selected Rooms. Stop and start to enable automatic Room discovery."} else {"Running in all connected Rooms on this device. New Rooms are included automatically; configured budgets and policy permissions still apply."}}
+    else if phases.iter().any(|p|matches!(*p,"executing"|"executing_chat_only"|"executing_host_files")) {if external {"Processing a request on the remote runtime."} else {"Processing requests on this device."}}
+    else if phases.iter().any(|p|matches!(*p,"online"|"online_chat_only")) {if external {"Remote execution enabled for your private Agent chat."} else if value["service"]["enabled"] == false {"Running in previously selected Rooms. Stop and start to enable automatic Room discovery."} else {"Running in all connected Rooms on this device. New Rooms are included automatically; configured budgets and policy permissions still apply."}}
     else if phases.iter().any(|p|matches!(*p,"awaiting_approval"|"waiting_owner")) {"Waiting for your approval before continuing."}
     else if phases.iter().any(|p|matches!(*p,"ledger_recovery_required"|"reconciliation_only")) {"Restore this owner's complete ledger before new requests. Only known original replies may be recovered."}
     else if !string(r,"lastError").is_empty() || bindings.iter().any(|b|!string(b,"lastError").is_empty()) {"The runtime stopped with an error. Check the details below."}
@@ -166,6 +170,14 @@ fn runtime_diagnostic(code: &str) -> String {
     // Use fixed explanations for runtime failures; other machine codes go
     // through the same validation as management errors.
     let message = match code {
+        "remote_runtime_binding_changed" => "The remote runtime binding changed. Stop and enable remote execution again.",
+        "remote_runtime_consent_required" => "Allow sending decrypted private chat text in the remote runtime binding before enabling execution.",
+        "remote_runtime_encrypted_inbox_required" => "The Hagency server needs the encrypted inbox protocol for remote execution.",
+        "remote_runtime_scope_required" => "Remote execution is available in the owner's encrypted private Agent chat.",
+        "remote_runtime_incompatible" => "The remote runtime binding or its server metadata could not be verified.",
+        "remote_runtime_unavailable" => "The remote runtime could not be reached. Check its HTTPS endpoint and provider status.",
+        "remote_runtime_entitlement_denied" => "The remote runtime rejected this binding. Check the invitation on its server.",
+        "remote_runtime_pending_reconciliation" => "The result of a remote run is unconfirmed. Check its original run in the remote runtime.",
         "agent_model_required" => "No model is configured on this device. Open Model & resources, connect an account and save a model before starting.",
         "runtime_profile_unavailable" => "The saved local model, workspace or account is unavailable. Open Model & resources, reconnect the account and save an available model.",
         "codex_programming_rules_unsupported" => "Programming cannot inherit Codex execution rules. Use a separate Codex sign-in and a workspace without .codex/rules.",
@@ -198,6 +210,10 @@ pub(crate) fn runtime_service_description(runtime: Option<&Result<Value,String>>
     let value=match runtime {Ok(value)=>value,Err(code)=>{text.push_str(&format!("\n{}",runtime_diagnostic(code)));return text;}};
     let mut diagnostics=Vec::new();
     let mut add=|code:&str| {if !code.is_empty() {let message=runtime_diagnostic(code);if !diagnostics.contains(&message) {diagnostics.push(message);}}};
+    add(string(value,"remoteConfigurationError"));
+    if value["pendingRemoteRun"].is_object() {
+        add("remote_runtime_pending_reconciliation");
+    }
     add(string(&value["service"],"lastError"));
     // A mismatched runtime must never supply another Agent's diagnostics.
     if string(&value["runtime"],"agentId")==agent {
@@ -1244,6 +1260,7 @@ script_mod! {
                         Text {text: #(crate::i18n::tr("Agent service")) i18n_text: "Agent service" draw_text.text_style: theme.font_bold{font_size: mod.widgets.RINX_TITLE_SIZE}}
                         runtime_chat_target := Text {draw_text.color: mod.widgets.RINX_MUTED}
                         runtime_status := Text {}
+                        remote_runtime_details := Text {visible: false draw_text.color: mod.widgets.RINX_MUTED}
                         service_logs_toggle := Action {text: #(crate::i18n::tr("View Service logs")) i18n_text: "View Service logs"}
                         service_logs_panel := Section {visible: false width: Fill height: Fit flow: Down spacing: 8
                             Text {text: #(crate::i18n::tr("Recent Service logs")) i18n_text: "Recent Service logs" draw_text.text_style: theme.font_bold{font_size: mod.widgets.RINX_TITLE_SIZE}}
@@ -1806,10 +1823,13 @@ impl HagencyPanel {
         if !self.local_agent(cx) {self.status(cx, "This Agent is not handled on this device. Assign it here before configuring local resources.");return;}
         self.runtime_resources_loading = true;
         self.runtime_resources_checked = false;
+        self.view.label(cx, ids!(runtime_status)).set_text(cx, crate::i18n::tr("Checking…"));
+        self.local(cx, Target::RuntimeSetup, LocalAction::AgentServiceStatus, None);
+    }
+    fn load_local_runtime_resources(&mut self, cx: &mut Cx) {
         self.runtime_efforts.clear();
         self.policy = Value::Null;
         self.view.drop_down(cx, ids!(effort)).set_labels(cx, vec!["Checking model choices…".into()]);
-        self.view.label(cx, ids!(runtime_status)).set_text(cx, crate::i18n::tr("Checking the saved model and connected local account…"));
         self.local(cx, Target::Policy, LocalAction::AgentModel, None);
     }
     fn cancel_read_wait(&mut self, cx: &mut Cx) {
@@ -2411,12 +2431,30 @@ impl HagencyPanel {
         let remote = self.remote_agent(cx);
         let configurable = assigned_here || (remote && self.configuration_online());
         self.render_configuration(cx);
-        self.view.view(cx,ids!(runtime_start_options)).set_visible(cx,!self.runtime_room_active);
+        let external = &self.agent_service_state["remoteRuntime"];
+        let external_configured = external.is_object();
+        let external_error = !self.agent_service_state["remoteConfigurationError"].is_null();
+        let external_consent = external["allowEncryptedOwnerDirect"] == true;
+        let remote_details = self.view.label(cx, ids!(remote_runtime_details));
+        remote_details.set_visible(cx, external_configured);
+        if external_configured {
+            let route = format!("{} · {} · {}", string(external, "endpoint"),
+                string(external, "provider"), string(external, "model"));
+            let disclosure = crate::i18n::tr(if external_consent {
+                "Your private chat text is sent to this runtime after decryption."
+            } else {
+                "Allow sending decrypted private chat text in the remote runtime binding before enabling execution."
+            });
+            remote_details.set_text(cx, &format!("{route}\n{disclosure}"));
+        }
+        let local_options = !external_configured && !external_error;
+        self.view.view(cx,ids!(runtime_start_options)).set_visible(cx, local_options && !self.runtime_room_active);
+        self.view.label(cx,ids!(runtime_model_settings)).set_visible(cx, local_options);
         let runtime_known=self.agent_service_state.is_object();
         let mut service_toggle=self.view.button(cx,ids!(service_toggle));
-        service_toggle.set_text(cx,crate::i18n::tr(if self.runtime_pending_action==Some(true) {"Starting…"} else if self.runtime_pending_action==Some(false) {"Stopping…"} else if !runtime_known {"Checking…"} else if self.runtime_room_active {"Stop responding"} else {"Start responding"}));
+        service_toggle.set_text(cx,crate::i18n::tr(if self.runtime_pending_action==Some(true) {"Starting…"} else if self.runtime_pending_action==Some(false) {"Stopping…"} else if !runtime_known {"Checking…"} else if external_configured && self.runtime_room_active {"Disable remote execution"} else if external_configured {"Enable remote execution"} else if self.runtime_room_active {"Stop responding"} else {"Start responding"}));
         if self.runtime_room_active {script_apply_eval!(cx,service_toggle,{draw_icon +: {svg: mod.widgets.ICON_SERVICE_STOP}});} else {script_apply_eval!(cx,service_toggle,{draw_icon +: {svg: mod.widgets.ICON_SERVICE_PLAY}});}
-        self.view.label(cx,ids!(runtime_restart_note)).set_visible(cx,self.runtime_room_active);
+        self.view.label(cx,ids!(runtime_restart_note)).set_visible(cx,local_options && self.runtime_room_active);
         let approval_selected=self.approval_checked && self.selected(cx,ids!(approvals),&self.approvals).is_some_and(|p| {
             !self.approval_blocked.contains(string(&p,"proposalId")) && self.approval_scope(cx).is_some_and(|(a,b,r)|super::approvals::matches(&p,&a,&b,&r,super::approvals::now()))
         });
@@ -2476,7 +2514,9 @@ impl HagencyPanel {
             && !self.input(cx,ids!(workspace)).is_empty() && string(profile,"workspace_root") == self.input(cx,ids!(workspace));
         let reason=if self.runtime_resources_loading {"Checking the saved model and connected local account…"} else if self.view.view(cx,ids!(runtime_section)).visible() && !self.runtime_resources_checked {"Model resources could not be verified. Refresh this Service page to retry."} else if !assigned_here {"Assign this Agent to this device in Agent and device."} else if !self.provider_authenticated {"Connect your account in Model & resources."} else if !model_ready || self.runtime_efforts.is_empty() {"Save a model in Model & resources. A private workspace is created automatically."} else {"Ready to start with a positive token reservation."};
         self.view.label(cx,ids!(start_requirements)).set_text(cx,crate::i18n::tr(reason));
-        let start_ready=self.provider_authenticated && model_ready && !self.runtime_efforts.is_empty() && !self.runtime_resources_loading && self.runtime_resources_checked;
+        let start_ready = external_consent || (local_options && self.provider_authenticated
+            && model_ready && !self.runtime_efforts.is_empty()
+            && !self.runtime_resources_loading && self.runtime_resources_checked);
         self.view.button(cx,ids!(service_toggle)).set_enabled(cx, assigned_here && runtime_known && !self.busy && (self.runtime_room_active || start_ready));
         let selected_agent = self.selected(cx, ids!(agents), &self.agents);
         let can_retire = selected_agent
@@ -2546,7 +2586,11 @@ impl HagencyPanel {
         self.render_provider_controls(cx);
         let policy_visible = self.view.view(cx, ids!(policy_section)).visible();
         if !assigned_here && ((!remote && (self.view.view(cx, ids!(model_section)).visible() || self.view.view(cx, ids!(policy_section)).visible())) || self.view.view(cx, ids!(runtime_section)).visible()) {self.section(cx, ids!(setup_section));}
-        self.view.label(cx, ids!(runtime_chat_target)).set_text(cx, crate::i18n::tr("Automatically serves all connected Rooms, including Rooms added later."));
+        self.view.label(cx, ids!(runtime_chat_target)).set_text(cx, crate::i18n::tr(if external_configured {
+            "Serves your encrypted private Agent chat."
+        } else {
+            "Automatically serves all connected Rooms, including Rooms added later."
+        }));
         let room_scoped = self.view.view(cx, ids!(setup_section)).visible();
         let setup_visible = self.view.view(cx, ids!(setup_section)).visible();
         self.view.view(cx, ids!(retirement_section)).set_visible(cx, setup_visible);
@@ -2679,6 +2723,11 @@ impl HagencyPanel {
                 if self.agent_card_targets.get(&row.widget_uid()) != Some(&id) {return true;}
                 let Some(Ok(status))=self.runtime_list.get(&id) else {return true;};
                 let enabled=service_enabled(status);
+                if !enabled && (!status["remoteRuntime"].is_null() || !status["remoteConfigurationError"].is_null()) {
+                    self.agent_detail(cx, index);
+                    self.wanted_run = Some((id, String::new()));
+                    return true;
+                }
                 if service_needs_model(status) {
                     self.agent_detail(cx,index);
                     self.wanted_run=None;
@@ -2966,7 +3015,7 @@ impl HagencyPanel {
         self.set_busy(cx, true);
         if matches!(target,Target::AgentCreated) {self.agent_creating=true;}
         self.sync_navigation(cx);
-        let quiet = matches!(target,Target::ModelSaved | Target::ListService | Target::ServiceRoomChanged | Target::ConfigurationStatus) || (matches!(target,Target::Runtime) && self.agent_service_state.is_object());
+        let quiet = matches!(target,Target::ModelSaved | Target::ListService | Target::ServiceRoomChanged | Target::ConfigurationStatus) || matches!(target, Target::RuntimeSetup) || (matches!(target,Target::Runtime) && self.agent_service_state.is_object());
         if !matches!(target,Target::ConfigurationStatus) {self.status(
             cx,
             if quiet {""} else {match target {
@@ -3531,8 +3580,10 @@ impl HagencyPanel {
                 self.view.drop_down(cx, ids!(policy_layer)).set_selected_item(cx, 0);
                 if let Some((agent,binding))=self.wanted_run.take()
                     && self.agent(cx).as_deref()==Some(agent.as_str())
-                    && let Some(index)=self.bindings.iter().position(|b|string(b,"id")==binding) {
-                    self.select_policy_room(cx,index+1);
+                    && (binding.is_empty() || self.bindings.iter().any(|b|string(b,"id")==binding)) {
+                    if let Some(index)=self.bindings.iter().position(|b|string(b,"id")==binding) {
+                        self.select_policy_room(cx,index+1);
+                    }
                     self.section(cx,ids!(runtime_section));
                     if self.local_agent(cx) {self.load_runtime_resources(cx);}
                     return;
@@ -3660,6 +3711,14 @@ impl HagencyPanel {
                     for id in [ids!(provider_login),ids!(provider_logout),ids!(provider_cancel),ids!(provider_open),ids!(disconnect_provider)] {self.view.button(cx,id).set_visible(cx,false);}
                 }
                 self.render_model_advanced(cx);
+            }
+            Target::RuntimeSetup => {
+                self.apply(cx, Target::Runtime, value);
+                if value["remoteRuntime"].is_null() && value["remoteConfigurationError"].is_null() {
+                    self.load_local_runtime_resources(cx);
+                } else {
+                    self.runtime_resources_loading = false;
+                }
             }
             Target::Runtime => {
                 cx.stop_timer(self.runtime_list_timer);
@@ -4165,7 +4224,12 @@ impl Widget for HagencyPanel {
                             self.view.label(cx,ids!(approval_feedback)).set_text(cx,crate::i18n::tr("Decision delivery is unconfirmed. Refresh status; do not resubmit this request."));
                             self.refresh_approvals(cx);
                         }
-                        if self.runtime_resources_loading && matches!(done.target, Target::Policy | Target::ProviderModels) {self.runtime_resources_loading=false;self.runtime_resources_checked=false;}
+                        if self.runtime_resources_loading
+                            && matches!(done.target, Target::RuntimeSetup | Target::Policy | Target::ProviderModels)
+                        {
+                            self.runtime_resources_loading = false;
+                            self.runtime_resources_checked = false;
+                        }
                         let reauthenticate = matches!(
                             error.as_str(),
                             "matrix_oauth_sign_in_required"
@@ -4183,11 +4247,11 @@ impl Widget for HagencyPanel {
                         } else if error == "matrix_authorization_unavailable" {
                             "Cannot verify this account right now. Check the server connection and retry.".to_owned()
                         } else {
-                            if matches!(done.target,Target::ListService | Target::Runtime) {runtime_diagnostic(error)} else {visible_error(error)}
+                            if matches!(done.target,Target::ListService | Target::Runtime | Target::RuntimeSetup) {runtime_diagnostic(error)} else {visible_error(error)}
                         };
                         if !matches!(done.target,Target::ConfigurationStatus | Target::ModelSaved) {self.show_failure(cx,done.target,error,&message);}
                         if matches!(done.target,Target::ProjectArchived|Target::NavigationDefaultChanged) {self.load_project_home(cx);}
-                        if matches!(done.target,Target::Runtime) {
+                        if matches!(done.target,Target::Runtime | Target::RuntimeSetup) {
                             let current=Ok(self.agent_service_state.clone());
                             let mut summary=runtime_service_description(Some(&current),self.agent(cx).as_deref().unwrap_or(""));
                             summary.push_str(&format!("\n{}",if self.runtime_action_error.is_empty() {message.as_str()} else {self.runtime_action_error.as_str()}));
@@ -5036,6 +5100,10 @@ impl Widget for HagencyPanel {
             if !self.local_agent(cx) {
                 self.runtime_feedback(cx,"Assign this Agent to this device before starting it here."); return;
             }
+            if self.agent_service_state["remoteRuntime"]["allowEncryptedOwnerDirect"] == true {
+                self.local(cx, Target::Runtime, LocalAction::StartAgentService, Some(json!({})));
+                return;
+            }
             let Ok(reservation) = self.input(cx, ids!(reservation)).parse::<u64>() else {
                 self.runtime_feedback(cx, "Enter a positive token reservation.");
                 return;
@@ -5375,9 +5443,12 @@ impl Widget for HagencyPanel {
                 let status=self.runtime_list.get(string(value,"id")).and_then(|r|r.as_ref().ok());
                 let enabled=status.is_some_and(service_enabled);
                 control.set_enabled(cx,here && status.is_some() && !self.busy && (enabled || string(value,"state")=="active"));
-                control.set_text(cx,crate::i18n::tr(if self.busy && self.list_service_pending_agent==string(value,"id") {"Working…"} else if enabled {"Stop"} else if status.is_some_and(service_needs_model) {"Configure"} else {"Start"}));
+                let configured_external = status.is_some_and(|v| !v["remoteRuntime"].is_null()
+                    || !v["remoteConfigurationError"].is_null());
+                let configure = configured_external || status.is_some_and(service_needs_model);
+                control.set_text(cx,crate::i18n::tr(if self.busy && self.list_service_pending_agent==string(value,"id") {"Working…"} else if enabled {"Stop"} else if configure {"Configure"} else {"Start"}));
                 let mut control=control;
-                if enabled {script_apply_eval!(cx,control,{draw_icon +: {svg: mod.widgets.ICON_SERVICE_STOP}});} else if status.is_some_and(service_needs_model) {script_apply_eval!(cx,control,{draw_icon +: {svg: mod.widgets.ICON_SETTINGS}});} else {script_apply_eval!(cx,control,{draw_icon +: {svg: mod.widgets.ICON_SERVICE_PLAY}});}
+                if enabled {script_apply_eval!(cx,control,{draw_icon +: {svg: mod.widgets.ICON_SERVICE_STOP}});} else if configure {script_apply_eval!(cx,control,{draw_icon +: {svg: mod.widgets.ICON_SETTINGS}});} else {script_apply_eval!(cx,control,{draw_icon +: {svg: mod.widgets.ICON_SERVICE_PLAY}});}
                 if self.page==Page::Agents && here && let Some(error)=self.runtime_list_errors.get(string(value,"id")) {summary.push_str(&format!("\n{error}"));}
                 if self.page==Page::Agents {summary=string(value,"puppetMxid").to_owned();
                     let selected=self.agent(cx).as_deref()==Some(string(value,"id"));
@@ -6276,6 +6347,46 @@ mod tests {
         panel.busy=true;
         panel.sync_navigation(&mut cx);
         assert!(!panel.view.button(&cx,ids!(service_toggle)).borrow().unwrap().enabled(),"in-flight operation cannot be toggled twice");
+    }
+    #[test]
+    fn remote_service_can_start_without_local_resources_after_explicit_consent() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut panel = cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm);
+            crate::app::register_widgets(vm);
+            let value = script_eval!(vm, {mod.widgets.HagencyPanel {}});
+            HagencyPanel::script_from_value(vm, value)
+        });
+        panel.agents = vec![json!({"id":"a"})];
+        panel.labels(&mut cx, ids!(agents), "Select", &panel.agents, "id");
+        panel.view.drop_down(&cx, ids!(agents)).set_selected_item(&mut cx, 1);
+        local_device_fixture(&mut panel, "a");
+        let mut status = json!({
+            "service":{"enabled":false},
+            "remoteRuntime":{"endpoint":"https://runtime.example/","provider":"claude",
+                "model":"demo","allowEncryptedOwnerDirect":false}
+        });
+        panel.load_runtime_resources(&mut cx);
+        assert!(panel.runtime_resources_loading);
+        panel.apply(&mut cx, Target::RuntimeSetup, &status);
+        panel.sync_navigation(&mut cx);
+        assert!(!panel.runtime_resources_loading);
+        assert!(!panel.view.button(&cx, ids!(service_toggle)).borrow().unwrap().enabled());
+
+        status["remoteRuntime"]["allowEncryptedOwnerDirect"] = true.into();
+        panel.apply(&mut cx, Target::Runtime, &status);
+        panel.sync_navigation(&mut cx);
+        let toggle = panel.view.button(&cx, ids!(service_toggle));
+        assert!(toggle.borrow().unwrap().enabled());
+        assert_eq!(toggle.text(), crate::i18n::tr("Enable remote execution"));
+        assert!(panel.view.label(&cx, ids!(remote_runtime_details)).text()
+            .contains("https://runtime.example/"));
+        assert!(!panel.view.view(&cx, ids!(runtime_start_options)).visible());
+
+        status["service"]["enabled"] = true.into();
+        panel.apply(&mut cx, Target::Runtime, &status);
+        panel.sync_navigation(&mut cx);
+        assert_eq!(toggle.text(), crate::i18n::tr("Disable remote execution"));
     }
     #[test]
     fn token_amount_is_hidden_for_unset_and_unlimited_without_changing_policy() {

@@ -1,5 +1,6 @@
 //! Owner-started Codex host with scoped plaintext and encrypted owner transport.
 mod encrypted;
+pub(super) mod remote;
 #[cfg(unix)]
 mod encrypted_files;
 mod pending;
@@ -42,6 +43,7 @@ pub(super) struct StartConfig {
     pub profile: Profile,
     pub mode: BudgetMode,
     pub credential_ref: String,
+    pub remote: Option<remote::RemoteBinding>,
     pub takeover: Takeover,
     pub host_files: bool,
     // Overwritten from authenticated server binding metadata, never a UI option.
@@ -61,6 +63,8 @@ pub(super) struct RuntimeIntent {
     pub reservation: u64,
     pub effort: String,
     pub host_files: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remote_consent: Option<String>,
 }
 impl RuntimeIntent {
     pub(super) fn start_input(&self) -> serde_json::Value {
@@ -225,6 +229,7 @@ fn verify_recovery_intent(
                     && v.reservation == reservation
                     && v.effort == config.profile.effort
                     && v.host_files == config.host_files
+                    && v.remote_consent == config.remote.as_ref().map(remote::RemoteBinding::consent)
             });
             if valid {
                 Ok(())
@@ -265,6 +270,7 @@ fn save_intent(
             reservation,
             effort: config.profile.effort.clone(),
             host_files: config.host_files,
+            remote_consent: config.remote.as_ref().map(remote::RemoteBinding::consent),
         }),
         config.recovery_consent_id.as_deref(),
     )
@@ -306,6 +312,8 @@ pub(super) struct RuntimeStatus {
     pub bindings: Vec<RuntimeStatus>,
     pub phase: &'static str,
     pub last_error: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remote_endpoint: Option<String>,
     pub native_tools: bool,
     pub strict_token_cap: bool,
     pub host_file_tools: bool,
@@ -315,7 +323,11 @@ pub(super) struct RuntimeStatus {
     pub capability_version: Option<&'static str>,
 }
 impl RuntimeStatus {
-    fn with_capabilities(self, config: &StartConfig) -> Self {
+    fn with_capabilities(mut self, config: &StartConfig) -> Self {
+        if let Some(remote) = &config.remote {
+            self.remote_endpoint = Some(remote.endpoint().to_owned());
+            return self;
+        }
         let mut status = self.with_host_files(config.host_files);
         status.native_tools = config.profile.programming.enabled;
         status.file_replace = config.profile.programming.enabled;
@@ -340,6 +352,7 @@ impl RuntimeStatus {
             bindings: vec![],
             phase,
             last_error: error,
+            remote_endpoint: None,
             native_tools: false,
             strict_token_cap: false,
             host_file_tools: false,
@@ -596,7 +609,7 @@ impl OwnedRuntime {
         let _update_task = crate::update_guard::PROCESS
             .enter_task()
             .ok_or(RuntimeError::Execution("update_in_progress"))?;
-        if config.host_files && config.profile.programming.enabled {
+        if config.host_files && (config.profile.programming.enabled || config.remote.is_some()) {
             return Err(RuntimeError::Profile);
         }
         match config.mode {
@@ -606,34 +619,36 @@ impl OwnedRuntime {
             }
             _ => {}
         }
-        runtime::validate(&config.profile, &config.credential_ref).map_err(
-            |error| match error {
-                codex::Error::Profile("ambient execution rules are unsupported") => {
-                    RuntimeError::Execution("codex_programming_rules_unsupported")
-                }
-                _ => RuntimeError::Profile,
-            },
-        )?;
-        if config.profile.executable
-            != super::owner_provider::external::executable(runtime::kind(&config.credential_ref))
-                .map_err(|_| RuntimeError::Profile)?
-        {
-            return Err(RuntimeError::Profile);
-        }
-        if runtime::managed_reference(&config.credential_ref).is_some() {
-            super::owner_provider::external::verify_reference(
+        if config.remote.is_none() {
+            runtime::validate(&config.profile, &config.credential_ref).map_err(
+                |error| match error {
+                    codex::Error::Profile("ambient execution rules are unsupported") => {
+                        RuntimeError::Execution("codex_programming_rules_unsupported")
+                    }
+                    _ => RuntimeError::Profile,
+                },
+            )?;
+            if config.profile.executable
+                != super::owner_provider::external::executable(runtime::kind(&config.credential_ref))
+                    .map_err(|_| RuntimeError::Profile)?
+            {
+                return Err(RuntimeError::Profile);
+            }
+            if runtime::managed_reference(&config.credential_ref).is_some() {
+                super::owner_provider::external::verify_reference(
+                    &config.profile.codex_home,
+                    &config.credential_ref,
+                )
+                .map_err(|_| RuntimeError::Profile)?;
+            } else if super::owner_provider::selected_reference(
                 &config.profile.codex_home,
-                &config.credential_ref,
+                config.profile.shared_auth,
             )
-            .map_err(|_| RuntimeError::Profile)?;
-        } else if super::owner_provider::selected_reference(
-            &config.profile.codex_home,
-            config.profile.shared_auth,
-        )
-        .map_err(|_| RuntimeError::Profile)?
-            != config.credential_ref
-        {
-            return Err(RuntimeError::Profile);
+            .map_err(|_| RuntimeError::Profile)?
+                != config.credential_ref
+            {
+                return Err(RuntimeError::Profile);
+            }
         }
         let device = console.authorized_device().await.map_err(device_error)?;
         device.bearer().map_err(|_| RuntimeError::Authorization)?;
@@ -689,6 +704,13 @@ impl OwnedRuntime {
             })
             .ok_or(RuntimeError::Profile)?;
         config.owner_direct = binding.scope_kind == "owner_direct";
+        if let Some(remote) = &config.remote {
+            if !config.owner_direct {
+                return Err(RuntimeError::Execution("remote_runtime_scope_required"));
+            }
+            remote::verify_matrix_transport(device.origin()).await?;
+            remote.verify(device.owner_mxid(), &config.agent_id).await?;
+        }
         let root = console
             .0
             .server_login
@@ -702,23 +724,25 @@ impl OwnedRuntime {
             device.owner_mxid(),
         )
         .map_err(|_| RuntimeError::Profile)?;
-        // Paths are owner-specific, and must be initialized by the owner. A
-        // caller cannot silently repurpose ~/.codex or another owner's login.
-        let expected = super::owner_provider::external::paths_for_reference(
-            &root,
-            device.origin(),
-            device.issuer(),
-            device.subject(),
-            device.owner_mxid(),
-            &config.credential_ref,
-        )
-        .map_err(|_| RuntimeError::Profile)?;
-        if config.profile.codex_home != expected.codex_home
-            || config.profile.home != expected.home
-            || config.profile.shared_auth != expected.shared
-            || config.credential_ref != expected.credential_ref
-        {
-            return Err(RuntimeError::Profile);
+        if config.remote.is_none() {
+            // Paths are owner-specific, and must be initialized by the owner. A
+            // caller cannot silently repurpose ~/.codex or another owner's login.
+            let expected = super::owner_provider::external::paths_for_reference(
+                &root,
+                device.origin(),
+                device.issuer(),
+                device.subject(),
+                device.owner_mxid(),
+                &config.credential_ref,
+            )
+            .map_err(|_| RuntimeError::Profile)?;
+            if config.profile.codex_home != expected.codex_home
+                || config.profile.home != expected.home
+                || config.profile.shared_auth != expected.shared
+                || config.credential_ref != expected.credential_ref
+            {
+                return Err(RuntimeError::Profile);
+            }
         }
         let mut ledger = local(Ledger::open_scoped(
             &path,
@@ -739,15 +763,17 @@ impl OwnedRuntime {
             thread: "runtime-profile-validation".into(),
         };
         local(ledger.register_binding(device.owner_mxid(), &scope))?;
-        match local(ledger.model_profile(&scope))? {
-            Some(p)
-                if p.model == config.profile.model
-                    && p.workspace_root == config.profile.cwd.to_string_lossy()
-                    && p.credential_ref == config.credential_ref
-                    && (p.credential_ref.starts_with("keychain:")
-                        || p.credential_ref.starts_with("codex-managed:")
-                        || runtime::managed_reference(&p.credential_ref).is_some()) => {}
-            _ => return Err(RuntimeError::Profile),
+        if config.remote.is_none() {
+            match local(ledger.model_profile(&scope))? {
+                Some(p)
+                    if p.model == config.profile.model
+                        && p.workspace_root == config.profile.cwd.to_string_lossy()
+                        && p.credential_ref == config.credential_ref
+                        && (p.credential_ref.starts_with("keychain:")
+                            || p.credential_ref.starts_with("codex-managed:")
+                            || runtime::managed_reference(&p.credential_ref).is_some()) => {}
+                _ => return Err(RuntimeError::Profile),
+            }
         }
         let key = identity(&device, &config.agent_id);
         let mut entries = self.entries_for(&device).await?;
@@ -1688,10 +1714,12 @@ async fn run_host(
     let agent = initial.config.agent_id.clone();
     // Verify the owner's dedicated provider before any acquisition or explicit
     // takeover can disrupt an existing device. This is account/config only.
-    let mut provider = tokio::select! {biased;_=canceled(&mut cancel)=>return Err(RuntimeError::Stopped),p=runtime::spawn(&initial.config.profile,&initial.config.credential_ref)=>p.map_err(|error|provider_failure("provider_spawn", &error))?};
-    let checked = tokio::select! {biased;_=canceled(&mut cancel)=>Err(RuntimeError::Stopped),r=async {check_provider(&mut provider.session).await}=>r};
-    stop_provider(&mut provider).await?;
-    checked?;
+    if initial.config.remote.is_none() {
+        let mut provider = tokio::select! {biased;_=canceled(&mut cancel)=>return Err(RuntimeError::Stopped),p=runtime::spawn(&initial.config.profile,&initial.config.credential_ref)=>p.map_err(|error|provider_failure("provider_spawn", &error))?};
+        let checked = tokio::select! {biased;_=canceled(&mut cancel)=>Err(RuntimeError::Stopped),r=async {check_provider(&mut provider.session).await}=>r};
+        stop_provider(&mut provider).await?;
+        checked?;
+    }
     let mut ledger = local(Ledger::open_scoped(&path, &owner, &profile_id))?;
     let (lease, history_snapshot, pre_covered) = acquire_for_start(
         &transport,
@@ -1738,9 +1766,11 @@ async fn run_host(
                 let mut work=work;
                 let result=async {
                     let startup = wait_for_update_fence(&crate::update_guard::PROCESS, &mut work.receiver).await?;
-                    let mut provider=tokio::select! {biased;_=canceled(&mut work.receiver)=>return Err(RuntimeError::Stopped),p=runtime::spawn(&work.config.profile,&work.config.credential_ref)=>p.map_err(|error|provider_failure("provider_spawn", &error))?};
-                    let checked=tokio::select! {biased;_=canceled(&mut work.receiver)=>Err(RuntimeError::Stopped),r=async {check_provider(&mut provider.session).await}=>r};
-                    stop_provider(&mut provider).await?;checked?;
+                    if work.config.remote.is_none() {
+                        let mut provider=tokio::select! {biased;_=canceled(&mut work.receiver)=>return Err(RuntimeError::Stopped),p=runtime::spawn(&work.config.profile,&work.config.credential_ref)=>p.map_err(|error|provider_failure("provider_spawn", &error))?};
+                        let checked=tokio::select! {biased;_=canceled(&mut work.receiver)=>Err(RuntimeError::Stopped),r=async {check_provider(&mut provider.session).await}=>r};
+                        stop_provider(&mut provider).await?;checked?;
+                    }
                     drop(startup);
                     let mut ledger=local(Ledger::open_scoped(&path,&owner,&profile_id))?;
                     let mut ready=RuntimeStatus::new(&work.config.agent_id,if models_allowed{if work.config.profile.programming.enabled{"online"}else{"online_chat_only"}}else{"ledger_recovery_required"},if models_allowed{None}else{Some("ledger_recovery_required")}).with_capabilities(&work.config);ready.binding_id=Some(work.config.binding_id.clone());work.status.send_replace(ready);
@@ -2153,14 +2183,16 @@ async fn execution_loop_admitted<T: Transport>(
             }
             let scope = record.dispatch.scope();
             // Profile changes require another explicit owner start.
-            let profile = local(ledger.model_profile(&scope))?.ok_or(RuntimeError::Profile)?;
-            if profile.model != config.profile.model
-                || profile.credential_ref != config.credential_ref
-                || profile.workspace_root != config.profile.cwd.to_string_lossy()
-                || profile.web_search != config.profile.web_search
-                || profile.programming != config.profile.programming
-            {
-                return Err(RuntimeError::Profile);
+            if config.remote.is_none() {
+                let profile = local(ledger.model_profile(&scope))?.ok_or(RuntimeError::Profile)?;
+                if profile.model != config.profile.model
+                    || profile.credential_ref != config.credential_ref
+                    || profile.workspace_root != config.profile.cwd.to_string_lossy()
+                    || profile.web_search != config.profile.web_search
+                    || profile.programming != config.profile.programming
+                {
+                    return Err(RuntimeError::Profile);
+                }
             }
             if local(ledger.inbox_available_bytes(owner))? < 65_536 {
                 return Err(RuntimeError::Profile);
@@ -2197,26 +2229,33 @@ async fn execution_loop_admitted<T: Transport>(
                     else {
                         continue;
                     };
-                    tokio::time::timeout(
-                        Duration::from_secs(1200),
-                        run_turn(
-                            console,
-                            lease,
-                            ledger,
-                            owner,
-                            config,
-                            permit.into_prepared(),
-                            cancel,
-                            status,
-                        ),
-                    )
-                    .await
-                    .unwrap_or_else(|_| {
-                        Err(provider_failure(
-                            "agent_turn_deadline",
-                            &codex::Error::Timeout,
-                        ))
-                    })
+                    let prepared = permit.into_prepared();
+                    if let Some(remote) = &config.remote {
+                        run_remote_turn(
+                            console, lease, ledger, owner, config, remote, &prepared, cancel, status,
+                        ).await
+                    } else {
+                        tokio::time::timeout(
+                            Duration::from_secs(1200),
+                            run_turn(
+                                console,
+                                lease,
+                                ledger,
+                                owner,
+                                config,
+                                prepared,
+                                cancel,
+                                status,
+                            ),
+                        )
+                        .await
+                        .unwrap_or_else(|_| {
+                            Err(provider_failure(
+                                "agent_turn_deadline",
+                                &codex::Error::Timeout,
+                            ))
+                        })
+                    }
                 }
                 Err(error) => Err(error),
                 _ => Err(RuntimeError::Transport),
@@ -2243,6 +2282,9 @@ async fn execution_loop_admitted<T: Transport>(
                     &prepared.execution_id,
                     finish,
                 ))?;
+                if let Some(remote) = &config.remote {
+                    remote.resolved(&prepared.execution_id);
+                }
                 let outcome = match finish {
                     Finish::Rejected => Outcome::Rejected,
                     Finish::Failed => Outcome::Failed,
@@ -2586,6 +2628,67 @@ async fn review_request<T: Transport>(
     }
     Ok(applied)
 }
+#[allow(clippy::too_many_arguments)]
+async fn run_remote_turn<T: Transport>(
+    transport: &T,
+    lease: &LeaseRef,
+    ledger: &mut Ledger,
+    owner: &str,
+    config: &StartConfig,
+    remote: &remote::RemoteBinding,
+    prepared: &inbox::Prepared,
+    cancel: &mut watch::Receiver<bool>,
+    status: &watch::Sender<RuntimeStatus>,
+) -> Result<Option<Finish>, RuntimeError> {
+    let dispatch = &prepared.dispatch;
+    if !config.owner_direct
+        || dispatch.requester_mxid != owner
+        || dispatch.body.trim().is_empty()
+        || local(ledger.request_disposition(&dispatch.scope(), &dispatch.id))?
+            != hagency_agent_local::RequestPolicy::Allow
+    {
+        return Ok(Some(Finish::Rejected));
+    }
+    // The encrypted intake verifies this event and only then releases its
+    // plaintext to the daemon. Remote export requires separate consent.
+    let input = local(ledger.encrypted_input(owner, &dispatch.id))?;
+    if !remote.allows_encrypted()
+        || !input.is_some_and(|input| {
+            input.owner_direct && input.message["content"]["msgtype"] == "m.text"
+        })
+    {
+        return Ok(Some(Finish::Rejected));
+    }
+    check_running(transport, lease, dispatch, &prepared.execution_id, cancel).await?;
+    remote.record(prepared)?;
+    let mut running =
+        RuntimeStatus::new(&config.agent_id, "executing_chat_only", None).with_capabilities(config);
+    running.binding_id = Some(config.binding_id.clone());
+    status.send_replace(running);
+    let permission = cancel.clone();
+    let outcome = tokio::select! {
+        biased;
+        _ = canceled(cancel) => Err(RuntimeError::Stopped),
+        error = monitor_running(transport, lease, prepared, permission) => Err(error),
+        result = remote.run(prepared) => {
+            let finish = match result? {
+                remote::RemoteOutcome::Succeeded(answer) => {
+                    local(ledger.persist_execution_reply(owner, &dispatch.id, &prepared.execution_id, &answer))?;
+                    remote.resolved(&prepared.execution_id);
+                    None
+                }
+                remote::RemoteOutcome::Rejected => Some(Finish::Rejected),
+                remote::RemoteOutcome::Failed => Some(Finish::Failed),
+            };
+            return Ok(finish);
+        }
+    };
+    // Cancellation is best effort. The original receipt remains available for
+    // reconciliation if the remote runtime cannot be reached.
+    remote.cancel(&prepared.execution_id).await;
+    outcome
+}
+
 #[allow(clippy::too_many_arguments)]
 #[tracing::instrument(skip_all, fields(agent_id = %config.agent_id, binding_id = %config.binding_id, dispatch_id = %prepared.dispatch.id))]
 async fn run_turn<T: Transport>(
@@ -3185,6 +3288,7 @@ mod tests {
             reservation: 42,
             effort: "low".into(),
             host_files: false,
+            remote_consent: None,
         }
     }
     #[tokio::test]
@@ -3484,6 +3588,7 @@ mod tests {
             credential_ref: "keychain:test".into(),
             takeover: Takeover::Never,
             host_files: false,
+            remote: None,
             owner_direct: false,
             recovery_device_id: None,
             recovery_consent_id: None,
