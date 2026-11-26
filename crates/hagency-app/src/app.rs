@@ -15,7 +15,6 @@ use std::{
     time::Duration,
 };
 use makepad_widgets::*;
-use crate::shared::navigation_bar_button::NavigationBarButtonWidgetRefExt;
 use crate::render_maintenance::RenderMaintenance;
 use matrix_sdk::{RoomState, ruma::{OwnedEventId, OwnedRoomId, OwnedUserId, RoomId}};
 use serde::{Deserialize, Serialize};
@@ -213,18 +212,6 @@ script_mod! {
                             RinxBrandLogo {width: 18 height: 18 margin: Inset{right: 6}}
                             RinxLabel {text: "Hagency" draw_text.color: mod.widgets.RINX_INK}
                         }
-                        titlebar_sidebar := NavigationBarButton {
-                            visible: false
-                            margin: Inset{left: #(if cfg!(target_os = "macos") {80.0} else {8.0})}
-                            width: 32 height: Fill
-                            tooltip_below: true
-                            tooltip_text: #(crate::i18n::tr("Collapse sidebar"))
-                            draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_SELECTED}
-                            icon := Icon {
-                                icon_walk: Walk{width: 18 height: 18}
-                                draw_icon +: {svg: ICON_PANEL_LEFT color: mod.widgets.RINX_INK}
-                            }
-                        }
                         View {
                             width: Fill height: Fill align: Align{x: 1.0 y: 0.5}
                             padding: Inset{right: 12}
@@ -273,7 +260,6 @@ pub struct App {
     #[rust] render_maintenance: RenderMaintenance,
     #[rust] desktop_integration: DesktopIntegration,
     #[rust] updates: UpdateIntegration,
-    #[rust] titlebar_sidebar_state: RefCell<Option<TitlebarSidebarState>>,
     /// The details of a room we're waiting on to be loaded so that we can navigate to it.
     /// This can be either a room we're waiting to join, or one we're waiting to be invited to.
     /// Also includes an optional room ID to be closed once the awaited room has been loaded.
@@ -287,7 +273,6 @@ pub struct App {
 impl ScriptHook for App {
     /// After a hot-reload update, refresh the login/home screen visibility.
     fn on_after_reload(&mut self, vm: &mut ScriptVm) {
-        self.titlebar_sidebar_state.replace(None);
         vm.with_cx_mut(|cx| {
             self.update_login_visibility(cx);
         });
@@ -306,8 +291,6 @@ impl MatchEvent for App {
     fn handle_startup(&mut self, cx: &mut Cx) {
         if self.started { return; }
         self.started = true;
-        cx.global::<crate::home::rooms_sidebar::SidebarToggleInTitlebar>().0 =
-            !self.embedded && cfg!(any(target_os = "windows", target_os = "macos", target_os = "linux"));
         // only init logging/tracing once.
         //
         // We silence a few overly noisy SDK logs:
@@ -369,11 +352,6 @@ impl MatchEvent for App {
         crate::shared::attachment_download::handle_share_actions(actions);
         for evicted in actions.iter().filter_map(|action|action.downcast_ref::<crate::sliding_sync::TimelineCacheEvicted>()) {
             crate::home::room_screen::release_cached_history(&evicted.0,evicted.1);
-        }
-        if self.app_state.logged_in && crate::home::home_screen::effective_is_desktop(cx)
-            && self.ui.navigation_bar_button(cx, ids!(titlebar_sidebar)).clicked(actions)
-        {
-            cx.action(crate::home::rooms_sidebar::DesktopRailAction);
         }
         for saved in actions.iter().filter_map(|action| action.downcast_ref::<crate::speech::SettingsSaved>()) {
             if saved.0.validate().is_ok() {
@@ -1282,14 +1260,6 @@ fn clear_all_app_state(cx: &mut Cx) {
     clear_room_preview_cache(cx);
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct TitlebarSidebarState {
-    visible: bool,
-    collapsed: bool,
-    theme_revision: u64,
-    language: crate::i18n::Language,
-}
-
 #[derive(Debug)]
 struct AppLifecycle {
     is_foreground: bool,
@@ -1408,9 +1378,6 @@ impl AppMain for App {
         if matches!(event, Event::BackPressed {..} | Event::KeyDown(KeyEvent {key_code:KeyCode::Escape,..}))
             && self.matrix_link_navigation.cancel_loading() {
             event.back_pressed(); return;
-        }
-        if matches!(event, Event::LiveEdit | Event::ScriptReapply) {
-            self.titlebar_sidebar_state.replace(None);
         }
         self.render_maintenance.handle_event_in_context(cx, event, !self.embedded);
         crate::speech::capture::handle_event(cx, event);
@@ -1539,17 +1506,10 @@ impl AppMain for App {
         crate::agent_access::publish(current_user_id(), &self.app_state.agent_access);
         let scope = &mut Scope::with_data(&mut self.app_state);
         self.ui.handle_event(cx, event, scope);
-        self.sync_titlebar_sidebar(cx);
+        self.sync_titlebar_update(cx);
         // Window's default caption hit test treats custom controls as draggable.
         // Override interactive caption controls after Window has handled the query.
         if let Event::WindowDragQuery(query) = event {
-            let button = self.ui.navigation_bar_button(cx, ids!(titlebar_sidebar));
-            if self.ui.window(cx, ids!(main_window)).window_id() == Some(query.window_id)
-                && button.borrow().is_some_and(|button| button.visible())
-                && button.area().rect(cx).contains(query.abs)
-            {
-                query.response.set(WindowDragQueryResponse::Client);
-            }
             let update = self.ui.button(cx, ids!(titlebar_update.trigger));
             if self.ui.window(cx, ids!(main_window)).window_id() == Some(query.window_id)
                 && crate::updates::titlebar_notice_visible(&cx.global::<crate::updates::UpdateState>().0)
@@ -2043,10 +2003,10 @@ impl App {
         }
         self.ui.view(cx, ids!(login_screen_view)).set_visible(cx, show_login);
         self.ui.view(cx, ids!(home_screen_view)).set_visible(cx, !show_login);
-        self.sync_titlebar_sidebar(cx);
+        self.sync_titlebar_update(cx);
     }
 
-    fn sync_titlebar_sidebar(&self, cx: &mut Cx) {
+    fn sync_titlebar_update(&self, cx: &mut Cx) {
         if !self.embedded {
             if self.updates.sparkle_prototype_active() {
                 self.ui.window(cx, ids!(main_window)).set_title(cx, "Hagency — Sparkle Prototype");
@@ -2061,41 +2021,6 @@ impl App {
             // Leave room for the update pill and native window controls at narrow widths.
             self.ui.view(cx, ids!(caption_label.title)).set_visible(cx,
                 !update_visible || caption_width >= 480.0);
-        }
-        let visible = !self.embedded && self.app_state.logged_in
-            && crate::home::home_screen::effective_is_desktop(cx);
-        let collapsed = self.app_state.app_prefs.desktop_sidebar_collapsed;
-        // LiveEdit/ScriptReapply and reload clear this cache before drawing.
-        // Avoid serializing and hashing the complete stylesheet on every event.
-        let theme_revision = self.titlebar_sidebar_state.borrow().as_ref().map(|s| s.theme_revision)
-            .unwrap_or_else(|| crate::theme::snapshot(cx).revision);
-        let state = TitlebarSidebarState {
-            visible,
-            collapsed,
-            theme_revision,
-            language: crate::i18n::language(),
-        };
-        if self.titlebar_sidebar_state.borrow().as_ref() == Some(&state) {
-            return;
-        }
-        self.titlebar_sidebar_state.replace(Some(state));
-        let button = self.ui.navigation_bar_button(cx, ids!(titlebar_sidebar));
-        // Embedded hosts own their caption and have no standalone titlebar button.
-        if button.is_empty() { return; }
-        button.set_selected(cx, !collapsed);
-        if let Some(mut button) = button.borrow_mut() {
-            button.set_visible(cx, visible);
-            button.set_tooltip_text(crate::i18n::tr(if collapsed {"Expand sidebar"} else {"Collapse sidebar"}));
-        }
-        let mut icon = self.ui.icon(cx, ids!(titlebar_sidebar.icon));
-        if collapsed {
-            script_apply_eval!(cx, icon, {
-                draw_icon +: {svg: mod.widgets.ICON_PANEL_LEFT color: mod.widgets.RINX_INK}
-            });
-        } else {
-            script_apply_eval!(cx, icon, {
-                draw_icon +: {svg: mod.widgets.ICON_PANEL_LEFT_OPEN color: mod.widgets.RINX_ACCENT}
-            });
         }
     }
 

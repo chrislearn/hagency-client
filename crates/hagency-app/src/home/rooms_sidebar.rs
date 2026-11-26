@@ -29,15 +29,13 @@ script_mod! {
             draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: mod.widgets.RINX_UI_SIZE}}
         }
     }
-    let RowActions = RinxMoreButton {visible:false}
-    let DesktopNavButton = NavigationBarButton {
-        width: Fill height: 40 flow: Right spacing: 10
-        align: Align{x: 0 y: 0.5} padding: Inset{left: 12 right: 8}
-        draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_NAV_SELECTED border_radius: mod.widgets.RINX_CONTROL_RADIUS}
-        nav_icon := Icon {icon_walk: Walk{width: 18 height: 18} draw_icon.color: mod.widgets.RINX_INK}
-        label := RinxLabel {width: Fill max_lines: 1 text_overflow: Ellipsis
-            draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular{font_size: mod.widgets.RINX_UI_SIZE}}
+    let DesktopNavButton = DesktopRailButton {
+        flow: Overlay
+        draw_bg +: {
+            color_active: mod.widgets.RINX_NAV_SELECTED
+            rail_indicator: 1.0
         }
+        nav_icon := Icon {icon_walk: Walk{width: 18 height: 18} draw_icon.color: mod.widgets.RINX_INK}
     }
     let ChatViewSwitch = SolidView {
         width: Fill height: 46 flow: Right
@@ -54,39 +52,29 @@ script_mod! {
     mod.widgets.RoomsSideBar = #(RoomsSideBar::register_widget(vm)) {
         Desktop := SolidView {
             padding: Inset{top: 12, bottom: 12}
-            flow: Down, spacing: 5
-            width: Fill, height: Fill
+            flow: Down spacing: 5 align: Align{x: 0.5}
+            width: Fill height: Fill
 
             draw_bg.color: mod.widgets.RINX_RAIL_BG
 
-            sidebar_heading := View {width: Fill height: 56 flow: Right align: Align{y: 0.5} margin: Inset{left: 8 right: 6}
-                sidebar_brand := View {
-                    width: Fill height: Fill flow: Right align: Align{x: 0.5 y: 0.5}
-                    sidebar_logo := RinxBrandLogo {}
-                    sidebar_title := RinxLabel {text: "Hagency" width: Fill height: Fit margin: Inset{left: 6} max_lines: 1 text_overflow: Ellipsis draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: mod.widgets.RINX_BRAND_SIZE}}}
+            sidebar_brand := View {width: Fill height: 44 align: Center
+                RinxBrandLogo {width: 28 height: 28}
+            }
+            View {width: 24 height: 1 show_bg: true draw_bg.color: mod.widgets.RINX_DIVIDER}
+            primary_navigation := ScrollYView {width: Fill height: 224 flow: Down spacing: 6 align: Align{x: 0.5}
+                open_projects := DesktopNavButton {nav_icon.draw_icon.svg: ICON_HIERARCHY tooltip_text: #(crate::i18n::tr("Projects"))}
+                open_group_chats := DesktopNavButton {
+                    nav_icon.draw_icon.svg: ICON_THREADS
+                    tooltip_text: #(crate::i18n::tr("Chats"))
+                    View {width: Fill height: Fill align: Align{x: 1.0 y: 0.0}
+                        unread := UnreadBadge {height: 16 margin: Inset{right: -6}}
+                    }
                 }
-                toggle_sidebar := NavigationBarButton {width: 32 height: 32
-                    tooltip_text: #(crate::i18n::tr("Collapse sidebar"))
-                    fold_icon := Icon {icon_walk: Walk{width: 18 height: 18} draw_icon +: {svg: ICON_CHEVRON_LEFT color: mod.widgets.RINX_INK}}
-                }
+                open_contacts := DesktopNavButton {nav_icon.draw_icon.svg: ICON_PEOPLE tooltip_text: #(crate::i18n::tr("Contacts"))}
+                open_agents := DesktopNavButton {nav_icon.draw_icon.svg: ICON_ROBOT tooltip_text: #(crate::i18n::tr("My Agents"))}
+                open_miniapps := DesktopNavButton {nav_icon.draw_icon.svg: ICON_SQUARES tooltip_text: #(crate::i18n::tr("Mini apps"))}
             }
-            primary_navigation := ScrollYView {width: Fill height: 224 flow: Down spacing: 6 padding: Inset{left: 10 right: 10}
-            projects_row := View {show_bg:true draw_bg.color:#0000 width: Fill height: 40 flow: Right align: Align{y: 0.5}
-                open_projects := DesktopNavButton {nav_icon.draw_icon.svg: ICON_HIERARCHY tooltip_text: #(crate::i18n::tr("Projects")) label.text: #(crate::i18n::tr("Projects")) label.i18n_text: "Projects"}
-                projects_action_slot := View {width:32 height:32 projects_actions := RowActions {}}
-            }
-            agents_row := View {show_bg:true draw_bg.color:#0000 width: Fill height: 40 flow: Right align: Align{y: 0.5}
-                open_agents := DesktopNavButton {nav_icon.draw_icon.svg: ICON_ROBOT tooltip_text: #(crate::i18n::tr("My Agents")) label.text: #(crate::i18n::tr("My Agents")) label.i18n_text: "My Agents"}
-                agents_action_slot := View {width:32 height:32 agents_actions := RowActions {}}
-            }
-            group_chats_row := View {show_bg:true draw_bg.color:#0000 width: Fill height: 40 flow: Right align: Align{y: 0.5}
-                open_group_chats := DesktopNavButton {unread := UnreadBadge {} nav_icon.draw_icon.svg: ICON_THREADS tooltip_text: #(crate::i18n::tr("Chats")) label.text: #(crate::i18n::tr("Chats")) label.i18n_text: "Chats"}
-                group_chats_action_slot := View {width:32 height:32 group_chats_actions := RowActions {}}
-            }
-            open_contacts := DesktopNavButton { nav_icon.draw_icon.svg: ICON_PEOPLE tooltip_text: #(crate::i18n::tr("Contacts")) label.text: #(crate::i18n::tr("Contacts")) label.i18n_text: "Contacts"}
-            open_miniapps := DesktopNavButton {nav_icon.draw_icon.svg: ICON_SQUARES tooltip_text: #(crate::i18n::tr("Mini apps")) label.text: #(crate::i18n::tr("Mini apps")) label.i18n_text: "Mini apps"}
-            }
-            more := DesktopNavButton {margin: Inset{left: 10 right: 10} nav_icon.draw_icon.svg: ICON_MORE_VERT tooltip_text: #(crate::i18n::tr("More")) label.text: #(crate::i18n::tr("More")) label.i18n_text: "More"}
+            more := DesktopNavButton {nav_icon.draw_icon.svg: ICON_MORE_VERT tooltip_text: #(crate::i18n::tr("More"))}
             // CachedWidget eagerly instantiates at on_after_apply. Keep its
             // SDK consumer drawable at zero height before the tree, too.
             conversations := View {
@@ -94,9 +82,9 @@ script_mod! {
                 CachedWidget {rooms_list := RoomsList {}}
             }
             View {width: Fill height: Fill}
-            global_approvals := GlobalApprovalInbox {margin:Inset{left:10 right:10}}
-            open_settings := DesktopNavButton {margin: Inset{left: 10 right: 10} nav_icon.draw_icon.svg: ICON_SETTINGS tooltip_text: #(crate::i18n::tr("Settings")) label.text: #(crate::i18n::tr("Settings")) label.i18n_text: "Settings"}
-            HagencyAccountBar {margin: Inset{left: 10 right: 10}}
+            global_approvals := GlobalApprovalInbox {icon_only: true}
+            open_settings := DesktopNavButton {nav_icon.draw_icon.svg: ICON_SETTINGS tooltip_text: #(crate::i18n::tr("Settings"))}
+            HagencyAccountBar {}
         },
 
         Mobile := SolidView {
@@ -140,13 +128,6 @@ script_mod! {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum DesktopWorkspace { #[default] Projects, GroupChats, Other }
 
-#[derive(Debug)]
-pub struct DesktopRailAction;
-
-/// Hosted content keeps its own toggle when the host has no Hagency titlebar.
-#[derive(Default)]
-pub struct SidebarToggleInTitlebar(pub bool);
-
 /// Shared across adaptive sidebar replacements, but reset when signing out.
 #[derive(Default)]
 struct GroupChatsViewState {
@@ -167,15 +148,10 @@ pub struct RoomsSideBar {
     #[rust]
     applied_view_mode: ViewModeOverride,
     #[rust] selected_primary: Option<LiveId>,
-    #[rust] painted_collapsed: Option<bool>,
     #[rust] direct_counts: (u64,bool),
-    #[rust] pointer:Option<Vec2d>,
 }
 
 impl ScriptHook for RoomsSideBar {
-    fn on_after_apply(&mut self, _vm: &mut ScriptVm, _: &Apply, _: &mut Scope, _: ScriptValue) {
-        self.painted_collapsed = None;
-    }
     fn on_after_new(&mut self, vm: &mut ScriptVm) {
         vm.with_cx_mut(|cx| {
             // Here we set the global singleton for the RoomsList widget,
@@ -194,7 +170,7 @@ impl ScriptHook for RoomsSideBar {
 
 impl RoomsSideBar {
     fn apply_view_mode(&mut self, mode: ViewModeOverride) {
-        // The sidebar is only ~280 px wide even in a desktop window. Its
+        // The sidebar is narrow even in a desktop window. Its
         // variant must follow the enclosing HomeScreen, not its own width.
         self.view.set_variant_selector(|cx, _| {
             if crate::home::home_screen::effective_is_desktop(cx) {
@@ -209,23 +185,24 @@ impl RoomsSideBar {
 
 impl Widget for RoomsSideBar {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        match event {Event::MouseMove(e)=>self.pointer=Some(e.abs),Event::MouseDown(e)=>self.pointer=Some(e.abs),Event::WindowLostFocus(_)|Event::MouseLeave(_)=>self.pointer=None,_=>()}
-        for (row,action) in [(ids!(projects_row).as_slice(),ids!(projects_actions).as_slice()),(ids!(agents_row).as_slice(),ids!(agents_actions).as_slice()),(ids!(group_chats_row).as_slice(),ids!(group_chats_actions).as_slice())] {
-            let show=self.painted_collapsed!=Some(true) && self.pointer.is_some_and(|p|self.view.view(cx,row).area().rect(cx).contains(p));
-            let button=self.view.button(cx,action);if button.visible()!=show {button.set_visible(cx,show);self.view.redraw(cx);}
-        }
         if matches!(event,Event::Signal) {let counts=super::mobile::direct_unread(cx);if counts!=self.direct_counts {self.direct_counts=counts;self.view.redraw(cx);}}
 
         // If the main room filter input bar changed keywords, re-emit that action
         // as a MainFilterAction so that other widgets can handle it.
         if let Event::Actions(actions) = event {
-            if self.view.navigation_bar_button(cx, ids!(toggle_sidebar)).clicked(actions) {
-                cx.action(DesktopRailAction);
-            }
-            for (button, kind) in [(id!(projects_actions), super::sidebar_action_menu::SidebarMenuKind::Projects), (id!(group_chats_actions), super::sidebar_action_menu::SidebarMenuKind::GroupChats), (id!(agents_actions), super::sidebar_action_menu::SidebarMenuKind::Agents)] {
-                if self.view.button(cx, &[button]).clicked(actions) {
-                    let rect = self.view.widget(cx, &[button]).area().rect(cx);
-                    cx.action(super::sidebar_action_menu::SidebarMenuAction::Open {kind, pos: dvec2(rect.pos.x, rect.pos.y + rect.size.y)});
+            use super::sidebar_action_menu::{SidebarMenuAction, SidebarMenuKind};
+            for (id, kind) in [
+                (id!(open_projects), SidebarMenuKind::Projects),
+                (id!(open_group_chats), SidebarMenuKind::GroupChats),
+                (id!(open_agents), SidebarMenuKind::Agents),
+            ] {
+                let button = self.view.navigation_bar_button(cx, &[id]);
+                if button.secondary_clicked(actions) {
+                    let rect = button.area().rect(cx);
+                    cx.action(SidebarMenuAction::Open {
+                        kind,
+                        pos: dvec2(rect.pos.x + rect.size.x + 4.0, rect.pos.y),
+                    });
                 }
             }
             if self.view.navigation_bar_button(cx, ids!(open_contacts)).clicked(actions) {
@@ -240,7 +217,10 @@ impl Widget for RoomsSideBar {
             }
             if self.view.navigation_bar_button(cx, ids!(more)).clicked(actions) {
                 let rect = self.view.widget(cx, ids!(more)).area().rect(cx);
-                cx.action(super::sidebar_action_menu::SidebarMenuAction::Open {kind: super::sidebar_action_menu::SidebarMenuKind::Tools, pos: dvec2(rect.pos.x, rect.pos.y + rect.size.y)});
+                cx.action(SidebarMenuAction::Open {
+                    kind: SidebarMenuKind::Tools,
+                    pos: dvec2(rect.pos.x + rect.size.x + 4.0, rect.pos.y),
+                });
             }
             if self.view.navigation_bar_button(cx, ids!(open_miniapps)).clicked(actions) {cx.action(crate::miniapps::MiniAppsAction::Open);}
             if self
@@ -351,43 +331,10 @@ impl Widget for RoomsSideBar {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        // Keep primary navigation bounded on short windows; creation and More
-        // menus use the app overlay and never consume tree/footer space.
+        // Leave room for the logo, More, and the footer before sizing the
+        // scrollable primary navigation.
         let height = cx.peek_walk_turtle(walk).size.y;
-        let collapsed = crate::home::home_screen::effective_is_desktop(cx)
-            && cx.global::<AppPreferencesGlobal>().0.desktop_sidebar_collapsed;
-        self.view.label(cx, ids!(sidebar_title)).set_visible(cx, !collapsed);
-        let fold = self.view.navigation_bar_button(cx, ids!(toggle_sidebar));
-        let in_titlebar = cx.global::<SidebarToggleInTitlebar>().0;
-        let brand = self.view.view(cx, ids!(sidebar_brand));
-        brand.set_visible(cx, !collapsed || in_titlebar);
-        if let Some(mut button) = fold.borrow_mut() {
-            button.set_visible(cx, !in_titlebar);
-            button.set_tooltip_text(crate::i18n::tr(if collapsed {"Expand sidebar"} else {"Collapse sidebar"}));
-            button.walk.width = Size::Fixed(if collapsed {44.0} else {32.0});
-        }
-        if self.painted_collapsed != Some(collapsed) {
-            self.painted_collapsed = Some(collapsed);
-            let mut icon = self.view.icon(cx, ids!(fold_icon));
-            if collapsed {script_apply_eval!(cx, icon, {draw_icon.svg: mod.widgets.ICON_CHEVRON_RIGHT});}
-            else {script_apply_eval!(cx, icon, {draw_icon.svg: mod.widgets.ICON_CHEVRON_LEFT});}
-        }
-        for id in [id!(open_projects),id!(open_agents),id!(open_group_chats),id!(open_contacts),id!(open_miniapps),id!(more),id!(open_settings)] {
-            self.view.navigation_bar_button(cx, &[id]).label(cx, ids!(label)).set_visible(cx, !collapsed);
-        }
-        // Hit testing belongs to events: an Area from the preceding draw can
-        // become invalid while rebuilding its parent draw list.
-        if collapsed {
-            for action in [ids!(projects_actions).as_slice(),ids!(agents_actions).as_slice(),ids!(group_chats_actions).as_slice()] {
-                self.view.button(cx,action).set_visible(cx,false);
-            }
-        }
-        for slot in [ids!(projects_action_slot).as_slice(),ids!(agents_action_slot).as_slice(),ids!(group_chats_action_slot).as_slice()] {self.view.view(cx,slot).set_visible(cx,!collapsed);}
-        // Show every primary entry on a normal desktop window, reserving
-        // space for the tree and footer before scrolling on short windows.
-        // The persistent approval entry adds 40px plus the parent 5px spacing
-        // to the footer. Keep that space before assigning the scrolling menu.
-        let navigation_height = (height - 305.0).clamp(100.0, 224.0);
+        let navigation_height = (height - 274.0).clamp(100.0, 224.0);
         let navigation = self.view.view(cx, ids!(primary_navigation));
         if let Some(mut view) = navigation.borrow_mut() {view.walk.height = Size::Fixed(navigation_height); }
         if let Some(state) = scope.data.get::<crate::app::AppState>() {
@@ -403,7 +350,7 @@ impl Widget for RoomsSideBar {
             for button in [id!(open_projects), id!(open_agents), id!(open_group_chats), id!(open_miniapps)] {
                 self.view.navigation_bar_button(cx, &[button]).set_selected(cx, state.selected_tab == SelectedTab::Home && self.selected_primary.unwrap_or(id!(open_projects)) == button);
             }
-            for (button, selected) in [(ids!(open_contacts), state.selected_tab == SelectedTab::Contacts), (ids!(open_discover), state.selected_tab == SelectedTab::Discover), (ids!(open_settings), state.selected_tab == SelectedTab::Settings)] {
+            for (button, selected) in [(ids!(open_contacts), state.selected_tab == SelectedTab::Contacts), (ids!(open_settings), state.selected_tab == SelectedTab::Settings)] {
                 self.view.navigation_bar_button(cx, button).set_selected(cx, selected);
             }
         }
@@ -579,14 +526,14 @@ mod layout_tests {
         let mut pages = Vec::new(); collect_widgets::<PageFlip>(children, &mut pages);
         assert_eq!(pages.len(), 1);
         let page_rect = pages[0].area().rect(&cx);
-        assert!((page_rect.pos.x - 440.0).abs() < 1.0 && (page_rect.size.x - 840.0).abs() < 1.0, "Right content uses remaining width: {page_rect:?}");
+        assert!((page_rect.pos.x - 304.0).abs() < 1.0 && (page_rect.size.x - 976.0).abs() < 1.0, "Right content uses remaining width: {page_rect:?}");
         let mut children = Vec::new(); home.children(&mut |_, child| children.push(child));
         let mut sidebars = Vec::new(); collect_sidebars(children, &mut sidebars);
         let sidebar = sidebars[0].borrow::<RoomsSideBar>().unwrap();
         let mut active = Vec::new(); sidebar.view.children(&mut |_, child| active.push(child));
         assert_eq!(active.len(), 1);
         let sidebar_rect = active[0].area().rect(&cx);
-        assert!((sidebar_rect.size.x - 200.0).abs() < 1.0, "Sidebar has fixed width: {sidebar_rect:?}");
+        assert!((sidebar_rect.size.x - 64.0).abs() < 1.0, "Sidebar has fixed width: {sidebar_rect:?}");
         let nav = sidebar.view.view(&cx, ids!(primary_navigation)).area().rect(&cx);
         for button in [id!(open_projects),id!(open_agents),id!(open_group_chats),id!(open_contacts),id!(open_miniapps)] {
             let rect = sidebar.view.widget(&cx, &[button]).area().rect(&cx);
@@ -628,34 +575,12 @@ mod layout_tests {
             let rect=sidebar.view.widget(&cx,id).area().rect(&cx);
             assert!(rect.size.y>0.0 && rect.pos.y>=0.0 && rect.pos.y+rect.size.y<=500.0,"Footer action stays within sidebar: {id:?} {rect:?}");
         }
-        let approvals=sidebar.view.widget(&cx,ids!(global_approvals)).area().rect(&cx);
+        let approvals=sidebar.view.widget(&cx,ids!(open_approval_icon)).area().rect(&cx);
         let settings=sidebar.view.widget(&cx,ids!(open_settings)).area().rect(&cx);
         assert!(approvals.pos.y+approvals.size.y<=settings.pos.y && settings.pos.y-approvals.pos.y-approvals.size.y<=6.0,
             "approvals belong directly above Settings in the footer: {approvals:?} {settings:?}");
         assert!((approvals.pos.x-settings.pos.x).abs()<1.0 && (approvals.size.x-settings.size.x).abs()<1.0,
             "footer entries share the same left edge and width");
-    }
-
-    #[test]
-    fn account_identity_children_fit_short_and_long_names() {
-        let mut cx = Cx::new(Box::new(|_, _| {}));
-        let mut bar = cx.with_vm(|vm| {
-            makepad_widgets::script_mod(vm); crate::app::register_widgets(vm);
-            vm.bx.captured_errors = Some(Vec::new());
-            let value = script_eval!(vm, {mod.widgets.HagencyAccountBar {}});
-            let bar = crate::home::navigation_tab_bar::HagencyAccountBar::script_from_value(vm, value);
-            assert!(vm.take_errors().is_empty()); bar
-        });
-        for (name, user) in [("Alice", "@alice:hagency.local"), ("A very long display name that must remain a single line", "@verylongmatrixaccountidentity:very-long-hagency-server.example.org")] {
-            std::ops::DerefMut::deref_mut(&mut bar).label(&cx, ids!(name)).set_text(&mut cx, name);
-            std::ops::DerefMut::deref_mut(&mut bar).label(&cx, ids!(user)).set_text(&mut cx, user);
-            draw_sized(&mut cx, std::ops::DerefMut::deref_mut(&mut bar), &mut AppState::default(), 260.0, 86.0);
-            let button = std::ops::Deref::deref(&bar).widget(&cx, ids!(account)).area().rect(&cx);
-            for id in [id!(name), id!(user)] {
-                let rect = std::ops::Deref::deref(&bar).widget(&cx, &[id]).area().rect(&cx);
-                assert!(rect.size.y > 0.0 && rect.pos.y >= button.pos.y && rect.pos.y + rect.size.y <= button.pos.y + button.size.y && rect.pos.y + rect.size.y <= 86.0, "Identity line fits account button: {rect:?} {button:?}");
-            }
-        }
     }
 
     #[test]
@@ -673,20 +598,23 @@ mod layout_tests {
         });
         let mut state = AppState::default();
         draw(&mut cx, &mut home, &mut state, 1280.0);
-        for (dots, item, kind) in [(id!(projects_actions), id!(new_project), SidebarMenuKind::Projects), (id!(group_chats_actions), id!(new_group_chat), SidebarMenuKind::GroupChats), (id!(agents_actions), id!(new_agent), SidebarMenuKind::Agents)] {
+        for (button, item, kind) in [(id!(open_projects), id!(new_project), SidebarMenuKind::Projects), (id!(open_group_chats), id!(new_group_chat), SidebarMenuKind::GroupChats), (id!(open_agents), id!(new_agent), SidebarMenuKind::Agents)] {
             let mut children = Vec::new(); home.children(&mut |_, child| children.push(child));
             let mut found = Vec::new(); collect_sidebars(children, &mut found);
             let sidebar = found[0].borrow::<RoomsSideBar>().unwrap();
             let tree_before = home.widget(&cx, ids!(project_chats)).area().rect(&cx);
             assert!(sidebar.view.navigation_bar_button(&cx, ids!(new_project)).is_empty());
             assert!(sidebar.view.navigation_bar_button(&cx, ids!(new_chat)).is_empty());
-            let uid = sidebar.view.button(&cx, &[dots]).widget_uid();
+            let entry = sidebar.view.navigation_bar_button(&cx, &[button]);
+            let uid = entry.widget_uid();
+            let bounds = entry.area().rect(&cx);
             drop(sidebar);
-            let clicks = cx.capture_actions(|cx| cx.widget_action(uid, ButtonAction::Clicked(KeyModifiers::default())));
+            let clicks = cx.capture_actions(|cx| cx.widget_action(uid, crate::shared::navigation_bar_button::NavigationBarButtonAction::SecondaryClicked));
             let opened = cx.capture_actions(|cx| home.handle_event(cx, &Event::Actions(clicks), &mut Scope::with_data(&mut state)));
-            assert!(!opened.iter().any(|a| a.downcast_ref::<crate::hagency::ui::HagencyAction>().is_some() || a.downcast_ref::<NavigationBarAction>().is_some()), "Dots do not trigger row navigation");
+            assert!(!opened.iter().any(|a| a.downcast_ref::<crate::hagency::ui::HagencyAction>().is_some() || a.downcast_ref::<NavigationBarAction>().is_some()), "Right-clicking preserves the current page");
             let (actual, pos) = opened.iter().find_map(|a| match a.downcast_ref() {Some(SidebarMenuAction::Open {kind, pos}) => Some((*kind, *pos)), _ => None}).unwrap();
             assert_eq!(actual, kind);
+            assert!(pos.x >= bounds.pos.x + bounds.size.x);
             menu.show(&mut cx, kind, pos, Rect {pos: dvec2(0.0, 0.0), size: dvec2(1280.0, 760.0)});
             draw(&mut cx, &mut menu, &mut state, 1280.0);
             let item_uid = menu.button(&cx, &[item]).widget_uid();
@@ -770,7 +698,7 @@ mod layout_tests {
         assert_eq!(trees.len(), 1);
         let tree_uid = trees[0].widget_uid();
         let context = home.view(&cx, ids!(workspace_context)).area().rect(&cx);
-        assert_eq!(context.pos.x, 200.0); assert_eq!(context.size.x, 240.0);
+        assert_eq!(context.pos.x, 64.0); assert_eq!(context.size.x, 240.0);
         assert_eq!(home.label(&cx, ids!(context_title)).text(), crate::i18n::tr("Projects"));
         assert!(!home.view(&cx, ids!(context_search)).borrow().unwrap().visible);
         let room = crate::app::SelectedRoom::JoinedRoom {room_name_id: crate::utils::RoomNameId::new(matrix_sdk::RoomDisplayName::Named("Project discussion".into()), "!discussion:hagency.local".try_into().unwrap())};
@@ -787,7 +715,7 @@ mod layout_tests {
             draw(&mut cx, &mut home, &mut state, 1280.0);
             assert_eq!(home.view(&cx, ids!(workspace_context)).borrow().unwrap().visible, visible);
             let mut pages = Vec::new(); let mut children = Vec::new(); home.children(&mut |_, child| children.push(child)); collect_widgets::<PageFlip>(children, &mut pages);
-            assert_eq!(pages[0].area().rect(&cx).pos.x, if visible {440.0} else {200.0});
+            assert_eq!(pages[0].area().rect(&cx).pos.x, if visible {304.0} else {64.0});
             if visible {assert_eq!(home.view(&cx, ids!(context_search)).borrow().unwrap().visible, chats);}
             assert_eq!(cx.global::<crate::home::rooms_list::RoomsListRef>().widget_uid(), consumer);
             assert_eq!(home.widget(&cx, ids!(project_tree)).widget_uid(), tree_uid);
@@ -799,92 +727,74 @@ mod layout_tests {
     }
 
     #[test]
-    fn overflow_follows_pointer_between_navigation_rows() {
-        let mut cx=Cx::new(Box::new(|_,_|{}));
-        let mut home=cx.with_vm(|vm| {
-            makepad_widgets::script_mod(vm);crate::app::register_widgets(vm);
-            let value=script_eval!(vm,{mod.widgets.HomeScreen {}});
-            HomeScreen::script_from_value(vm,value)
-        });
-        let mut state=AppState::default();
-        draw(&mut cx,&mut home,&mut state,1280.0);
-        let mut children=Vec::new();home.children(&mut |_,child|children.push(child));
-        let mut sidebars=Vec::new();collect_sidebars(children,&mut sidebars);
-        let sidebar=sidebars[0].clone();
-        for target in [Some(id!(projects_row)),Some(id!(agents_row)),Some(id!(group_chats_row)),None] {
-            let abs=target.map(|row| {
-                let binding=sidebar.borrow::<RoomsSideBar>().unwrap();
-                let rect=binding.view.view(&cx,&[row]).area().rect(&cx);
-                assert!(rect.size.x>0.0 && rect.size.y>0.0,"{row:?}: {rect:?}");
-                rect.pos+rect.size*0.5
-            }).unwrap_or(dvec2(900.0,600.0));
-            home.handle_event(&mut cx,&Event::MouseMove(MouseMoveEvent {abs,lock_delta:DVec2::default(),window_id:WindowId(0,0),modifiers:KeyModifiers::default(),handled:std::cell::Cell::new(Area::Empty),time:1.0}),&mut Scope::with_data(&mut state));
-            draw(&mut cx,&mut home,&mut state,1280.0);
-            let binding=sidebar.borrow::<RoomsSideBar>().unwrap();
-            for (row,button) in [(id!(projects_row),id!(projects_actions)),(id!(agents_row),id!(agents_actions)),(id!(group_chats_row),id!(group_chats_actions))] {
-                assert_eq!(binding.view.button(&cx,&[button]).visible(),target==Some(row),"{row:?}, pointer={:?}",binding.pointer);
-            }
-        }
-    }
-
-    #[test]
-    fn collapsed_rail_keeps_icons_account_and_context_without_duplicate_consumers() {
+    fn desktop_rail_has_ordered_square_button_areas_with_tooltips() {
         let mut cx = Cx::new(Box::new(|_, _| {}));
         let mut home = cx.with_vm(|vm| {
             makepad_widgets::script_mod(vm); crate::app::register_widgets(vm);
             vm.bx.captured_errors = Some(Vec::new());
             let value = script_eval!(vm, {mod.widgets.HomeScreen {}});
             let home = HomeScreen::script_from_value(vm, value);
-            assert!(vm.take_errors().is_empty()); home
+            assert!(vm.take_errors().is_empty());
+            home
         });
         let mut state = AppState::default();
         draw(&mut cx, &mut home, &mut state, 1280.0);
-        let consumer = cx.global::<crate::home::rooms_list::RoomsListRef>().widget_uid();
-        let tree = home.widget(&cx, ids!(project_tree)).widget_uid();
-        for collapsed in [true, false, true] {
-            let mut children = Vec::new(); home.children(&mut |_, child| children.push(child));
-            let mut sidebars = Vec::new(); collect_sidebars(children, &mut sidebars);
-            let sidebar = sidebars[0].borrow::<RoomsSideBar>().unwrap();
-            let uid = sidebar.view.navigation_bar_button(&cx, ids!(toggle_sidebar)).widget_uid();
-            drop(sidebar);
-            let clicks = cx.capture_actions(|cx| cx.widget_action(uid, crate::shared::navigation_bar_button::NavigationBarButtonAction::Clicked));
-            let actions = cx.capture_actions(|cx| home.handle_event(cx, &Event::Actions(clicks), &mut Scope::with_data(&mut state)));
-            home.handle_event(&mut cx, &Event::Actions(actions), &mut Scope::with_data(&mut state));
-            assert_eq!(state.app_prefs.desktop_sidebar_collapsed, collapsed);
-            draw(&mut cx, &mut home, &mut state, 1280.0);
-            let rail = home.view(&cx, ids!(persistent_sidebar_frame)).area().rect(&cx);
-            assert_eq!(rail.size.x, if collapsed {64.0} else {200.0});
-            assert_eq!(home.view(&cx, ids!(workspace_context)).area().rect(&cx).pos.x, rail.size.x);
-            let mut children = Vec::new(); home.children(&mut |_, child| children.push(child));
-            let mut sidebars = Vec::new(); collect_sidebars(children, &mut sidebars);
-            let sidebar = sidebars[0].borrow::<RoomsSideBar>().unwrap();
-            for id in [id!(open_projects),id!(open_agents),id!(open_group_chats),id!(open_contacts),id!(open_miniapps),id!(more),id!(open_settings)] {
+        let mut children = Vec::new();
+        home.children(&mut |_, child| children.push(child));
+        let mut sidebars = Vec::new();
+        collect_sidebars(children, &mut sidebars);
+        assert_eq!(sidebars.len(), 1);
+        let buttons = [
+            (id!(open_projects), "Projects"),
+            (id!(open_group_chats), "Chats"),
+            (id!(open_contacts), "Contacts"),
+            (id!(open_agents), "My Agents"),
+            (id!(open_miniapps), "Mini apps"),
+            (id!(more), "More"),
+            (id!(open_approval_icon), "Approvals"),
+            (id!(open_settings), "Settings"),
+            (id!(account), "Account"),
+        ];
+        let mut previous_bottom = 0.0;
+        for (id, title) in buttons {
+            let (uid, bounds) = {
+                let sidebar = sidebars[0].borrow::<RoomsSideBar>().unwrap();
                 let button = sidebar.view.navigation_bar_button(&cx, &[id]);
-                let rect = button.area().rect(&cx);
-                let icon = button.icon(&cx, ids!(nav_icon)).area().rect(&cx);
-                assert!(icon.size.x > 0.0 && icon.size.y > 0.0 && icon.pos.x >= rect.pos.x && icon.pos.x + icon.size.x <= rect.pos.x + rect.size.x + 0.1, "{id:?} {icon:?} {rect:?}");
-                assert_eq!(button.label(&cx, ids!(label)).visible(), !collapsed);
-            }
-            for (action, navigation) in [(id!(projects_actions), id!(open_projects)), (id!(agents_actions), id!(open_agents)), (id!(group_chats_actions), id!(open_group_chats))] {
-                let button = sidebar.view.button(&cx, &[action]);
-                assert!(!button.visible(),"Overflow remains hidden before row hover");
-                if !collapsed {
-                    let slot=if action==id!(projects_actions){id!(projects_action_slot)}else if action==id!(agents_actions){id!(agents_action_slot)}else{id!(group_chats_action_slot)};
-                    let rect = sidebar.view.view(&cx,&[slot]).area().rect(&cx);
-                    let row = sidebar.view.navigation_bar_button(&cx, &[navigation]).area().rect(&cx);
-                    assert_eq!(rect.size, dvec2(32.0, 32.0));
-                    assert_eq!(rect.pos.y + rect.size.y * 0.5, row.pos.y + row.size.y * 0.5, "overflow must share the navigation row center");
-                    assert!(button.text().is_empty(), "overflow uses an icon, not a font glyph");
-                }
-            }
-            let avatar = sidebar.view.avatar(&cx, ids!(account.avatar)).area().rect(&cx);
-            let account = sidebar.view.widget(&cx, ids!(account)).area().rect(&cx);
-            assert!(avatar.size.x > 0.0 && avatar.pos.x >= account.pos.x && avatar.pos.x + avatar.size.x <= account.pos.x + account.size.x + 0.1, "{avatar:?} {account:?}");
-            assert_eq!(cx.global::<crate::home::rooms_list::RoomsListRef>().widget_uid(), consumer);
-            assert_eq!(home.widget(&cx, ids!(project_tree)).widget_uid(), tree);
-            let restored: crate::settings::app_preferences::AppPreferences = serde_json::from_value(serde_json::to_value(&state.app_prefs).unwrap()).unwrap();
-            assert_eq!(restored.desktop_sidebar_collapsed, collapsed);
+                let bounds = button.area().rect(&cx);
+                let icon = if id == id!(account) {
+                    sidebar.view.avatar(&cx, ids!(account.avatar)).area().rect(&cx)
+                } else {
+                    button.icon(&cx, ids!(nav_icon)).area().rect(&cx)
+                };
+                assert!(icon.size.x > 0.0, "{title}: {icon:?}");
+                assert_eq!(icon.center().x, 32.0, "{title}: {bounds:?} {icon:?}");
+                assert_eq!(bounds.center().x, 32.0, "{title}: {bounds:?}");
+                assert_eq!(bounds.size, dvec2(40.0, 40.0), "{title}: {bounds:?}");
+                assert!(bounds.pos.y >= previous_bottom, "{title} is out of order: {bounds:?}");
+                previous_bottom = bounds.pos.y + bounds.size.y;
+                assert!(button.label(&cx, ids!(label)).is_empty());
+                (button.widget_uid(), bounds)
+            };
+            let actions = cx.capture_actions(|cx| {
+                home.handle_event(cx, &mouse_move(bounds.center()), &mut Scope::with_data(&mut state));
+            });
+            assert!(actions.iter().any(|a| matches!(
+                a.as_widget_action().widget_uid_eq(uid).and_then(|a| a.action.downcast_ref::<TooltipAction>()),
+                Some(TooltipAction::HoverIn {text, options, ..})
+                    if text == crate::i18n::tr(title) && matches!(options.position, TooltipPosition::Right)
+            )), "missing tooltip for {title}");
         }
+    }
+
+    fn mouse_move(abs: DVec2) -> Event {
+        Event::MouseMove(MouseMoveEvent {
+            abs,
+            lock_delta: DVec2::default(),
+            window_id: WindowId(0, 0),
+            modifiers: KeyModifiers::default(),
+            handled: std::cell::Cell::new(Area::Empty),
+            time: 1.0,
+        })
     }
 
     #[test]
@@ -900,11 +810,11 @@ mod layout_tests {
         let mut state = AppState::default(); state.app_prefs.view_mode = ViewModeOverride::ForceWide;
         let actions = cx.capture_actions(|cx| state.app_prefs.on_view_mode_changed(cx));
         home.handle_event(&mut cx, &Event::Actions(actions), &mut Scope::with_data(&mut state));
-        for (width, context, remaining) in [(800.0, true, 460.0), (375.0, false, 215.0)] {
+        for (width, context, remaining) in [(800.0, true, 556.0), (375.0, false, 311.0)] {
             draw(&mut cx, &mut home, &mut state, width);
             draw(&mut cx, &mut home, &mut state, width);
             let rail = home.view(&cx, ids!(persistent_sidebar_frame)).area().rect(&cx);
-            assert_eq!(rail.size.x, 160.0);
+            assert_eq!(rail.size.x, 64.0);
             assert_eq!(home.view(&cx, ids!(workspace_context)).borrow().unwrap().visible, context);
             if context {assert_eq!(home.view(&cx, ids!(workspace_context)).area().rect(&cx).size.x, 180.0);}
             let mut pages = Vec::new(); let mut children = Vec::new(); home.children(&mut |_, child| children.push(child)); collect_widgets::<PageFlip>(children, &mut pages);

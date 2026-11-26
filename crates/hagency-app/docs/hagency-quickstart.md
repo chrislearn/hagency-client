@@ -226,3 +226,6 @@ Access/BotFather controls are separate tools, not part of native Hagency Agent
 setup. Some management text is still English when the interface language is Chinese.
 
 See [development and local diagnostics](local-development.md) for building and connection checks.
+
+See [remote Agent runtime setup](remote-agent-runtime.md) to connect an owned
+Agent's encrypted private chat to a compatible HTTPS runtime.

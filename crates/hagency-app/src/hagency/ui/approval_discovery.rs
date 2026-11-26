@@ -1,6 +1,7 @@
 //! Account-wide discovery observes only existing local work. Review opens the
 //! original scoped page; neither discovery nor cached rows can authorize tools.
 use super::*;
+use crate::shared::navigation_bar_button::NavigationBarButtonWidgetExt;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 const INTERVAL: f64 = 10.0;
@@ -193,7 +194,7 @@ pub struct GlobalApprovalInbox {
     #[rust] fresh: Option<Instant>,
     #[rust] failed: bool,
     #[rust] dialog_size: Option<Vec2d>,
-    #[rust] compact: bool,
+    #[live] icon_only: bool,
 }
 impl Drop for GlobalApprovalInbox {
     fn drop(&mut self) {if let Some(task)=self.task.take() {task.abort();}}
@@ -263,14 +264,25 @@ impl GlobalApprovalInbox {
         if self.view.modal(cx,ids!(inbox_popup)).is_open() {INTERVAL} else {IDLE_INTERVAL}
     }
     fn render(&mut self,cx:&mut Cx) {
-        let compact=self.compact;
-        let count=if self.identity.is_empty() {"0".into()} else if self.failed {"?".into()} else {self.total.to_string()};
-        let caption=if compact {count.clone()} else {
-            crate::i18n::format("Approvals · {count}",&[("count",count)])
-        };
-        let button=self.view.button(cx,ids!(open_approval_inbox));
-        if button.text()!=caption {button.set_text(cx,&caption);}
-        set_button_enabled_if_changed(self.view.button(cx,ids!(open_approval_inbox)),cx,!self.identity.is_empty());
+        let count = if self.failed {"?".to_owned()} else {self.total.to_string()};
+        let caption = crate::i18n::format("Approvals · {count}", &[("count", count)]);
+        let button = self.view.button(cx, ids!(open_approval_inbox));
+        if button.text() != caption {
+            button.set_text(cx, &caption);
+        }
+        set_button_enabled_if_changed(button, cx, !self.identity.is_empty());
+        if self.icon_only {
+            let entry = self.view.navigation_bar_button(cx, ids!(open_approval_icon));
+            if let Some(mut entry) = entry.borrow_mut() {
+                entry.set_tooltip_text(if self.total == 0 && !self.failed {
+                    crate::i18n::tr("Approvals").to_owned()
+                } else {
+                    caption
+                });
+            }
+            let indicator = self.view.view(cx, ids!(approval_indicator));
+            indicator.set_visible(cx, self.total > 0 || self.failed);
+        }
         let status=if self.failed {crate::i18n::tr("Approvals could not be refreshed. Review is disabled until a fresh check succeeds.").to_owned()}
             else if self.pending && self.fresh.is_none() {crate::i18n::tr("Checking pending approvals on this device…").into()}
             else {crate::i18n::format("{count} pending approvals across this device. Open a request to review its exact action.",&[("count",self.total.to_string())])};
@@ -318,7 +330,13 @@ impl Widget for GlobalApprovalInbox {
         self.view.handle_event(cx,event,scope);
         if let Event::Actions(actions)=event {
             for action in actions {if let Some(done)=action.downcast_ref::<Discovered>() {self.accept(cx,done);}}
-            if self.view.button(cx,ids!(open_approval_inbox)).clicked(actions) {
+            let open = if self.icon_only {
+                !self.identity.is_empty()
+                    && self.view.navigation_bar_button(cx, ids!(open_approval_icon)).clicked(actions)
+            } else {
+                self.view.button(cx, ids!(open_approval_inbox)).clicked(actions)
+            };
+            if open {
                 self.view.modal(cx,ids!(inbox_popup)).open(cx);
                 cx.stop_timer(self.timer);self.timer=cx.start_timeout(INTERVAL);self.poll(cx);self.render(cx);
             }
@@ -352,13 +370,10 @@ impl Widget for GlobalApprovalInbox {
             script_apply_eval!(cx,content,{width:#(width) height:#(height)});
             self.dialog_size=Some(dvec2(width,height));
         }
-        let compact=cx.peek_walk_turtle(walk).size.x<120.0;
-        if compact!=self.compact {
-            self.compact=compact;
-            let mut button=self.view.button(cx,ids!(open_approval_inbox));
-            if compact {script_apply_eval!(cx,button,{align:mod.turtle.Align{x:0.5 y:0.5} padding:0 spacing:4});}
-            else {script_apply_eval!(cx,button,{align:mod.turtle.Align{x:0 y:0.5} padding:mod.turtle.Inset{left:12 right:8} spacing:10});}
-            self.render(cx);
+        self.view.button(cx, ids!(open_approval_inbox)).set_visible(cx, !self.icon_only);
+        let icon = self.view.navigation_bar_button(cx, ids!(open_approval_icon));
+        if let Some(mut icon) = icon.borrow_mut() {
+            icon.set_visible(cx, self.icon_only);
         }
         self.view.draw_walk(cx,scope,walk)
     }
@@ -403,7 +418,7 @@ mod tests {
         overlay.end(&mut cx2d);cx2d.end_pass_sized_turtle();list.end(&mut cx2d);cx2d.end_pass(&pass);
     }
     #[test]
-    fn collapsed_inbox_entry_centers_and_restores_its_layout_without_script_errors() {
+    fn icon_inbox_entry_centers_and_marks_pending_approvals() {
         let (mut cx,mut inbox)=widget();inbox.identity="account".into();
         finish(&mut cx,&mut inbox,json!({"approvals":[],"total":0,"nextCursor":null}));
         for resource in cx.script_data.resources.resources.borrow_mut().iter_mut() {
@@ -412,24 +427,20 @@ mod tests {
                 resource.data=makepad_widgets::makepad_platform::script::res::CxScriptResourceData::Loaded(bytes.into());
             }
         }
-        for width in [70.0,250.0,70.0,250.0] {
-            cx.with_vm(|vm|vm.bx.captured_errors=Some(Vec::new()));
-            draw_with_sidebar_width(&mut cx,&mut inbox,1100.0,760.0,width);
-            let errors=cx.with_vm(|vm|vm.take_errors());
-            assert!(errors.is_empty(),"sidebar width {width}: {errors:?}");
-            let entry=inbox.view.button(&cx,ids!(open_approval_inbox));
-            let bounds=entry.area().rect(&cx);
-            let button=entry.borrow().unwrap();
-            let icon=button.draw_icon.area().rect(&cx);
-            assert!(icon.size.x>0.0,"the declared icon must actually draw");
-            let icon_offset=icon.pos.x-bounds.pos.x;
-            drop(button);
-            if width<120.0 {
-                assert!(icon_offset>15.0,"collapsed icon group must be centered: {icon_offset}");
-                assert_eq!(entry.text(),"0");
-            } else {
-                assert!((icon_offset-12.0).abs()<1.0,"expanded icon left padding: {icon_offset}");
-            }
+        inbox.icon_only = true;
+        for total in [0, 2] {
+            finish(&mut cx, &mut inbox, json!({"approvals":[],"total":total,"nextCursor":null}));
+            cx.with_vm(|vm| vm.bx.captured_errors = Some(Vec::new()));
+            draw_with_sidebar_width(&mut cx, &mut inbox, 1100.0, 760.0, 48.0);
+            let errors = cx.with_vm(|vm| vm.take_errors());
+            assert!(errors.is_empty(), "{errors:?}");
+            let entry = inbox.view.navigation_bar_button(&cx, ids!(open_approval_icon));
+            let bounds = entry.area().rect(&cx);
+            let icon = entry.icon(&cx, ids!(nav_icon)).area().rect(&cx);
+            assert!(icon.size.x > 0.0);
+            assert_eq!(icon.center().x, bounds.center().x);
+            assert!(!inbox.view.button(&cx, ids!(open_approval_inbox)).visible());
+            assert_eq!(inbox.view.view(&cx, ids!(approval_indicator)).visible(), total > 0);
         }
     }
     #[test]

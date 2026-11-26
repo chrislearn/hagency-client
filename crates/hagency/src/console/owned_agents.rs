@@ -16,6 +16,70 @@ use std::{
 mod commands;
 mod direct;
 
+fn start_model(
+    local: Option<ModelProfile>,
+    remote: Option<&super::owned_runtime::remote::RemoteBinding>,
+    missing: &'static str,
+) -> Result<ModelProfile, OwnerError> {
+    match (local, remote) {
+        (Some(profile), None) => Ok(profile),
+        (None, None) => Err(error(409, missing)),
+        (_, Some(remote)) => Ok(ModelProfile {
+            model: remote.model().into(),
+            credential_ref: String::new(),
+            workspace_root: String::new(),
+            reasoning_effort: String::new(),
+            web_search: false,
+            programming: Default::default(),
+        }),
+    }
+}
+
+fn start_profile(
+    root: &Path,
+    reply: &OwnerReply,
+    profile: &ModelProfile,
+    effort: String,
+    remote: bool,
+) -> Result<hagency_agent_local::codex::Profile, OwnerError> {
+    let (executable, home, codex_home, shared_auth) = if remote {
+        (PathBuf::new(), PathBuf::new(), PathBuf::new(), false)
+    } else {
+        let provider = super::owner_provider::external::paths_for_reference(
+            root,
+            &reply.origin,
+            &reply.issuer,
+            &reply.subject,
+            &reply.owner,
+            &profile.credential_ref,
+        )
+        .map_err(|e| error(e.status, e.code))?;
+        if profile.credential_ref != provider.credential_ref {
+            return Err(error(409, "provider_profile_mismatch"));
+        }
+        let executable = super::owner_provider::external::executable(
+            hagency_agent_local::runtime::kind(&profile.credential_ref),
+        )
+        .map_err(|e| error(e.status, e.code))?;
+        (executable, provider.home, provider.codex_home, provider.shared)
+    };
+    Ok(hagency_agent_local::codex::Profile {
+        executable,
+        home,
+        codex_home,
+        cwd: PathBuf::from(&profile.workspace_root),
+        model: profile.model.clone(),
+        effort: if profile.reasoning_effort.is_empty() {
+            effort
+        } else {
+            profile.reasoning_effort.clone()
+        },
+        shared_auth,
+        web_search: profile.web_search,
+        programming: profile.programming.clone(),
+    })
+}
+
 pub(super) fn router() -> Router {
     Router::with_path("owned-agents")
         .goal(dispatch)
@@ -1102,28 +1166,22 @@ async fn call(req: &mut Request, depot: &Depot) -> Result<Value, OwnerError> {
                         .map_err(|_| error(403, "owner_scope_required"))?;
                 let ledger =
                     Ledger::open_scoped(&path, &reply.owner, &profile_id).map_err(local_error)?;
-                let profile = ledger
-                    .agent_model_profile(&reply.owner, &agent)
-                    .map_err(local_error)?
-                    .ok_or_else(|| error(409, "agent_model_required"))?;
-                let provider = super::owner_provider::external::paths_for_reference(
-                    &root,
-                    &reply.origin,
-                    &reply.issuer,
-                    &reply.subject,
-                    &reply.owner,
-                    &profile.credential_ref,
-                )
-                .map_err(|e| error(e.status, e.code))?;
-                if profile.credential_ref != provider.credential_ref {
-                    return Err(error(409, "provider_profile_mismatch"));
-                }
-                let saved_options = host
-                    .0
-                    .owned_runtime
-                    .saved_service_options(host, &agent)
-                    .await
+                let remote = super::owned_runtime::remote::load(&path, &agent)
                     .map_err(runtime_error)?;
+                let profile = start_model(
+                    ledger.agent_model_profile(&reply.owner, &agent).map_err(local_error)?,
+                    remote.as_ref(),
+                    "agent_model_required",
+                )?;
+                let saved_options = if remote.is_some() {
+                    None
+                } else {
+                    host.0
+                        .owned_runtime
+                        .saved_service_options(host, &agent)
+                        .await
+                        .map_err(runtime_error)?
+                };
                 let effort = input
                     .effort
                     .clone()
@@ -1151,24 +1209,8 @@ async fn call(req: &mut Request, depot: &Depot) -> Result<Value, OwnerError> {
                     owner_direct: false,
                     recovery_device_id: input.recovery_device_id,
                     recovery_consent_id: input.recovery_consent_id,
-                    profile: hagency_agent_local::codex::Profile {
-                        executable: super::owner_provider::external::executable(
-                            hagency_agent_local::runtime::kind(&profile.credential_ref),
-                        )
-                        .map_err(|e| error(e.status, e.code))?,
-                        home: provider.home,
-                        codex_home: provider.codex_home,
-                        cwd: PathBuf::from(profile.workspace_root),
-                        model: profile.model,
-                        effort: if profile.reasoning_effort.is_empty() {
-                            effort
-                        } else {
-                            profile.reasoning_effort
-                        },
-                        shared_auth: provider.shared,
-                        web_search: profile.web_search,
-                        programming: profile.programming.clone(),
-                    },
+                    profile: start_profile(&root, &reply, &profile, effort, remote.is_some())?,
+                    remote,
                     mode: hagency_agent_local::codex::BudgetMode::Estimated {
                         reservation: input.reservation,
                     },
@@ -1350,22 +1392,15 @@ async fn call(req: &mut Request, depot: &Depot) -> Result<Value, OwnerError> {
                     requester: device.owner_mxid().into(),
                 };
                 let (reply, scope, root) = verified(req, depot, &agent, &selected).await?;
-                let profile = ledger(&root, &reply, &scope)?
-                    .model_profile(&scope)
-                    .map_err(local_error)?
-                    .ok_or(error(409, "runtime_profile_unavailable"))?;
-                let provider = super::owner_provider::external::paths_for_reference(
-                    &root,
-                    &reply.origin,
-                    &reply.issuer,
-                    &reply.subject,
-                    &reply.owner,
-                    &profile.credential_ref,
-                )
-                .map_err(|e| error(e.status, e.code))?;
-                if profile.credential_ref != provider.credential_ref {
-                    return Err(error(409, "provider_profile_mismatch"));
-                }
+                let path = ledger_path(&root, &reply.origin, &reply.issuer, &reply.subject, &reply.owner)
+                    .map_err(|_| error(503, "local_state_unavailable"))?;
+                let remote = super::owned_runtime::remote::load(&path, &agent)
+                    .map_err(runtime_error)?;
+                let profile = start_model(
+                    ledger(&root, &reply, &scope)?.model_profile(&scope).map_err(local_error)?,
+                    remote.as_ref(),
+                    "runtime_profile_unavailable",
+                )?;
                 let config = super::owned_runtime::StartConfig {
                     agent_id: agent,
                     binding_id: input.binding_id,
@@ -1373,24 +1408,8 @@ async fn call(req: &mut Request, depot: &Depot) -> Result<Value, OwnerError> {
                     owner_direct: false,
                     recovery_device_id: input.recovery_device_id,
                     recovery_consent_id: input.recovery_consent_id,
-                    profile: hagency_agent_local::codex::Profile {
-                        executable: super::owner_provider::external::executable(
-                            hagency_agent_local::runtime::kind(&profile.credential_ref),
-                        )
-                        .map_err(|e| error(e.status, e.code))?,
-                        home: provider.home,
-                        codex_home: provider.codex_home,
-                        cwd: PathBuf::from(profile.workspace_root),
-                        model: profile.model,
-                        effort: if profile.reasoning_effort.is_empty() {
-                            effort
-                        } else {
-                            profile.reasoning_effort
-                        },
-                        shared_auth: provider.shared,
-                        web_search: profile.web_search,
-                        programming: profile.programming.clone(),
-                    },
+                    profile: start_profile(&root, &reply, &profile, effort, remote.is_some())?,
+                    remote,
                     mode: hagency_agent_local::codex::BudgetMode::Estimated {
                         reservation: input.reservation,
                     },

@@ -15776,3 +15776,32 @@ Operator requested hagency-desktop work-branch debugging and allowed matching lo
 ## 2026-11-05 — Work-targeted Agent reply PRs created
 
 Operator requested PRs to the corresponding work branches. Pushed engine dec4911b45acb6789be96e5a5d75bf8d357f30d1 and opened Client52 → work/hagency-client-local-20261028; Desktop5 → work/hagency-desktop-local-20261028 integrates status fix plus all4 published engine pins /3lockfiles (head6285f4268 documentation record). Production build uses ordinary cargo build --locked --bin rinx and passes without path overrides. Complete bound check-hagency-regressions.py --client exact engine-copy finished exit0:101checks passed. Final-feature direct suite7passed; earlier complete Desktop lib767passed/2existing ignored. Original private real-reply evidence retained. Initial full-driver VM location failure and interrupted dependency-download attempt retained; default-target and transport-only HTTP multiplexing retry legitimately passed, reusing only proven unaffected checks. GitHub integration403 write capability required authenticated gh fallback. Both PR bodies cross-link dependency/merge order and include test/real-use results; main-only PR workflow filters mean no automatic work-targeted CI, stated accurately. No merge or release performed. Private metadata/logs in ignored Desktop .run/agent-no-reply-20261105. Earlier local coordination notes preserved; task-writer remains absent.
+
+
+## 2026-11-26 — Remote Agent runtime demo
+
+Ported the owner-direct runtime binding to Hagency Client on the
+`agent-runtime` branch. The Service page shows the HTTPS route and the
+decrypted-text consent. Agent and Matrix authorization remain in Client.
+An isolated Synapse and Hagency host using `ciphertext_inbox` delivered a real
+encrypted Client message to the runtime server. Remote Codex returned
+`CLIENT_REMOTE_RUNTIME_OK`, which the Client SDK decrypted. The runtime API
+and Client ledger confirmed the same original execution ID. The first fixture
+used executor-device delivery and could not receive via the encrypted inbox.
+Client now checks the advertised inbox capability before enabling the route.
+
+## 2026-11-26 — Client desktop icon navigation
+
+Changed the desktop main navigation to a 64-pixel rail with centered icons,
+hover labels, and an accent on the current page. The footer contains
+approvals, settings, and the account avatar. Verified 31 tests covering the
+desktop and mobile layouts, tooltip events, shortcut menus, and approvals.
+The logged-in macOS preview rendered the icon rail, selected Projects icon,
+unread badge, and footer. Pointer automation did not trigger navigation in the
+native window, including its existing workspace buttons. The widget tests
+verified navigation actions and right-side tooltip events.
+
+The sidebar buttons now share a 40 × 40 logical-pixel hit area. The primary
+order is Projects, Chats, Contacts, and My Agents, followed by Mini apps.
+The layout test checks the rendered button bounds, top-to-bottom order,
+and hover labels. All 31 relevant tests passed.

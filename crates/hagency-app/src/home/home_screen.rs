@@ -26,7 +26,7 @@ use crate::{
 use super::project_tree::{ProjectTreeWidgetExt, ProjectTreeMode};
 use super::rooms_sidebar::DesktopWorkspace;
 use crate::hagency::ui::approval_discovery::GlobalApprovalInboxWidgetExt;
-use crate::shared::sidebar_resize::{left_widths, SidebarKind, SidebarResizeHandleWidgetExt};
+use crate::shared::sidebar_resize::{context_widths, SidebarKind, SidebarResizeHandleWidgetExt, DESKTOP_NAVIGATION_WIDTH};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -161,11 +161,10 @@ script_mod! {
                 }
 
                 persistent_sidebar_frame := View {
-                    width: 200 height: Fill flow: Overlay
+                    width: #(DESKTOP_NAVIGATION_WIDTH) height: Fill flow: Overlay
                     persistent_sidebar := mod.widgets.RoomsSideBar {width: Fill height: Fill}
                     View {width: Fill height: Fill flow: Right align: Align{x: 1.0}
                         View {width: 1 height: Fill show_bg: true draw_bg.color: mod.widgets.RINX_DIVIDER}
-                        navigation_resize := SidebarResizeHandle {}
                     }
                 }
 
@@ -563,11 +562,6 @@ impl Widget for HomeScreen {
                 self.view.project_tree(cx,ids!(project_tree)).refresh(cx);
             }
             let app_state = scope.data.get_mut::<AppState>().unwrap();
-            if actions.iter().any(|a| a.downcast_ref::<super::rooms_sidebar::DesktopRailAction>().is_some()) {
-                app_state.app_prefs.desktop_sidebar_collapsed = !app_state.app_prefs.desktop_sidebar_collapsed;
-                app_state.app_prefs.on_desktop_sidebar_collapsed_changed(cx);
-                self.view.redraw(cx);
-            }
             if !effective_is_desktop(cx) {
                 let stack = self.view.stack_navigation(cx, ids!(view_stack));
                 if !stack.is_transitioning() && self.mobile_chat_info.is_none() {
@@ -883,20 +877,12 @@ impl Widget for HomeScreen {
         let desktop = effective_is_desktop(cx);
         let workspace = *cx.global::<DesktopWorkspace>();
         let show_context = desktop && available >= 760.0 && app_state.selected_tab == SelectedTab::Home && workspace != DesktopWorkspace::Other;
-        let collapsed = app_state.app_prefs.desktop_sidebar_collapsed;
-        let nav_handle = self.view.sidebar_resize_handle(cx, ids!(navigation_resize));
         let context_handle = self.view.sidebar_resize_handle(cx, ids!(context_resize));
-        let mut preferred = app_state.app_prefs.sidebar_widths.clone();
-        if let Some(width) = nav_handle.preview() {preferred.navigation = Some(width);}
-        if let Some(width) = context_handle.preview() {preferred.context = Some(width);}
-        let (nav_width, context_width, nav_max, context_max) = left_widths(available, collapsed, show_context, &preferred);
-        if let Some(mut rail) = self.view.view(cx, ids!(persistent_sidebar_frame)).borrow_mut() {
-            rail.walk.width = Size::Fixed(nav_width);
-        }
+        let preferred_width = context_handle.preview().or(app_state.app_prefs.sidebar_widths.context);
+        let (context_width, context_max) = context_widths(available, show_context, preferred_width);
         if let Some(mut context) = self.view.view(cx, ids!(workspace_context)).borrow_mut() {
             context.walk.width = Size::Fixed(context_width);
         }
-        nav_handle.configure(cx, SidebarKind::Navigation, nav_width, nav_max, false, desktop && !collapsed);
         context_handle.configure(cx, SidebarKind::Context, context_width, context_max, false, show_context);
         self.view.view(cx, ids!(workspace_context)).set_visible(cx, show_context);
         let tree = self.view.project_tree(cx, ids!(project_tree));
@@ -1564,7 +1550,7 @@ pub(crate) mod responsive_layout_tests {
     }
 
     #[test]
-    fn saved_sidebar_widths_fit_restore_and_keep_handles_on_the_edges() {
+    fn legacy_navigation_widths_leave_the_rail_fixed_and_context_resizable() {
         let (mut cx, mut home, mut state) = home();
         state.app_prefs.sidebar_widths.navigation = Some(260.0);
         state.app_prefs.sidebar_widths.context = Some(340.0);
@@ -1573,13 +1559,10 @@ pub(crate) mod responsive_layout_tests {
             draw_pane(&mut cx, &mut home, &mut state, width);
             let nav = home.view.view(&cx, ids!(persistent_sidebar_frame)).area().rect(&cx);
             let context = home.view.view(&cx, ids!(workspace_context)).area().rect(&cx);
-            assert_eq!(nav.size.x, if collapsed {64.0} else {260.0});
+            assert_eq!(nav.size.x, DESKTOP_NAVIGATION_WIDTH);
             assert_eq!(context.pos.x, nav.pos.x + nav.size.x);
             assert!(width - context.pos.x - context.size.x >= 320.0);
             if width == 1280.0 {assert_eq!(context.size.x, 340.0);}
-            let nav_handle = home.view.sidebar_resize_handle(&cx, ids!(navigation_resize));
-            assert_eq!(nav_handle.visible(), !collapsed);
-            if !collapsed {let handle = nav_handle.area().rect(&cx); assert_eq!(handle.pos.x + handle.size.x, nav.pos.x + nav.size.x);}
             let handle = home.view.sidebar_resize_handle(&cx, ids!(context_resize)).area().rect(&cx);
             assert_eq!(handle.pos.x + handle.size.x, context.pos.x + context.size.x);
             assert_eq!(handle.size.x, 6.0);

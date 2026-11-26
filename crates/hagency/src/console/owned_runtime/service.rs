@@ -270,37 +270,42 @@ impl OwnedRuntime {
         if config.host_files {
             return Err(RuntimeError::Profile);
         }
-        config
-            .profile
-            .validate()
-            .map_err(|_| RuntimeError::Profile)?;
-        let root = console
-            .0
-            .server_login
-            .state_directory()
-            .ok_or(RuntimeError::Profile)?;
-        let expected = super::super::owner_provider::paths(
-            &root,
-            device.origin(),
-            device.issuer(),
-            device.subject(),
-            device.owner_mxid(),
-        )
-        .map_err(|_| RuntimeError::Profile)?;
-        if config.profile.executable
-            != super::super::owner_provider::executable().map_err(|_| RuntimeError::Profile)?
-            || config.profile.codex_home != expected.codex_home
-            || config.profile.home != expected.home
-            || config.profile.shared_auth != expected.shared
-            || config.credential_ref != expected.credential_ref
-            || super::super::owner_provider::selected_reference(
-                &config.profile.codex_home,
-                config.profile.shared_auth,
+        if let Some(remote) = &config.remote {
+            remote::verify_matrix_transport(device.origin()).await?;
+            remote.verify(device.owner_mxid(), &config.agent_id).await?;
+        } else {
+            config
+                .profile
+                .validate()
+                .map_err(|_| RuntimeError::Profile)?;
+            let root = console
+                .0
+                .server_login
+                .state_directory()
+                .ok_or(RuntimeError::Profile)?;
+            let expected = super::super::owner_provider::paths(
+                &root,
+                device.origin(),
+                device.issuer(),
+                device.subject(),
+                device.owner_mxid(),
             )
-            .map_err(|_| RuntimeError::Profile)?
-                != config.credential_ref
-        {
-            return Err(RuntimeError::Profile);
+            .map_err(|_| RuntimeError::Profile)?;
+            if config.profile.executable
+                != super::super::owner_provider::executable().map_err(|_| RuntimeError::Profile)?
+                || config.profile.codex_home != expected.codex_home
+                || config.profile.home != expected.home
+                || config.profile.shared_auth != expected.shared
+                || config.credential_ref != expected.credential_ref
+                || super::super::owner_provider::selected_reference(
+                    &config.profile.codex_home,
+                    config.profile.shared_auth,
+                )
+                .map_err(|_| RuntimeError::Profile)?
+                    != config.credential_ref
+            {
+                return Err(RuntimeError::Profile);
+            }
         }
         let (path, profile_id) = intent_location(&console, &device)?;
         let BudgetMode::Estimated { reservation } = config.mode else {
@@ -327,6 +332,13 @@ impl OwnedRuntime {
             }
             services.remove(&key);
         }
+        if config.remote.is_some()
+            && self.status(&console, &config.agent_id).await?.is_some_and(|runtime| {
+                runtime.bindings.iter().any(|binding| binding.phase != "stopped")
+            })
+        {
+            return Err(RuntimeError::AlreadyActive);
+        }
         let intent = RuntimeIntent {
             agent_id: config.agent_id.clone(),
             binding_id: ALL_ROOMS.into(),
@@ -338,17 +350,20 @@ impl OwnedRuntime {
             reservation,
             effort: config.profile.effort.clone(),
             host_files: false,
+            remote_consent: config.remote.as_ref().map(remote::RemoteBinding::consent),
         };
-        save_options(
-            &path.with_file_name("agent-service-options.json"),
-            &profile_id,
-            ServiceOptions {
-                agent_id: config.agent_id.clone(),
-                device_id: device.device_id().into(),
-                reservation,
-                effort: config.profile.effort.clone(),
-            },
-        )?;
+        if config.remote.is_none() {
+            save_options(
+                &path.with_file_name("agent-service-options.json"),
+                &profile_id,
+                ServiceOptions {
+                    agent_id: config.agent_id.clone(),
+                    device_id: device.device_id().into(),
+                    reservation,
+                    effort: config.profile.effort.clone(),
+                },
+            )?;
+        }
         change_intent_checked(
             &path,
             &profile_id,
@@ -398,7 +413,13 @@ impl OwnedRuntime {
                         let reply = host.owner_api_pinned(&task_pin, OwnerOperation::Bindings { agent: intent.agent_id.clone() })
                             .await.map_err(owner_error)?;
                         let bindings: Vec<Binding> = serde_json::from_value(reply.value["bindings"].clone()).map_err(|_| RuntimeError::Profile)?;
-                        let active = active_binding_ids(&bindings, &intent.agent_id);
+                        let active: BTreeSet<String> = if config.remote.is_some() {
+                            bindings.iter().filter(|binding| binding.agent_id == intent.agent_id
+                                && binding.state == "active" && binding.scope_kind == "owner_direct")
+                                .map(|binding| binding.id.clone()).collect()
+                        } else {
+                            active_binding_ids(&bindings, &intent.agent_id)
+                        };
                         // A paused/removed Room must terminate its worker. No local
                         // room intent is allowed to resurrect it on recovery.
                         let snapshot = manager.status(&host, &intent.agent_id).await?;
@@ -535,6 +556,16 @@ impl OwnedRuntime {
             device.owner_mxid(),
         )
         .map_err(|_| RuntimeError::Profile)?;
+        let remote = remote::load(&model_path, agent);
+        let remote_configuration_error = match &remote {
+            Err(RuntimeError::Execution(code)) => Some(*code),
+            _ => None,
+        };
+        let remote = remote.ok().flatten();
+        let remote_status = remote.as_ref().map(|remote| serde_json::json!({
+            "endpoint": remote.endpoint(), "provider": remote.provider(), "model": remote.model(),
+            "allowEncryptedOwnerDirect": remote.allows_encrypted(),
+        }));
         let model_configured = local(Ledger::open_scoped(
             &model_path,
             device.owner_mxid(),
@@ -552,6 +583,12 @@ impl OwnedRuntime {
             )
             .await
             .map_err(owner_error)?;
+        let mut rooms = reply.value["bindings"].clone();
+        if remote.is_some()
+            && let Some(rooms) = rooms.as_array_mut()
+        {
+            rooms.retain(|binding| binding["scopeKind"] == "owner_direct");
+        }
         let runtime = self.status(console, agent).await?;
         let services = self.services.lock().await;
         let entry = services.get(&identity(&device, agent));
@@ -573,7 +610,9 @@ impl OwnedRuntime {
         Ok(serde_json::json!({"runtime":runtime,"service":{
             "enabled":intent.is_some(),"running":running,"watcherRunning":watcher_running,"warning":options_warning,"phase":health.phase,"lastError":health.last_error,"problems":health.problems,"deviceId":device.device_id(),
             "reservation":options.as_ref().map(|value|value.reservation).or_else(||intent.as_ref().map(|value|value.reservation)),"effort":options.as_ref().map(|value| &value.effort).or_else(||intent.as_ref().map(|value| &value.effort)),
-            "logs":health.logs,"modelConfigured":model_configured,"rooms":reply.value["bindings"]},"nativeTools":native,"strictTokenCap":false}))
+            "logs":health.logs,"modelConfigured":remote.is_some() || model_configured,"rooms":rooms},"nativeTools":native,"strictTokenCap":false,
+            "remoteRuntime":remote_status,"remoteConfigurationError":remote_configuration_error,
+            "pendingRemoteRun":remote::pending_receipt(&path, agent)}))
     }
     pub(in crate::console) async fn stop_agent_service(
         &self,
@@ -648,7 +687,7 @@ impl OwnedRuntime {
                             .find(|intent| Some(intent.binding_id.as_str()) == direct)
                     })
                     .or_else(|| candidates.first().copied());
-                if let Some(intent) = selected {
+                if let Some(intent) = selected.filter(|intent| intent.remote_consent.is_none()) {
                     save_options(
                         &options_path,
                         &profile_id,
@@ -857,6 +896,7 @@ mod tests {
             reservation: 10000,
             effort: "low".into(),
             host_files: false,
+            remote_consent: None,
         };
         let global = intended("a", ALL_ROOMS);
         for intent in [
@@ -899,6 +939,7 @@ mod tests {
             reservation: 10000,
             effort: "low".into(),
             host_files: false,
+            remote_consent: None,
         };
         let values = RuntimeIntents {
             version: 1,

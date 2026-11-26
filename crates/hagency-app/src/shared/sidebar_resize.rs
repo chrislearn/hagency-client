@@ -38,16 +38,18 @@ fn navigation_width<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<f64
 fn context_width<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<f64>, D::Error> {read_width(d, SidebarKind::Context)}
 fn information_width<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<f64>, D::Error> {read_width(d, SidebarKind::Information)}
 
-/// Clamp the display only; a temporary narrow viewport never overwrites preferences.
-pub(crate) fn left_widths(available: f64, collapsed: bool, context: bool, preferred: &SidebarWidths) -> (f64, f64, f64, f64) {
-    let nav_min = (if collapsed {64.0_f64} else {160.0_f64}).min(available.max(0.0));
-    let context_min = if context {180.0} else {0.0};
-    let budget = (available - 320.0).max(nav_min + context_min).min(available.max(0.0));
-    let nav_max = (budget - context_min).max(nav_min).min(320.0);
-    let nav = if collapsed {nav_min} else {SidebarKind::Navigation.valid(preferred.navigation).unwrap_or(if available < 960.0 {160.0} else {200.0}).clamp(nav_min, nav_max)};
-    let context_max = (budget - nav).max(context_min).min(420.0);
-    let context_width = if context {SidebarKind::Context.valid(preferred.context).unwrap_or(if available < 960.0 {180.0} else {240.0}).clamp(context_min, context_max)} else {0.0};
-    (nav, context_width, nav_max, context_max)
+pub(crate) const DESKTOP_NAVIGATION_WIDTH: f64 = 64.0;
+
+/// Clamp the context column to the space left by the navigation rail and page.
+pub(crate) fn context_widths(available: f64, visible: bool, preferred: Option<f64>) -> (f64, f64) {
+    if !visible {
+        return (0.0, 0.0);
+    }
+    let (min, max) = SidebarKind::Context.bounds();
+    let limit = (available - DESKTOP_NAVIGATION_WIDTH - 320.0).clamp(min, max);
+    let default = if available < 960.0 {min} else {240.0};
+    let width = SidebarKind::Context.valid(preferred).unwrap_or(default).min(limit);
+    (width, limit)
 }
 
 #[derive(Clone, Debug)]
@@ -172,16 +174,15 @@ mod tests {
 
     #[test]
     fn narrow_windows_keep_chat_space_without_destroying_saved_widths() {
-        let preferred = SidebarWidths {navigation: Some(320.0), context: Some(420.0), information: Some(480.0)};
+        let preferred = Some(420.0);
         for width in [760.0, 860.0, 1000.0, 1600.0] {
-            let (nav, context, _, _) = left_widths(width, false, true, &preferred);
-            assert!(nav >= 160.0 && context >= 180.0);
-            assert!(width - nav - context >= 320.0);
+            let (context, limit) = context_widths(width, true, preferred);
+            assert!(context >= 180.0 && context <= limit);
+            assert!(width - DESKTOP_NAVIGATION_WIDTH - context >= 320.0);
         }
-        assert_eq!(left_widths(1600.0, false, true, &preferred), (320.0, 420.0, 320.0, 420.0));
-        assert_eq!(left_widths(1600.0, true, true, &preferred).0, 64.0);
-        assert_eq!(preferred.navigation, Some(320.0));
-        assert_eq!(preferred.context, Some(420.0));
+        assert_eq!(context_widths(760.0, true, preferred), (376.0, 376.0));
+        assert_eq!(context_widths(1600.0, true, preferred), (420.0, 420.0));
+        assert_eq!(context_widths(540.0, false, preferred), (0.0, 0.0));
     }
 
     fn handle(kind: SidebarKind, reverse: bool) -> (Cx, SidebarResizeHandle) {

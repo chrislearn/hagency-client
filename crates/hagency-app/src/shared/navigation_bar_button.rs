@@ -66,6 +66,7 @@ script_mod! {
             border_size: uniform(0.0)
             border_radius: uniform(mod.widgets.RINX_CONTROL_RADIUS)
             border_inset: uniform(vec4(0.0))
+            rail_indicator: uniform(0.0)
 
             // Fade `color_hover` in/out by scaling its own alpha rather than
             // mix()ing toward `#0000`. mix()ing pulls RGB toward black,
@@ -90,6 +91,10 @@ script_mod! {
                 let line = max(self.border_size, 2.0 * self.focus)
                 if line > 0.0 {
                     sdf.stroke(self.border_color.mix(self.color_focus, self.focus), line)
+                }
+                if self.rail_indicator > 0.0 {
+                    sdf.box(0.0, 8.0, 2.0, self.rect_size.y - 16.0, 1.0)
+                    sdf.fill(#0000.mix(mod.widgets.RINX_ACCENT, self.active))
                 }
                 return sdf.result;
             }
@@ -129,6 +134,10 @@ script_mod! {
                 }
             }
         }
+    }
+    mod.widgets.DesktopRailButton = mod.widgets.NavigationBarButton {
+        width: 40 height: 40 align: Center
+        draw_bg +: {color_hover: mod.widgets.RINX_HOVER}
     }
 }
 
